@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import onnx
 import numpy as np
+from functools import wraps
 
 import dace
 from dace.frontend.onnx import ONNXModel
@@ -34,3 +35,13 @@ class DACEModule(nn.Module):
 
         return self.dace_model(*actual_inputs) 
 
+
+def module(moduleclass):
+    """
+    Decorator to apply on a definition of a ``torch.nn.Module`` to
+    convert it to a data-centric module upon construction.
+    """
+    @wraps(moduleclass)
+    def _create(*args, **kwargs):
+        return DACEModule(moduleclass(*args, **kwargs))
+    return _create
