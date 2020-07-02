@@ -26,8 +26,8 @@ x = torch.rand(1, 1, 8, 8)
 np_input = x.numpy()
 
 ############################ DaCe #################################
-my_dace_model = DACEModule(ptmodel, dummy_input)
-dace_output = my_dace_model(np_input)
+my_dace_model = DACEModule(ptmodel)
+dace_output = my_dace_model(x)
 print(dace_output)
 
 ############################# Ort #################################

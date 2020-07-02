@@ -9,10 +9,15 @@ from dace.frontend.onnx import ONNXModel
 from .symbolic_shape_infer import SymbolicShapeInference
 
 class DACEModule(nn.Module):
-    def __init__(self, model, *dummy_inputs):
+    def __init__(self, model, dummy_inputs=None):
         super(DACEModule, self).__init__()
         
         self.model = model
+        self.sdfg = None
+        if dummy_inputs is not None:
+            self.initialize_sdfg(dummy_inputs)
+
+    def initialize_sdfg(self, dummy_inputs):
         input_names = [ "actual_input_1" ]
         torch.onnx.export(self.model, dummy_inputs, "model.onnx", verbose=True, input_names=input_names, opset_version=12)
         SymbolicShapeInference.infer_shapes("model.onnx", "shape_infer.onnx")
@@ -24,5 +29,8 @@ class DACEModule(nn.Module):
         self.sdfg.save("./model.sdfg")
 
     def forward(self, *actual_inputs):
+        if self.sdfg is None:
+      	    self.initialize_sdfg(actual_inputs)
+
         return self.dace_model(*actual_inputs) 
 
