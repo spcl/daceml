@@ -13,10 +13,10 @@ import dace.data as dt
 import dace.sdfg.nodes as nd
 from dace import SDFG, SDFGState, ScheduleType, StorageType
 from dace.dtypes import DTYPE_TO_TYPECLASS, can_access
-from dace.libraries.onnx.check_impl import check_op, ONNXOpValidationError
-from dace.libraries.onnx.converters import ONNX_DTYPES_TO_DACE_TYPE_CLASS, clean_onnx_name, typeclass_to_onnx_str
-from dace.libraries.onnx.environments import ONNXRuntime
-from dace.libraries.onnx.schema import ONNXSchema, ONNXAttributeType, _ATTR_TYPE_TO_PYTHON_TYPE, ONNXParameterType, \
+from daceml.onnx.check_impl import check_op, ONNXOpValidationError
+from daceml.onnx.converters import ONNX_DTYPES_TO_DACE_TYPE_CLASS, clean_onnx_name, typeclass_to_onnx_str
+from daceml.onnx.environments import ONNXRuntime
+from daceml.onnx.schema import ONNXSchema, ONNXAttributeType, _ATTR_TYPE_TO_PYTHON_TYPE, ONNXParameterType, \
     ONNXAttribute
 from dace.libraries.standard.nodes.code import _get_inputs_and_outputs
 from dace.properties import Property, ListProperty

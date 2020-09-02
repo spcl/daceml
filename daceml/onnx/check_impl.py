@@ -7,8 +7,8 @@ import numpy as np
 
 import dace
 from dace.dtypes import DTYPE_TO_TYPECLASS
-from dace.libraries.onnx.schema import ONNXAttributeType
-from dace.libraries.onnx.converters import ONNX_DTYPES_TO_DACE_TYPE_CLASS
+from daceml.onnx.schema import ONNXAttributeType
+from daceml.onnx.converters import ONNX_DTYPES_TO_DACE_TYPE_CLASS
 from dace.codegen.codeobject import CodeObject
 from dace.codegen.compiler import generate_program_folder, configure_and_compile, get_binary_name
 from dace.codegen.targets import cpu

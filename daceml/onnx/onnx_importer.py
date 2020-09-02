@@ -10,8 +10,8 @@ from onnx import numpy_helper
 import dace
 from dace.frontend.python.parser import infer_symbols_from_shapes
 from dace.sdfg import SDFG, SDFGState
-from dace.libraries.onnx.converters import convert_attribute_proto, onnx_tensor_type_to_typeclass, clean_onnx_name
-from dace.libraries.onnx import get_onnx_node, has_onnx_node, ONNXParameterType
+from daceml.onnx.converters import convert_attribute_proto, onnx_tensor_type_to_typeclass, clean_onnx_name
+from daceml.onnx import get_onnx_node, has_onnx_node, ONNXParameterType
 from dace.dtypes import AccessType, StorageType, AllocationLifetime
 import dace.sdfg.nodes as nd
 from dace.symbolic import pystr_to_symbolic

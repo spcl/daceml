@@ -6,7 +6,7 @@ import onnx
 
 import dace
 from dace.dtypes import typeclass
-from dace.libraries.onnx.converters import convert_onnx_proto, onnx_type_str_to_typeclass, get_proto_attr
+from daceml.onnx.converters import convert_onnx_proto, onnx_type_str_to_typeclass, get_proto_attr
 from dace.properties import make_properties, Property, DictProperty, ListProperty
 
 _KNOWN_ONNX_PROTOS = {}
