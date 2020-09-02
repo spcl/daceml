@@ -1,8 +1,8 @@
-# dace-onnx
-DaCe frontend for machine learning
+# daceml
+DaCe frontend for machine learning. This project add ONNX operators as library nodes to DaCe, as well as an importer to load ONNX models.
 
 ## Setup
-Running ONNX Ops requires the `ONNXRuntime` environment to be set up. To do this, clone the [patched onnxruntime](https://github.com/orausch/onnxruntime), and run the following commands
+ONNX ops can be run using the ONNX Runtime as a backend. This requires the `ONNXRuntime` environment to be set up. To do this, clone the [patched onnxruntime](https://github.com/orausch/onnxruntime), and run the following commands
 
 	./build.sh --build_shared_lib --parallel --config Release
 
@@ -68,3 +68,6 @@ You can set attributes by passing them to the `ONNXConv` constructor. For exampl
 ```python
 conv = ONNXConv("MyConvNode", strides=[2, 2])
 ```
+
+## Development
+The `Makefile` contains a few commands for development tasks such as running tests, checking formatting or installing the package.
