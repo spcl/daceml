@@ -7,8 +7,9 @@ import onnx
 print("sync:", Config.get("compiler", "cuda", "syncdebug"))
 print("streams:", Config.get("compiler", "cuda", "max_concurrent_streams"))
 print("build_type :", Config.get("compiler", "build_type"))
+
+''' Download onnx model from https://polybox.ethz.ch/index.php/s/tVng5qwlrukhZ5A '''
 model = onnx.load("bert_infer.onnx")
-#model = onnx.load("bert_opt.onnx")
 
 
 
