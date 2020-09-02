@@ -56,7 +56,6 @@ class OpChecker:
         self.op_type = op_type.encode("ascii")
         self.dll = build_checker()
 
-
     def __enter__(self):
         self._ReleaseStatus = self._get_function("ReleaseStatus")
         self._ReleaseEnv = self._get_function("ReleaseEnv")
@@ -146,7 +145,8 @@ class OpChecker:
         }
         return self
 
-    def try_create(self, cuda=False) -> Optional[Tuple[List[bool], List[bool]]]:
+    def try_create(self,
+                   cuda=False) -> Optional[Tuple[List[bool], List[bool]]]:
         kernel = ctypes.c_void_p()
         self._check_status(
             self._CreateExecutableKernel(self._session, self._context,
@@ -158,16 +158,20 @@ class OpChecker:
             inputs_on_cpu = []
             for i in range(self.n_outputs):
                 result = ctypes.c_int(-1)
-                self._ExecutableKernelContext_IsOutputOnCpu(kernel, ctypes.c_int(i), ctypes.byref(result))
+                self._ExecutableKernelContext_IsOutputOnCpu(
+                    kernel, ctypes.c_int(i), ctypes.byref(result))
                 if result == -1:
-                    raise ONNXOpValidationError("Could not determine output storage of op")
+                    raise ONNXOpValidationError(
+                        "Could not determine output storage of op")
                 outputs_on_cpu.append(bool(result))
 
             for i in range(self.n_inputs):
                 result = ctypes.c_int(-1)
-                self._ExecutableKernelContext_IsInputOnCpu(kernel, ctypes.c_int(i), ctypes.byref(result))
+                self._ExecutableKernelContext_IsInputOnCpu(
+                    kernel, ctypes.c_int(i), ctypes.byref(result))
                 if result == -1:
-                    raise ONNXOpValidationError("Could not determine output storage of op")
+                    raise ONNXOpValidationError(
+                        "Could not determine output storage of op")
                 inputs_on_cpu.append(bool(result))
 
             self._ReleaseExecutableKernel(kernel)
@@ -268,12 +272,14 @@ class OpChecker:
             self._check_status(
                 add_attr_function(self._context, ctypes.c_char_p(attr_name),
                                   p_data, ctypes.c_size_t(len(data)), shape,
-                                  ctypes.c_size_t(len(attr_value.shape)), type))
+                                  ctypes.c_size_t(len(attr_value.shape)),
+                                  type))
 
 
 def check_op(sdfg, state, node, cuda=False) -> Tuple[List[bool], List[bool]]:
     """ Check whether a ONNXOp node has an implementation in ORT """
-    with OpChecker(node.schema.name, node.name, check_io_locations=True) as checker:
+    with OpChecker(node.schema.name, node.name,
+                   check_io_locations=True) as checker:
         for attribute, onnx_attribute in node.schema.attributes.items():
             if hasattr(node, attribute):
                 checker.add_attribute(attribute, getattr(node, attribute),

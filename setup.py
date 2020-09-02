@@ -21,13 +21,11 @@ setup(
     ],
     python_requires='>=3.6',
     packages=['daceml'],
-    package_data={
-        '': [
-            '*.cpp'
-        ]
-    },
+    package_data={'': ['*.cpp']},
     install_requires=[
         # from https://github.com/pypa/pip/issues/6658#issuecomment-506841157
         'dace@file://localhost' + PKG_DIR + "/dace",
-        'onnx == 1.7.0', 'numba'],
+        'onnx == 1.7.0',
+        'numba'
+    ],
     extras_require={'testing': ['coverage', 'pytest', 'yapf']})

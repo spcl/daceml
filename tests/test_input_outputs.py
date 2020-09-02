@@ -191,8 +191,10 @@ def test_add(gpu, scalars, apply_strict, break_opchecker):
         op_node = donnx.ONNXAdd("Add")
 
         state.add_node(op_node)
-        state.add_edge(access_X, None, op_node, "A", sdfg.get_array_memlet("X_arr"))
-        state.add_edge(access_W, None, op_node, "B", sdfg.get_array_memlet("W_arr"))
+        state.add_edge(access_X, None, op_node, "A",
+                       sdfg.get_array_memlet("X_arr"))
+        state.add_edge(access_W, None, op_node, "B",
+                       sdfg.get_array_memlet("W_arr"))
 
         if scalars:
             state.add_edge(op_node, "C", access_Z, None,

@@ -56,7 +56,6 @@ def _add_ort_init_code(sdfg: SDFG):
         __ort_check_status(OrtSessionOptionsAppendExecutionProvider_CPU(__ort_session_options, /*use_arena=*/0));
         """)
 
-
         session_cleanup_code = """
         __ort_api->ReleaseMemoryInfo(__ort_cpu_mem_info);
         __ort_api->ReleaseKernelSession(__ort_session);
@@ -64,11 +63,14 @@ def _add_ort_init_code(sdfg: SDFG):
         __ort_api->ReleaseEnv(__ort_env);
         """
 
-        if any(hasattr(node, "schedule")
-               and node.schedule == ScheduleType.GPU_Device for state in sdfg.nodes() for node in state.nodes()):
+        if any(
+                hasattr(node, "schedule")
+                and node.schedule == ScheduleType.GPU_Device
+                for state in sdfg.nodes() for node in state.nodes()):
             # if the SDFG contains a GPU node, add the CUDA provider and the memory_info
             sdfg.append_global_code("OrtMemoryInfo* __ort_cuda_mem_info;\n")
-            sdfg.append_global_code("OrtMemoryInfo* __ort_cuda_pinned_mem_info;\n")
+            sdfg.append_global_code(
+                "OrtMemoryInfo* __ort_cuda_pinned_mem_info;\n")
             sdfg.append_init_code("""
             __ort_check_status(__ort_api->CreateMemoryInfo("Cuda", /*allocator_type=*/OrtDeviceAllocator, /*device=*/0, /*mem_type=*/OrtMemTypeDefault, &__ort_cuda_mem_info));
             __ort_check_status(__ort_api->CreateMemoryInfo("CudaPinned", /*allocator_type=*/OrtDeviceAllocator, /*device=*/0, /*mem_type=*/OrtMemTypeCPU, &__ort_cuda_pinned_mem_info));
@@ -86,7 +88,6 @@ def _add_ort_init_code(sdfg: SDFG):
         """)
 
 
-
 def get_position(schema: ONNXSchema, is_input: bool, parameter_name: str):
     """Get the position that the parameter has in the onnx op"""
     if "__" in parameter_name:
@@ -94,11 +95,9 @@ def get_position(schema: ONNXSchema, is_input: bool, parameter_name: str):
     else:
         variadic_number = None
 
-    matches = [
-        (i, param)
-        for i, param in enumerate(schema.inputs if is_input else schema.outputs)
-        if param.name == parameter_name
-    ]
+    matches = [(i, param) for i, param in enumerate(
+        schema.inputs if is_input else schema.outputs)
+               if param.name == parameter_name]
     if len(matches) != 1:
         raise ValueError(
             "Error in schema: found more or less than one parameter with name {}"
@@ -161,7 +160,8 @@ def parse_variadic_param(param):
     return name, number
 
 
-def _gen_attr_init_code(kernel_context: str, attr: ONNXAttribute, value) -> str:
+def _gen_attr_init_code(kernel_context: str, attr: ONNXAttribute,
+                        value) -> str:
     """ Get the code to setup an attribute on an onnx::NodeProto
         :param kernel_context: the variable name of the kernel context
         :param attr: the attribute to setup
@@ -307,18 +307,22 @@ class ONNXOp(nd.LibraryNode):
         return self._iter_params_in_onnx_order(state, inputs=True)
 
     def _iter_params_in_onnx_order(self, state, inputs=False):
-        parameters = list(self.schema.inputs if inputs else self.schema.outputs)
+        parameters = list(
+            self.schema.inputs if inputs else self.schema.outputs)
         if parameters[-1].param_type == ONNXParameterType.Variadic:
             name = parameters[-1].name
-            parameters = itertools.chain([param.name for param in parameters[:-1]],
-                                      (name + "__" + str(i)
-                                       for i in itertools.count()))
+            parameters = itertools.chain(
+                [param.name for param in parameters[:-1]],
+                (name + "__" + str(i) for i in itertools.count()))
         else:
             parameters = [param.name for param in parameters]
 
         edges = state.in_edges(self) if inputs else state.out_edges(self)
         parameters = list(itertools.islice(parameters, len(edges)))
-        conn_to_edge = {edge.dst_conn if inputs else edge.src_conn : edge for edge in edges}
+        conn_to_edge = {
+            edge.dst_conn if inputs else edge.src_conn: edge
+            for edge in edges
+        }
 
         return [conn_to_edge[name] for name in parameters]
 
@@ -384,8 +388,8 @@ class ONNXOp(nd.LibraryNode):
                 conn_name = edge.dst_conn
                 if conn_name not in self.in_connectors:
                     raise ValueError(
-                        "Memlet {} leading to nonexistent input connector '{}'".
-                        format(edge.data, conn_name))
+                        "Memlet {} leading to nonexistent input connector '{}'"
+                        .format(edge.data, conn_name))
             else:
                 conn_name = edge.src_conn
                 if conn_name not in self.out_connectors:
@@ -428,8 +432,8 @@ class ONNXOp(nd.LibraryNode):
         missing_outputs = required_outputs.difference(passed_outputs)
         if len(missing_outputs) > 0:
             raise ValueError(
-                get_missing_arguments_message(self.schema.name, missing_outputs,
-                                              "output"))
+                get_missing_arguments_message(self.schema.name,
+                                              missing_outputs, "output"))
 
         # check that we have no unknown in edges
         ##########################################
@@ -532,8 +536,8 @@ class ONNXOp(nd.LibraryNode):
             if '__' in conn_name and matched.param_type != ONNXParameterType.Variadic:
                 raise ValueError(
                     "Got variadic argument '{}' for non-variadic parameter '{}'."
-                    " Ensure that non-variadic args do not contain '__'".format(
-                        conn_name, matched.name))
+                    " Ensure that non-variadic args do not contain '__'".
+                    format(conn_name, matched.name))
 
             if '__' not in conn_name and matched.param_type == ONNXParameterType.Variadic:
                 raise ValueError(
@@ -592,7 +596,8 @@ class ONNXOp(nd.LibraryNode):
         sdfg.append_global_code(
             "OrtExecutableKernel *__ort_kernel_{};\n".format(unique_id))
         sdfg.append_global_code(
-            "OrtExecutableKernelContext *__ort_context_{};\n".format(unique_id))
+            "OrtExecutableKernelContext *__ort_context_{};\n".format(
+                unique_id))
 
         sdfg.append_init_code("""
         {{
@@ -614,7 +619,10 @@ class ONNXOp(nd.LibraryNode):
             provider_index = 1
             try:
                 # the ith position indicates whether the ith output is in host memory
-                inputs_on_host, outputs_on_host = check_op(sdfg, state, node, cuda=True)
+                inputs_on_host, outputs_on_host = check_op(sdfg,
+                                                           state,
+                                                           node,
+                                                           cuda=True)
 
             except ONNXOpValidationError as e:
                 # fallback to CPU
@@ -634,8 +642,10 @@ class ONNXOp(nd.LibraryNode):
         input_copy_required = defaultdict(dict)
         output_copy_required = defaultdict(dict)
 
-        assert len(node.iter_outputs_in_onnx_order(state)) == len(outputs_on_host)
-        assert len(node.iter_inputs_in_onnx_order(state)) == len(inputs_on_host)
+        assert len(
+            node.iter_outputs_in_onnx_order(state)) == len(outputs_on_host)
+        assert len(
+            node.iter_inputs_in_onnx_order(state)) == len(inputs_on_host)
 
         # check outputs
         for edge, output_on_host in zip(node.iter_outputs_in_onnx_order(state),
@@ -650,8 +660,9 @@ class ONNXOp(nd.LibraryNode):
                 is_device_mismatch = not can_access(ScheduleType.GPU_Device,
                                                     array.storage)
 
-            if isinstance(array, dt.Scalar
-                          ) and actual_node_schedule == ScheduleType.GPU_Device:
+            if isinstance(
+                    array, dt.Scalar
+            ) and actual_node_schedule == ScheduleType.GPU_Device:
                 # ORT kernels expect scalars to be cudaMalloced. We will copy during expansion to enforce this
                 is_device_mismatch = True
                 output_copy_required[edge.src_conn]['copy_to_array'] = True
@@ -662,7 +673,8 @@ class ONNXOp(nd.LibraryNode):
                     'storage'] = StorageType.Default if output_on_host else StorageType.GPU_Global
 
         # check inputs (same thing again)
-        for edge, input_on_host in zip(node.iter_inputs_in_onnx_order(state), inputs_on_host):
+        for edge, input_on_host in zip(node.iter_inputs_in_onnx_order(state),
+                                       inputs_on_host):
             array = sdfg.arrays[edge.data.data]
 
             if input_on_host:
@@ -672,8 +684,9 @@ class ONNXOp(nd.LibraryNode):
                 is_device_mismatch = not can_access(ScheduleType.GPU_Device,
                                                     array.storage)
 
-            if isinstance(array, dt.Scalar
-                          ) and actual_node_schedule == ScheduleType.GPU_Device:
+            if isinstance(
+                    array, dt.Scalar
+            ) and actual_node_schedule == ScheduleType.GPU_Device:
                 # ORT kernels expect scalars to be cudaMalloced. We will copy during expansion to enforce this
                 is_device_mismatch = True
                 input_copy_required[edge.dst_conn]['copy_to_array'] = True
@@ -727,8 +740,9 @@ class ONNXOp(nd.LibraryNode):
             copy_to_array = (
                 (parameter_name in output_copy_required
                  and 'copy_to_array' in output_copy_required[parameter_name])
-                or (parameter_name in input_copy_required
-                    and 'copy_to_array' in input_copy_required[parameter_name]))
+                or
+                (parameter_name in input_copy_required
+                 and 'copy_to_array' in input_copy_required[parameter_name]))
             if desc.storage == StorageType.Default:
                 mem_info = "__ort_cpu_mem_info"
             elif desc.storage == StorageType.GPU_Global:
@@ -736,7 +750,9 @@ class ONNXOp(nd.LibraryNode):
             elif desc.storage == StorageType.CPU_Pinned:
                 mem_info = "__ort_cuda_pinned_mem_info"
             else:
-                raise ValueError("Unsupported storage type {} for input to ONNX node".format(desc.storage))
+                raise ValueError(
+                    "Unsupported storage type {} for input to ONNX node".
+                    format(desc.storage))
             if (isinstance(desc, dt.Scalar) and
                     # when copying to array, the ort value is not a scalar but an array
                     not copy_to_array):
@@ -752,13 +768,14 @@ class ONNXOp(nd.LibraryNode):
                     ONNX_TENSOR_ELEMENT_DATA_TYPE_{type_str},
                     &{ort_value_name}
                 ));
-                """.format(input_output_string=input_output_string,
-                           mem_info=mem_info,
-                           edge_connector_name=edge_connector_name,
-                           data_size=reduce(lambda x, y: x * y, desc.shape),
-                           ctype=desc.dtype.ctype,
-                           type_str=reversed_onnx_dtype_map[desc.dtype].upper(),
-                           ort_value_name=ort_value_name)
+                """.format(
+                    input_output_string=input_output_string,
+                    mem_info=mem_info,
+                    edge_connector_name=edge_connector_name,
+                    data_size=reduce(lambda x, y: x * y, desc.shape),
+                    ctype=desc.dtype.ctype,
+                    type_str=reversed_onnx_dtype_map[desc.dtype].upper(),
+                    ort_value_name=ort_value_name)
                 connector_dict[parameter_name] = None
 
             elif isinstance(desc, dt.Array) or copy_to_array:
@@ -789,15 +806,16 @@ class ONNXOp(nd.LibraryNode):
                     ONNX_TENSOR_ELEMENT_DATA_TYPE_{type_str},
                     &{ort_value_name}
                 ));
-                """.format(input_output_string=input_output_string,
-                           data=data,
-                           mem_info=mem_info,
-                           parameter_name=parameter_name,
-                           data_size=reduce(lambda x, y: x * y, desc.shape),
-                           ctype=desc.dtype.ctype,
-                           dims_size=len(dims),
-                           type_str=reversed_onnx_dtype_map[desc.dtype].upper(),
-                           ort_value_name=ort_value_name)
+                """.format(
+                    input_output_string=input_output_string,
+                    data=data,
+                    mem_info=mem_info,
+                    parameter_name=parameter_name,
+                    data_size=reduce(lambda x, y: x * y, desc.shape),
+                    ctype=desc.dtype.ctype,
+                    dims_size=len(dims),
+                    type_str=reversed_onnx_dtype_map[desc.dtype].upper(),
+                    ort_value_name=ort_value_name)
             else:
                 raise NotImplementedError(
                     "Data-descriptor type {} not supported for ONNX nodes".
@@ -883,8 +901,8 @@ class ONNXOp(nd.LibraryNode):
                 if not (isinstance(desc, dt.Array)
                         or isinstance(desc, dt.Scalar)):
                     raise ValueError(
-                        "Unsupported data type {} connected to an ONNX tasklet".
-                        format(type(desc)))
+                        "Unsupported data type {} connected to an ONNX tasklet"
+                        .format(type(desc)))
 
                 if parameter_name not in (input_copy_required if is_input else
                                           output_copy_required):
@@ -1034,7 +1052,8 @@ for schema in onnx.defs.get_all_schemas():
                 except Exception as ex:
                     raise ValueError(
                         "Node validation failed: {} (at state {}, node {}, which is an ONNX Operator of type {})"
-                        .format(str(ex), state, node, self.schema.name)) from ex
+                        .format(str(ex), state, node,
+                                self.schema.name)) from ex
 
                 return self.expansion(node, state, sdfg)
 

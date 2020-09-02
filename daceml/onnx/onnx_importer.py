@@ -133,7 +133,8 @@ class ONNXModel:
                                     params_len=params_len))
                     conn_name = params[-1].name + "__" + str(param_idx -
                                                              params_len + 1)
-                elif params[param_idx].param_type == ONNXParameterType.Variadic:
+                elif params[
+                        param_idx].param_type == ONNXParameterType.Variadic:
                     # this is a variadic parameter, and it is within the range of params, so it must be the first
                     # instance of a variadic parameter
                     conn_name = params[param_idx].name + "__0"
@@ -237,8 +238,8 @@ class ONNXModel:
                     if clean_onnx_name(str(sym)) not in self.sdfg.symbols:
                         self.sdfg.add_symbol(clean_onnx_name(str(sym)),
                                              stype=int)
-                    parsed = parsed.subs(sym,
-                                         dace.symbol(clean_onnx_name(str(sym))))
+                    parsed = parsed.subs(
+                        sym, dace.symbol(clean_onnx_name(str(sym))))
 
                 shape.append(parsed)
             else:

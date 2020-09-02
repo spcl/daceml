@@ -4,6 +4,7 @@ import pytest
 import dace
 import daceml.onnx as donnx
 
+
 def test_sum(gpu):
     sdfg = dace.SDFG("test_variadic")
 
@@ -24,9 +25,12 @@ def test_sum(gpu):
     state.add_node(op_node)
     for i in range(3):
         op_node.add_in_connector("data_0__{}".format(i))
-    state.add_edge(access_A, None, op_node, "data_0__0", sdfg.get_array_memlet("A_arr"))
-    state.add_edge(access_B, None, op_node, "data_0__1", sdfg.get_array_memlet("B_arr"))
-    state.add_edge(access_C, None, op_node, "data_0__2", sdfg.get_array_memlet("C_arr"))
+    state.add_edge(access_A, None, op_node, "data_0__0",
+                   sdfg.get_array_memlet("A_arr"))
+    state.add_edge(access_B, None, op_node, "data_0__1",
+                   sdfg.get_array_memlet("B_arr"))
+    state.add_edge(access_C, None, op_node, "data_0__2",
+                   sdfg.get_array_memlet("C_arr"))
 
     state.add_edge(op_node, "sum", access_result, None,
                    sdfg.get_array_memlet("__return"))

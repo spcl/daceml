@@ -11,6 +11,7 @@ from dace.properties import make_properties, Property, DictProperty, ListPropert
 
 _KNOWN_ONNX_PROTOS = {}
 
+
 def onnx_representation(represents, **mapping):
     """ Decorator for python representations of ONNX protobufs.
 
@@ -134,6 +135,7 @@ class ONNXAttributeType(aenum.AutoNumberEnum):
     Tensor = ()
     Unsupported = ()
 
+
 _ATTR_TYPE_TO_PYTHON_TYPE = {
     ONNXAttributeType.Int: int,
     ONNXAttributeType.Ints: int,
@@ -163,8 +165,8 @@ class ONNXAttribute:
     def validate(self):
         if self.required and self.type == ONNXAttributeType.Unsupported:
             raise NotImplementedError(
-                "Required attribute '{}' has an unsupported type"
-                .format(self.name))
+                "Required attribute '{}' has an unsupported type".format(
+                    self.name))
 
     def __repr__(self):
         return self.name
@@ -237,13 +239,11 @@ class ONNXSchema:
                     raise ValueError(
                         "Attempted to insert new type constraint, but the name already existed. Please open an issue."
                     )
-                parsed_typeclass = onnx_type_str_to_typeclass(
-                    param.type_str)
+                parsed_typeclass = onnx_type_str_to_typeclass(param.type_str)
 
                 if parsed_typeclass is None:
-                    print(
-                        "Could not parse typeStr '{}' for parameter '{}'".
-                        format(param.type_str, param.name))
+                    print("Could not parse typeStr '{}' for parameter '{}'".
+                          format(param.type_str, param.name))
 
                 cons = ONNXTypeConstraint(
                     cons_name,
@@ -257,7 +257,8 @@ class ONNXSchema:
                  or param.param_type == ONNXParameterType.Variadic)
                     and len(self.type_constraints[param.type_str].types) == 0):
                 raise NotImplementedError(
-                    "None of the types for parameter '{}' are supported".format(param.name))
+                    "None of the types for parameter '{}' are supported".
+                    format(param.name))
 
         # check that all variadic parameter names do not contain "__"
         for param in chain(self.inputs, self.outputs):

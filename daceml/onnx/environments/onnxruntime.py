@@ -11,7 +11,8 @@ if 'ORT_ROOT' not in os.environ:
     )
 
 ORT_PATH = os.environ['ORT_ROOT']
-cand_path = os.path.join(ORT_PATH, "build", "Linux", dace.Config.get("compiler", "build_type"))
+cand_path = os.path.join(ORT_PATH, "build", "Linux",
+                         dace.Config.get("compiler", "build_type"))
 
 if os.path.isdir(cand_path):
     ORT_BUILD_PATH = cand_path
@@ -19,6 +20,7 @@ else:
     ORT_BUILD_PATH = os.path.join(ORT_PATH, "build", "Linux", "Release")
 
 ORT_DLL_PATH = os.path.join(ORT_BUILD_PATH, "libonnxruntime.so")
+
 
 @dace.library.environment
 class ONNXRuntime:
@@ -48,9 +50,7 @@ class ONNXRuntime:
         os.path.join(ORT_PATH, "include", "onnxruntime", "core", "providers",
                      "cuda")
     ]
-    cmake_libraries = [
-        ORT_DLL_PATH
-    ]
+    cmake_libraries = [ORT_DLL_PATH]
     cmake_compile_flags = []
     cmake_link_flags = []
     cmake_files = []

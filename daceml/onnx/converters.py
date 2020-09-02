@@ -117,9 +117,10 @@ def convert_attribute_proto(proto):
         return None
 
     if onnx_type not in inv_map:
-        type_str = {v: k
-                    for k, v in onnx.AttributeProto.AttributeType.items()
-                    }[onnx_type]
+        type_str = {
+            v: k
+            for k, v in onnx.AttributeProto.AttributeType.items()
+        }[onnx_type]
         raise NotImplementedError(
             "Only FLOAT, FLOATS, INT, INTS, STRING, STRINGS and TENSOR attributes are supported, got attribute with type {}"
             .format(type_str))
@@ -177,6 +178,7 @@ def onnx_tensor_type_to_typeclass(elem_type: int) -> typeclass:
 
     return inv_map[elem_type]
 
+
 def typeclass_to_onnx_str(dtype: typeclass) -> str:
     #  we cache the reverse map as an attribute of the method
     if hasattr(typeclass_to_onnx_str, "inv_map"):
@@ -185,13 +187,14 @@ def typeclass_to_onnx_str(dtype: typeclass) -> str:
         inv_map = {v: k for k, v in ONNX_DTYPES_TO_DACE_TYPE_CLASS.items()}
 
     if dtype not in inv_map:
-        raise ValueError("Attempted to convert unsupported dace type to ONNX type: {}".format(dtype))
+        raise ValueError(
+            "Attempted to convert unsupported dace type to ONNX type: {}".
+            format(dtype))
 
     return inv_map[dtype]
 
 
-def onnx_type_str_to_typeclass(
-        onnx_str) -> Union[typeclass, None]:
+def onnx_type_str_to_typeclass(onnx_str) -> Union[typeclass, None]:
     """Converts an onnx type string, like tensor(float16) to a dace typeclass"""
 
     results = re.findall(r"^tensor\((.+)\)", onnx_str)

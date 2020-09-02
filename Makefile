@@ -2,6 +2,7 @@ VENV_PATH ?= venv
 PYTHON ?= $(VENV_PATH)/bin/python
 PYTEST ?= $(VENV_PATH)/bin/pytest
 PIP ?= $(VENV_PATH)/bin/pip
+YAPF ?= $(VENV_PATH)/bin/yapf
 
 clean:
 	rm -r $(VENV_PATH)
@@ -16,3 +17,10 @@ install:
 
 test:
 	$(PYTEST) tests
+
+check-formatting:
+	$(YAPF) --parallel \
+		--diff \
+		--recursive \
+		daceml tests setup.py \
+	       	--exclude daceml/onnx/symbolic_shape_infer.py
