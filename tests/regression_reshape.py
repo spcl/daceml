@@ -1,12 +1,8 @@
-import copy
-import numpy as np
-
 import onnx
 
-import dace
-from dace.frontend.onnx import ONNXModel
+from daceml.onnx import ONNXModel
 
-if __name__ == "__main__":
+def test_reshape():
     model = onnx.load("onnx_files/reshape.onnx")
     dace_model = ONNXModel("reshape", model, cuda=True)
-    out = dace_model()
+    dace_model()

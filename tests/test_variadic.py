@@ -2,11 +2,8 @@ import numpy as np
 import pytest
 
 import dace
-import daceml
-from tests.onnx.utils import parameterize_gpu
+import daceml.onnx as donnx
 
-
-@parameterize_gpu
 def test_sum(gpu):
     sdfg = dace.SDFG("test_variadic")
 

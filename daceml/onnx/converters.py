@@ -36,7 +36,7 @@ def get_proto_attr(proto, name):
 
 
 def convert_onnx_proto(attribute):
-    from dace.libraries.onnx.schema import ONNXAttributeType, _KNOWN_ONNX_PROTOS, ONNXParameterType
+    from daceml.onnx.schema import ONNXAttributeType, _KNOWN_ONNX_PROTOS, ONNXParameterType
 
     if type(attribute) in _KNOWN_ONNX_PROTOS:
         return _KNOWN_ONNX_PROTOS[type(attribute)].from_onnx_proto(attribute)
