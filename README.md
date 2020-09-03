@@ -5,13 +5,29 @@ Machine learning powered by DaCe.
 This project add ONNX operators as library nodes to DaCe, as well as a frontend to load ONNX models.
 
 ## Setup
-ONNX ops can be run using the ONNX Runtime as a backend. This requires the `ONNXRuntime` environment to be set up. To do this, clone the [patched onnxruntime](https://github.com/orausch/onnxruntime), and run the following commands
+ONNX ops can be run using the ONNX Runtime as a backend. This requires the `ONNXRuntime` environment to be set up. There are two options for this
+
+### Download prebuilt release (CPU only)
+Run the following commands 
+	
+	wget https://github.com/orausch/onnxruntime/releases/download/build1/onnxruntime_dist_cpu.tar.gz
+	tar -xzf onnxruntime_dist_cpu.tar.gz
+
+Finally, set the environment variable `ORT_RELEASE` to the location of the extracted file (for example: `export ORT_RELEASE=onnxruntime_dist_cpu`).
+
+### Build from source
+To do this, clone the [patched onnxruntime](https://github.com/orausch/onnxruntime), and run the following commands
 
 	./build.sh --build_shared_lib --parallel --config Release
 
-You should add ``-jN`` to the make command for parallel builds. See ``onnxruntime/BUILD.md`` for more details.
+To enable CUDA, you should add the relevant arguments. For example:
+
+	./build.sh --use_cuda --cuda_version=10.1 --cuda_home=/usr/local/cuda --cudnn_home=/usr/local/cuda --build_shared_lib --parallel --config Release
+
+See ``onnxruntime/BUILD.md`` for more details.
 
 Finally, set the environment variable `ORT_ROOT` to the location of the built repository.
+
 
 ## Importing ONNX models
 ONNX models can be imported using the `ONNXModel` frontend.
@@ -74,3 +90,8 @@ conv = ONNXConv("MyConvNode", strides=[2, 2])
 
 ## Development
 The `Makefile` contains a few commands for development tasks such as running tests, checking formatting or installing the package.
+
+For example, the following command would install the package and run tests
+	VENV_PATH='' make install test
+
+If you would like to create a virtual environment and install to it, remove `VENV_PATH=''` from the above command
