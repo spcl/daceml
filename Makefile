@@ -35,6 +35,13 @@ else
 	. $(VENV_PATH)/bin/activate && $(PYTEST) tests
 endif
 
+test-gpu: 
+ifeq ($(VENV_PATH),)
+	$(PYTEST) tests --gpu
+else
+	. $(VENV_PATH)/bin/activate && $(PYTEST) tests --gpu
+endif
+
 check-formatting:
 ifeq ($(VENV_PATH),)
 	$(YAPF) --parallel \
