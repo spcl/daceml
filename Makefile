@@ -4,55 +4,36 @@ PYTEST ?= pytest
 PIP ?= pip
 YAPF ?= yapf
 
+ifeq ($(VENV_PATH),)
+ACTIVATE = 
+else
+ACTIVATE = . $(VENV_PATH)/bin/activate &&
+endif
+
 clean:
 	! test -d $(VENV_PATH) || rm -r $(VENV_PATH)
 
 reinstall: venv
-ifeq ($(VENV_PATH),)
-	$(PIP) install --upgrade --force-reinstall -e .[testing] 
-else
-	. $(VENV_PATH)/bin/activate && $(PIP) install --upgrade --force-reinstall -e .[testing] 
-endif
-
+	$(ACTIVATE) $(PIP) install --upgrade --force-reinstall -e .[testing]
 
 venv: 
 ifneq ($(VENV_PATH),)
-	test -d $(VENV_PATH) || echo "Creating new venv" && python3 -m venv ./$(VENV_PATH)
-	ls $(VENV_PATH)/bin
+	test -d $(VENV_PATH) || echo "Creating new venv" && $(PYTHON) -m venv ./$(VENV_PATH)
 endif
 
 install: venv
-ifeq ($(VENV_PATH),)
-	$(PIP) install -e .[testing]
-else
-	. $(VENV_PATH)/bin/activate && $(PIP) install -e .[testing] 
-endif
+	$(ACTIVATE) $(PIP) install -e .[testing]
 
 test: 
-ifeq ($(VENV_PATH),)
-	$(PYTEST) tests
-else
-	. $(VENV_PATH)/bin/activate && $(PYTEST) tests
-endif
+	$(ACTIVATE) $(PYTEST) tests
 
 test-gpu: 
-ifeq ($(VENV_PATH),)
-	$(PYTEST) tests --gpu
-else
-	. $(VENV_PATH)/bin/activate && $(PYTEST) tests --gpu
-endif
+	$(ACTIVATE) $(PYTEST) tests --gpu
 
 check-formatting:
-ifeq ($(VENV_PATH),)
-	$(YAPF) --parallel \
-		--diff \
-		--recursive \
-		daceml tests setup.py \
-	       	--exclude daceml/onnx/symbolic_shape_infer.py
-else
-	. $(VENV_PATH)/bin/activate && $(YAPF) --parallel \
+	$(ACTIVATE) $(YAPF) \
+		--parallel \
 		--diff \
 		--recursive \
 		daceml tests setup.py \
 		--exclude daceml/onnx/symbolic_shape_infer.py
-endif
