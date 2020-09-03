@@ -1,5 +1,8 @@
+[![Build Status](https://travis-ci.org/spcl/daceml.svg?branch=master)](https://travis-ci.org/spcl/daceml)
 # daceml
-DaCe frontend for machine learning. This project add ONNX operators as library nodes to DaCe, as well as an importer to load ONNX models.
+Machine learning powered by DaCe. 
+
+This project add ONNX operators as library nodes to DaCe, as well as a frontend to load ONNX models.
 
 ## Setup
 ONNX ops can be run using the ONNX Runtime as a backend. This requires the `ONNXRuntime` environment to be set up. To do this, clone the [patched onnxruntime](https://github.com/orausch/onnxruntime), and run the following commands
