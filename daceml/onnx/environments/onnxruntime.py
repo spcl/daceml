@@ -1,25 +1,49 @@
 import os
 import dace.library
-from ctypes import CDLL
 
-if 'ORT_ROOT' not in os.environ:
-    raise ValueError(
-        "This environment expects the environment variable "
-        "ORT_ROOT to be set to the root of the patched onnxruntime repository "
-        "(https://github.com/orausch/onnxruntime).\n"
-        "See the docstring for dace.libraries.onnx.environments.ONNXRuntime for more information."
-    )
+if 'ORT_ROOT' not in os.environ and 'ORT_RELEASE' not in os.environ:
+    raise ValueError("This environment expects the environment variable "
+                     "ORT_ROOT or ORT_RELEASE to be set (see README.md)")
 
-ORT_PATH = os.environ['ORT_ROOT']
-cand_path = os.path.join(ORT_PATH, "build", "Linux",
-                         dace.Config.get("compiler", "build_type"))
 
-if os.path.isdir(cand_path):
-    ORT_BUILD_PATH = cand_path
+def _get_src_includes():
+    """
+    Get the includes and dll path when ORT is built from source
+    """
+    ort_path = os.path.abspath(os.environ['ORT_ROOT'])
+    cand_path = os.path.join(ort_path, "build", "Linux",
+                             dace.Config.get("compiler", "build_type"))
+
+    if os.path.isdir(cand_path):
+        ort_build_path = cand_path
+    else:
+        ort_build_path = os.path.join(ort_path, "build", "Linux", "Release")
+
+    ort_dll_path = os.path.join(ort_build_path, "libonnxruntime.so")
+    includes = [
+        os.path.join(ort_path, "include", "onnxruntime", "core", "session"),
+        os.path.join(ort_path, "include", "onnxruntime", "core", "providers",
+                     "cpu"),
+        os.path.join(ort_path, "include", "onnxruntime", "core", "providers",
+                     "cuda")
+    ]
+    return includes, ort_dll_path
+
+
+def _get_dist_includes():
+    """
+    Get the includes and dll path when ORT is used from the distribution package
+    """
+    ort_path = os.path.abspath(os.environ['ORT_RELEASE'])
+    includes = [os.path.join(ort_path, 'include')]
+    ort_dll_path = os.path.join(ort_path, 'lib', 'libonnxruntime.so')
+    return includes, ort_dll_path
+
+
+if 'ORT_RELEASE' in os.environ:
+    INCLUDES, ORT_DLL_PATH = _get_dist_includes()
 else:
-    ORT_BUILD_PATH = os.path.join(ORT_PATH, "build", "Linux", "Release")
-
-ORT_DLL_PATH = os.path.join(ORT_BUILD_PATH, "libonnxruntime.so")
+    INCLUDES, ORT_DLL_PATH = _get_src_includes()
 
 
 @dace.library.environment
@@ -39,17 +63,7 @@ class ONNXRuntime:
     cmake_minimum_version = None
     cmake_packages = []
     cmake_variables = {}
-    cmake_includes = [
-        ORT_BUILD_PATH,
-        os.path.join(ORT_PATH, "cmake", "external", "onnx"),
-        os.path.join(ORT_PATH, "include"),
-        os.path.join(ORT_PATH, "cmake", "external", "protobuf", "src"),
-        os.path.join(ORT_PATH, "include", "onnxruntime", "core", "session"),
-        os.path.join(ORT_PATH, "include", "onnxruntime", "core", "providers",
-                     "cpu"),
-        os.path.join(ORT_PATH, "include", "onnxruntime", "core", "providers",
-                     "cuda")
-    ]
+    cmake_includes = INCLUDES
     cmake_libraries = [ORT_DLL_PATH]
     cmake_compile_flags = []
     cmake_link_flags = []

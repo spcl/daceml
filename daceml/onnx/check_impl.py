@@ -6,6 +6,7 @@ from typing import Optional, List, Tuple
 import numpy as np
 
 import dace
+import daceml
 from dace.dtypes import DTYPE_TO_TYPECLASS
 from daceml.onnx.schema import ONNXAttributeType
 from daceml.onnx.converters import ONNX_DTYPES_TO_DACE_TYPE_CLASS
@@ -23,7 +24,7 @@ def build_checker():
         return build_checker.dll
 
     checker_code_path = os.path.join(
-        os.path.dirname(inspect.getfile(dace.libraries.onnx)), "include",
+        os.path.dirname(inspect.getfile(daceml.onnx)), "include",
         "op_checker.h")
 
     with open(checker_code_path, "r") as f:

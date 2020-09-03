@@ -1,0 +1,11 @@
+language: python
+python:
+  - "3.7"
+env:
+  - ORT_RELEASE=onnxruntime_dist_cpu VENV_PATH='' # disable venv for Makefile
+install:
+  - wget https://github.com/orausch/onnxruntime/releases/download/build1/onnxruntime_dist_cpu.tar.gz
+  - tar -xzf onnxruntime_dist_cpu.tar.gz
+  - make install
+script:
+  - make test
