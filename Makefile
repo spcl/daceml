@@ -25,10 +25,10 @@ install: venv
 	$(ACTIVATE) $(PIP) install -e .[testing]
 
 test: 
-	$(ACTIVATE) $(PYTEST) tests
+	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests
 
 test-gpu: 
-	$(ACTIVATE) $(PYTEST) tests --gpu
+	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests --gpu
 
 check-formatting:
 	$(ACTIVATE) $(YAPF) \
