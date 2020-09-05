@@ -7,7 +7,6 @@ import onnx
 from daceml.onnx import ONNXModel
 
 
-
 def test_bert_full(gpu):
     data_directory = os.path.join(os.path.dirname(__file__), "data")
 
@@ -22,7 +21,7 @@ def test_bert_full(gpu):
 
     model = onnx.load(bert_path)
 
-    dace_model = ONNXModel("bert", model, cuda=gpu, apply_strict=apply_strict)
+    dace_model = ONNXModel("bert", model, cuda=gpu)
     feed = {
         "input_ids:0": np.load(os.path.join(data_directory, "input_ids.npy")),
         "input_mask:0": np.load(os.path.join(data_directory,
@@ -37,3 +36,7 @@ def test_bert_full(gpu):
 
     assert np.allclose(outputs[1], unstack_0)
     assert np.allclose(outputs[0], unstack_1)
+
+
+if __name__ == "__main__":
+    test_bert_full(False)
