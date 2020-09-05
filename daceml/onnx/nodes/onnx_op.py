@@ -854,8 +854,9 @@ class ONNXOp(nd.LibraryNode):
             "__ort_api->ReleaseExecutableKernel(__ort_kernel_{});\n".format(
                 unique_id))
 
-        tasklet_code += 'fprintf(stderr, "Launching {}\\n");\n'.format(
-            unique_id)
+        # For debugging: add a print when a kernel is launched
+        #tasklet_code += 'fprintf(stderr, "Launching {}\\n");\n'.format(
+        #    unique_id)
         tasklet_code += "__ort_check_status(__ort_api->ExecutableKernel_Compute(__ort_kernel_{}));\n".format(
             unique_id)
 
