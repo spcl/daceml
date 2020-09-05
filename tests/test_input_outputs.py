@@ -80,7 +80,6 @@ def test_squeeze(gpu, apply_strict, break_opchecker):
             sdfg.apply_strict_transformations()
 
         sdfg.expand_library_nodes()
-        sdfg.save("sdfg.sdfg")
         result = sdfg(X_arr=X)
 
         assert result.shape == (1, )
