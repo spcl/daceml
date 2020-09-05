@@ -1005,7 +1005,7 @@ for schema in onnx.defs.get_all_schemas():
         for name, attr in dace_schema.attributes.items() if attr.required
     }
 
-    def __init__(self, name, _op_type, *args, location=None, **op_attributes):
+    def __init__(self, name, *args, location=None, **op_attributes):
         super(ONNXOp, self).__init__(
             name,
             location=location,
@@ -1021,11 +1021,11 @@ for schema in onnx.defs.get_all_schemas():
                 if out.param_type == ONNXParameterType.Single
             })
 
-        self._op_type = _op_type
+        self._op_type = schema.name
         if len(args) > 0:
             raise TypeError(
-                "__init__() takes 2 positional arguments but {} were given".
-                format(2 + len(args)))
+                "__init__() takes 1 positional arguments but {} were given".
+                format(1 + len(args)))
 
         missing_arguments = required_attrs.difference(op_attributes)
         if len(missing_arguments) > 0:

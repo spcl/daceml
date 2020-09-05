@@ -95,7 +95,7 @@ class ONNXModel:
                 node_name = node.op_type + "_" + str(i)
 
             # construct the dace node
-            op_node = get_onnx_node(node.op_type)(node_name, node.op_type, **op_attributes)
+            op_node = get_onnx_node(node.op_type)(node_name, **op_attributes)
             self.state.add_node(op_node)
             self._idx_to_node.append(op_node)
 
