@@ -1,5 +1,4 @@
 import numpy as np
-import pytest
 
 import dace
 import daceml.onnx as donnx
@@ -47,7 +46,3 @@ def test_sum(gpu):
     numpy_result = A + B + C
 
     assert np.allclose(result, numpy_result)
-
-
-if __name__ == '__main__':
-    pytest.main([__file__, "-s"])

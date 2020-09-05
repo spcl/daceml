@@ -1,4 +1,5 @@
 import itertools
+import logging
 from typing import Iterator, Tuple, List
 
 import dace
@@ -13,6 +14,8 @@ from daceml.onnx.environments import ONNXRuntime
 from daceml.onnx.nodes.node_utils import parse_variadic_param
 from daceml.onnx.schema import ONNXSchema, ONNXAttributeType, _ATTR_TYPE_TO_PYTHON_TYPE, ONNXParameterType
 from daceml.onnx.nodes._codegen import expand_node
+
+log = logging.getLogger(__name__)
 
 
 def get_missing_arguments_message(function_name, missing_arguments,
@@ -346,7 +349,7 @@ for schema in onnx.defs.get_all_schemas():
     try:
         dace_schema = ONNXSchema.from_onnx_proto(schema)
     except Exception as e:
-        print("Import of {} failed: {}".format(schema.name, e))
+        log.debug("Import of {} failed: {}".format(schema.name, e))
         continue
 
     docstring = dace_schema.doc
