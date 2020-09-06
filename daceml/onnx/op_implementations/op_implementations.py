@@ -206,19 +206,19 @@ def expansion(node, state, sdfg):
         # return matmulop.to_sdfg()
 
 
-@register_pure_expansion("OneHot")
-def expansion(node, state, sdfg):
-    node.validate(sdfg, state)
-
-    in_edges = state.in_edges(node)
-    out_edges = state.out_edges(node)
-
-    # atype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
-    # btype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
-    # ctype = copy.deepcopy(sdfg.arrays[in_edges[2].data.data])
-    # dtype = copy.deepcopy(sdfg.arrays[out_edges[0].data.data])
-    sdfg_exp = dace.SDFG('mulExpansion')
-    return sdfg_exp
+#@register_pure_expansion("OneHot")
+#def expansion(node, state, sdfg):
+#    node.validate(sdfg, state)
+#
+#    in_edges = state.in_edges(node)
+#    out_edges = state.out_edges(node)
+#
+#    # atype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
+#    # btype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
+#    # ctype = copy.deepcopy(sdfg.arrays[in_edges[2].data.data])
+#    # dtype = copy.deepcopy(sdfg.arrays[out_edges[0].data.data])
+#    sdfg_exp = dace.SDFG('mulExpansion')
+#    return sdfg_exp
 
 
 @register_pure_expansion("Sub")
