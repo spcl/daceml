@@ -34,8 +34,8 @@ def test_bert_full(gpu):
     unstack_0 = np.load(os.path.join(data_directory, "unstack_0.npy"))
     unstack_1 = np.load(os.path.join(data_directory, "unstack_1.npy"))
 
-    assert np.allclose(outputs[1], unstack_0)
-    assert np.allclose(outputs[0], unstack_1)
+    assert np.all(np.abs(outputs[1] - unstack_0) < 1e-4)
+    assert np.all(np.abs(outputs[0] - unstack_1) < 1e-4)
 
 
 if __name__ == "__main__":

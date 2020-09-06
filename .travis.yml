@@ -9,6 +9,6 @@ install:
   - make install
   - pip install codecov pytest-cov
 script:
-  - make test
+  - travis_wait 30 make test
   - codecov
   - make check-formatting
