@@ -2,10 +2,11 @@ from collections import Iterable, defaultdict
 from copy import deepcopy
 from functools import reduce
 
+import numpy as np
+
 import dace
 import dace.data as dt
 import dace.sdfg.nodes as nd
-import numpy as np
 from dace import SDFG, ScheduleType, StorageType
 from dace.dtypes import DTYPE_TO_TYPECLASS, can_access
 from dace.libraries.standard.nodes.code import _get_inputs_and_outputs
