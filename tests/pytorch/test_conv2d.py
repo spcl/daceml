@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 import numpy as np
 
-from daceml.pytorch import DACEModule, dace_module
+from daceml.pytorch import DaceModule, dace_module
 
 
 def test_conv2d(gpu):
@@ -25,7 +25,7 @@ def test_conv2d(gpu):
     class TestDecorator(Model):
         pass
 
-    dace_model = DACEModule(ptmodel)
+    dace_model = DaceModule(ptmodel)
     dace_output = dace_model(x)
 
     dace_model_decorated = TestDecorator()

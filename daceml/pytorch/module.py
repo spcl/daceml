@@ -14,9 +14,9 @@ from daceml.onnx import ONNXModel
 from daceml.onnx.shape_inference import infer_shapes
 
 
-class DACEModule(nn.Module):
+class DaceModule(nn.Module):
     def __init__(self, model, dummy_inputs=None):
-        super(DACEModule, self).__init__()
+        super(DaceModule, self).__init__()
 
         self.model = model
         self.sdfg = None
@@ -24,8 +24,8 @@ class DACEModule(nn.Module):
             self.dace_model = self.initialize_sdfg(dummy_inputs)
 
     def initialize_sdfg(self, dummy_inputs) -> ONNXModel:
+
         export_fd, export_name = tempfile.mkstemp(suffix=".onnx")
-        infer_fd, infer_name = tempfile.mkstemp(suffix=".onnx")
 
         torch.onnx.export(
             self.model,
@@ -34,15 +34,13 @@ class DACEModule(nn.Module):
             verbose=True,  # TODO read log level
             opset_version=12)
 
-        infer_shapes(export_name, infer_name)
+        onnx_model = infer_shapes(onnx.load(export_name))
 
-        onnx_model = onnx.load(infer_name)
         dace_model = ONNXModel("dace_model", onnx_model)
         self.sdfg = dace_model.sdfg
         self.sdfg.validate()
 
         os.close(export_fd)
-        os.close(infer_fd)
         return dace_model
 
     def forward(self, *actual_inputs):
@@ -59,6 +57,6 @@ def dace_module(moduleclass):
     """
     @wraps(moduleclass)
     def _create(*args, **kwargs):
-        return DACEModule(moduleclass(*args, **kwargs))
+        return DaceModule(moduleclass(*args, **kwargs))
 
     return _create

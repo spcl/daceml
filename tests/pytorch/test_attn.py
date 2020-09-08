@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 
-from daceml.pytorch import DACEModule
+from daceml.pytorch import DaceModule
 
 
 def test_attn(gpu):
@@ -21,7 +21,7 @@ def test_attn(gpu):
     ptmodel = torch.nn.MultiheadAttention(N, H, bias=False)
     pt_outputs = ptmodel(Q, K, V)
 
-    dace_model = DACEModule(ptmodel)
+    dace_model = DaceModule(ptmodel)
     dace_outputs = dace_model(Q, K, V)
 
     assert np.allclose(pt_outputs[0].detach().numpy(),
