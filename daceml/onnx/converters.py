@@ -1,13 +1,13 @@
 import re
-import sys
+import logging
 from typing import Union
-import warnings
 
 import onnx
+from dace import dtypes as dt
+from dace.dtypes import typeclass
 from onnx.numpy_helper import to_array
 
-from dace.dtypes import typeclass
-from dace import dtypes as dt
+log = logging.getLogger(__name__)
 
 
 def get_proto_attr(proto, name):
@@ -27,10 +27,6 @@ def get_proto_attr(proto, name):
         raise ValueError(
             "Attempted to access non-ASCII property name '{}' on protobuf {} (type {})."
             " Please open an issue".format(name, proto, type(proto)))
-
-    # TODO
-    #if not proto.HasField(name):
-    #    raise ValueError("Expected {} to have field '{}'".format(proto, name))
 
     return getattr(proto, name)
 
@@ -72,7 +68,7 @@ def convert_onnx_proto(attribute):
         elif attribute == onnx.defs.OpSchema.AttrType.TENSOR:
             return ONNXAttributeType.Tensor
         else:
-            print("Got unsupported attribute type {}".format(attribute))
+            log.debug("Got unsupported attribute type {}".format(attribute))
             return ONNXAttributeType.Unsupported
 
     if type(attribute) is onnx.AttributeProto:

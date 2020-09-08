@@ -1,3 +1,4 @@
+import logging
 from itertools import chain
 
 import aenum
@@ -8,6 +9,8 @@ import dace
 from dace.dtypes import typeclass
 from daceml.onnx.converters import convert_onnx_proto, onnx_type_str_to_typeclass, get_proto_attr
 from dace.properties import make_properties, Property, DictProperty, ListProperty
+
+log = logging.getLogger(__name__)
 
 _KNOWN_ONNX_PROTOS = {}
 
@@ -242,8 +245,9 @@ class ONNXSchema:
                 parsed_typeclass = onnx_type_str_to_typeclass(param.type_str)
 
                 if parsed_typeclass is None:
-                    print("Could not parse typeStr '{}' for parameter '{}'".
-                          format(param.type_str, param.name))
+                    log.debug(
+                        "Could not parse typeStr '{}' for parameter '{}'".
+                        format(param.type_str, param.name))
 
                 cons = ONNXTypeConstraint(
                     cons_name,
