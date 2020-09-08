@@ -36,4 +36,4 @@ check-formatting:
 		--diff \
 		--recursive \
 		daceml tests setup.py \
-		--exclude daceml/onnx/symbolic_shape_infer.py
+		--exclude daceml/onnx/shape_inference/symbolic_shape_infer.py
