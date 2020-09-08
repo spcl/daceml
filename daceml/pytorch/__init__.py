@@ -1,1 +1,1 @@
-from .module import DACEModule
+from .module import DACEModule, dace_module

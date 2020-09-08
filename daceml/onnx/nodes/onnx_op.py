@@ -623,7 +623,6 @@ class ONNXOp(nd.LibraryNode):
         # Register pure implementations
         ##########################################
 
-
         #if ONNXImplementations.has_implementation(self.schema.name):
         #    for i, impl in enumerate(ONNXImplementations.get(
         #            self.schema.name)):

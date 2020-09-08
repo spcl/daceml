@@ -52,7 +52,7 @@ class DACEModule(nn.Module):
         return self.dace_model(*(inp.numpy() for inp in actual_inputs))
 
 
-def module(moduleclass):
+def dace_module(moduleclass):
     """
     Decorator to apply on a definition of a ``torch.nn.Module`` to
     convert it to a data-centric module upon construction.
