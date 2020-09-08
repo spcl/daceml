@@ -11,6 +11,7 @@ from dace.sdfg.graph import MultiConnectorEdge
 from dace.transformation.pattern_matching import ExpandTransformation
 
 from daceml.onnx.environments import ONNXRuntime
+from daceml.onnx.implementation_repository import ONNXImplementations
 from daceml.onnx.nodes.node_utils import parse_variadic_param
 from daceml.onnx.schema import ONNXSchema, ONNXAttributeType, _ATTR_TYPE_TO_PYTHON_TYPE, ONNXParameterType
 from daceml.onnx.nodes.codegen import expand_node
@@ -376,16 +377,16 @@ class ONNXOp(nd.LibraryNode):
         # Register pure implementations
         ##########################################
 
-        #if ONNXImplementations.has_implementation(self.schema.name):
-        #    for i, impl in enumerate(ONNXImplementations.get(
-        #            self.schema.name)):
-        #        # subclass the implementation to get _register_implementation to work
-        #        class Expansion(impl):
-        #            pass
+        if ONNXImplementations.has_implementation(self.schema.name):
+            for i, impl in enumerate(ONNXImplementations.get(
+                    self.schema.name)):
+                # subclass the implementation to get _register_implementation to work
+                class Expansion(impl):
+                    pass
 
-        #        implementation_name = 'pure_{}'.format(i)
-        #        _register_implementation(self, implementation_name, Expansion)
-        #        self.implementation = implementation_name
+                implementation_name = 'pure_{}'.format(i)
+                _register_implementation(self, implementation_name, Expansion)
+                self.implementation = implementation_name
 
     @staticmethod
     def expansion(node, state: SDFGState, sdfg: SDFG):
