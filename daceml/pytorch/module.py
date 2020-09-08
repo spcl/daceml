@@ -49,7 +49,7 @@ class DACEModule(nn.Module):
         if self.sdfg is None:
             self.dace_model = self.initialize_sdfg(actual_inputs)
 
-        return self.dace_model(*(inp.numpy() for inp in actual_inputs))
+        return self.dace_model(*actual_inputs)
 
 
 def dace_module(moduleclass):
