@@ -1,11 +1,10 @@
 import os
-from setuptools import setup, find_packages
+from setuptools import setup
 
 with open("README.md", "r") as fp:
     long_description = fp.read()
 
 PKG_DIR = os.path.dirname(os.path.abspath(__file__))
-
 setup(name='daceml',
       version='0.1.0a',
       url='https://github.com/spcl/dace-onnx',
@@ -26,4 +25,6 @@ setup(name='daceml',
           'dace@git+https://github.com/spcl/dace.git@1534a61', 'onnx == 1.7.0',
           'numba'
       ],
-      extras_require={'testing': ['coverage', 'pytest', 'yapf']})
+      # install with pip and --find-links (see Makefile)
+      # See https://github.com/pypa/pip/issues/5898
+      extras_require={'testing': ['coverage', 'pytest', 'yapf', 'torch==1.6.0+cpu']})

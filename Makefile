@@ -22,7 +22,7 @@ ifneq ($(VENV_PATH),)
 endif
 
 install: venv
-	$(ACTIVATE) $(PIP) install -e .[testing]
+	$(ACTIVATE) $(PIP) install -e .[testing] --find-links https://download.pytorch.org/whl/torch_stable.html
 
 test: 
 	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests
