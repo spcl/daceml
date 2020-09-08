@@ -623,16 +623,17 @@ class ONNXOp(nd.LibraryNode):
         # Register pure implementations
         ##########################################
 
-        if ONNXImplementations.has_implementation(self.schema.name):
-            for i, impl in enumerate(ONNXImplementations.get(
-                    self.schema.name)):
-                # subclass the implementation to get _register_implementation to work
-                class Expansion(impl):
-                    pass
 
-                implementation_name = 'pure_{}'.format(i)
-                _register_implementation(self, implementation_name, Expansion)
-                self.implementation = implementation_name
+        #if ONNXImplementations.has_implementation(self.schema.name):
+        #    for i, impl in enumerate(ONNXImplementations.get(
+        #            self.schema.name)):
+        #        # subclass the implementation to get _register_implementation to work
+        #        class Expansion(impl):
+        #            pass
+
+        #        implementation_name = 'pure_{}'.format(i)
+        #        _register_implementation(self, implementation_name, Expansion)
+        #        self.implementation = implementation_name
 
     @staticmethod
     def expansion(node, state: SDFGState, sdfg: SDFG):
