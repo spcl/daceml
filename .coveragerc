@@ -7,4 +7,4 @@ exclude_lines =
 ignore_errors = True
 omit =
     tests/*
-    daceml/onnx/symbolic_shape_infer.py
+    daceml/onnx/shape_inference/symbolic_shape_infer.py
