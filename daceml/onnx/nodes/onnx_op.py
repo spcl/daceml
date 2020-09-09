@@ -11,6 +11,7 @@ from dace.sdfg.graph import MultiConnectorEdge
 from dace.transformation.pattern_matching import ExpandTransformation
 
 from daceml.onnx.environments import ONNXRuntime
+from daceml.onnx.implementation_repository import ONNXImplementations
 from daceml.onnx.nodes.node_utils import parse_variadic_param
 from daceml.onnx.schema import ONNXSchema, ONNXAttributeType, _ATTR_TYPE_TO_PYTHON_TYPE, ONNXParameterType
 from daceml.onnx.nodes.codegen import expand_node
@@ -406,8 +407,8 @@ for schema in onnx.defs.get_all_schemas():
 
         if len(args) > 0:
             raise TypeError(
-                "__init__() takes 2 positional arguments but {} were given".
-                format(2 + len(args)))
+                "__init__() takes 1 positional arguments but {} were given".
+                format(1 + len(args)))
 
         missing_arguments = required_attrs.difference(op_attributes)
         if len(missing_arguments) > 0:
@@ -426,33 +427,46 @@ for schema in onnx.defs.get_all_schemas():
         for name, attr in op_attributes.items():
             setattr(self, name, attr)
 
-        # Inline the class such that "self" is included in the expansion
-        @dace.library.expansion
-        class Expansion(ExpandTransformation):
-            environments = [ONNXRuntime]
-
-            @staticmethod
-            def expansion(node, state: SDFGState, sdfg: SDFG):
-                try:
-                    node.validate(sdfg, state)
-                except Exception as ex:
-                    raise ValueError(
-                        "Node validation failed: {} (at state {}, node {}, which is an ONNX Operator of type {})"
-                        .format(str(ex), state, node,
-                                self.schema.name)) from ex
-
-                return self.expansion(node, state, sdfg)
-
-        self.implementations['default'] = Expansion
-        Expansion._match_node = self
-        self.implementation = 'default'
-
     attrs['__init__'] = __init__
 
     cls_name = "ONNX" + dace_schema.name
     cls = type(cls_name, (ONNXOp, ), attrs)
-
     cls = dace.library.node(cls)
+
+    # Register ORT implementation
+    ##########################################
+
+    @dace.library.expansion
+    class Expansion(ExpandTransformation):
+        environments = [ONNXRuntime]
+
+        @staticmethod
+        def expansion(node, state: SDFGState, sdfg: SDFG):
+            try:
+                node.validate(sdfg, state)
+            except Exception as ex:
+                raise ValueError(
+                    "Node validation failed: {} (at state {}, node {}, which is an ONNX Operator of type {})"
+                    .format(str(ex), state, node, schema.name)) from ex
+
+            return node.expansion(node, state, sdfg)
+
+    cls.register_implementation('onnxruntime', Expansion)
+    cls.default_implementation = 'onnxruntime'
+
+    # Register pure implementations
+    ##########################################
+
+    if ONNXImplementations.has_implementation(schema.name):
+        for i, impl in enumerate(ONNXImplementations.get(schema.name)):
+            # subclass the implementation to get _register_implementation to work
+            class Expansion(impl):
+                pass
+
+            implementation_name = 'pure_{}'.format(i)
+            cls.register_implementation(implementation_name, Expansion)
+            cls.default_implementation = implementation_name
+
     globals()[cls_name] = cls
     _ONNX_OPS_BY_NAME[cls_name] = cls
 

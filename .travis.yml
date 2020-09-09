@@ -9,6 +9,7 @@ install:
   - make install
   - pip install codecov pytest-cov
 script:
-  - make test
+  # test_bert takes quite long, so we wait for up to 30 minutes
+  - travis_wait 30 make test
   - codecov
   - make check-formatting

@@ -22,7 +22,7 @@ ifneq ($(VENV_PATH),)
 endif
 
 install: venv
-	$(ACTIVATE) $(PIP) install -e .[testing]
+	$(ACTIVATE) $(PIP) install -e .[testing] --find-links https://download.pytorch.org/whl/torch_stable.html
 
 test: 
 	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests
@@ -36,4 +36,4 @@ check-formatting:
 		--diff \
 		--recursive \
 		daceml tests setup.py \
-		--exclude daceml/onnx/symbolic_shape_infer.py
+		--exclude daceml/onnx/shape_inference/symbolic_shape_infer.py

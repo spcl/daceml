@@ -30,18 +30,25 @@ def _nested_HasField(obj, full_attr):
 
 class ONNXModel:
     """Loads an ONNX model into an SDFG."""
-    def __init__(self, name, model: onnx.ModelProto, cuda=False):
+    def __init__(self,
+                 name,
+                 model: onnx.ModelProto,
+                 cuda=False,
+                 apply_strict=False):
         """
         Constructs a new ONNXImporter.
         :param name: the name for the SDFG.
         :param model: the model to import.
         :param cuda: if `True`, weights will be passed as cuda arrays.
+        :param apply_strict: if `True`, apply strict transformations after all nodes have
+                             been expanded calling (warning: this can be very slow!)
         """
 
         graph: onnx.GraphProto = model.graph
 
         self.sdfg = SDFG(name)
         self.cuda = cuda
+        self.apply_strict = apply_strict
         self.state = self.sdfg.add_state()
 
         # Add all values to the SDFG, check for unsupported ops
@@ -331,7 +338,9 @@ class ONNXModel:
                                            dtype=arr.dtype.as_numpy_dtype())
 
         sdfg.expand_library_nodes()
-        #sdfg.apply_strict_transformations()
+
+        if self.apply_strict:
+            sdfg.apply_strict_transformations()
 
         sdfg(**clean_inputs, **params, **outputs, **inferred_symbols)
 
