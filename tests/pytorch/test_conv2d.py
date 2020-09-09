@@ -7,7 +7,7 @@ import numpy as np
 from daceml.pytorch import DaceModule, dace_module
 
 
-def test_conv2d(gpu):
+def test_conv2d():
     class Model(nn.Module):
         def __init__(self):
             super(Model, self).__init__()

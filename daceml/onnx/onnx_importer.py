@@ -303,12 +303,7 @@ class ONNXModel:
             if len(arr.shape) == 0:
                 params[clean_onnx_name(name)] = arr[()]
             else:
-                if self.cuda:
-                    clean_name = clean_onnx_name(name)
-                    sdfg.arrays[clean_name].storage = StorageType.GPU_Global
-                    params[clean_name] = torch.tensor(arr).cuda()
-                else:
-                    params[clean_onnx_name(name)] = arr.copy()
+                params[clean_onnx_name(name)] = arr.copy()
 
         inferred_symbols = infer_symbols_from_shapes(sdfg, {
             **clean_inputs,

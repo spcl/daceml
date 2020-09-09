@@ -12,11 +12,12 @@ from daceml.onnx.shape_inference import infer_shapes
 
 
 class DaceModule(nn.Module):
-    def __init__(self, model, dummy_inputs=None):
+    def __init__(self, model, dummy_inputs=None, cuda=False):
         super(DaceModule, self).__init__()
 
         self.model = model
         self.sdfg = None
+        self.cuda = cuda
         if dummy_inputs is not None:
             self.dace_model = self.initialize_sdfg(dummy_inputs)
 
@@ -34,7 +35,7 @@ class DaceModule(nn.Module):
 
             onnx_model = infer_shapes(onnx.load(export_name))
 
-            dace_model = ONNXModel("dace_model", onnx_model)
+            dace_model = ONNXModel("dace_model", onnx_model, cuda=self.cuda)
             self.sdfg = dace_model.sdfg
             self.sdfg.validate()
 
