@@ -1,9 +1,9 @@
 [![Build Status](https://travis-ci.org/spcl/daceml.svg?branch=master)](https://travis-ci.org/spcl/daceml)
 [![codecov](https://codecov.io/gh/spcl/daceml/branch/master/graph/badge.svg)](https://codecov.io/gh/spcl/daceml)
 # daceml
-Machine learning powered by DaCe. 
+Machine learning powered by data-centric parallel programming. 
 
-This project add ONNX operators as library nodes to DaCe, as well as a frontend to load ONNX models.
+This project adds PyTorch and ONNX model loading support to [DaCe](https://github.com/spcl/dace), and supports ONNX operators as library nodes to DaCe stateful dataflow multigraphs.
 
 ## Setup
 ONNX ops can be run using the ONNX Runtime as a backend. This requires the `ONNXRuntime` environment to be set up. There are two options for this
@@ -29,7 +29,6 @@ See ``onnxruntime/BUILD.md`` for more details.
 
 Finally, set the environment variable `ORT_ROOT` to the location of the built repository.
 
-
 ## Importing ONNX models
 ONNX models can be imported using the `ONNXModel` frontend.
 ```python
@@ -41,6 +40,38 @@ dace_model = ONNXModel("MyResnet50", model)
 
 test_input = np.random.rand(1, 3, 224, 224).astype(np.float32)
 output = dace_model(test_input)
+```
+
+## Working with PyTorch
+PyTorch `nn.Module`s can be imported using the `DaceModule` wrapper or `dace_module` decorator.
+```python
+import torch
+from daceml.pytorch import DaceModule, dace_module
+
+# Input and size definition
+B, H, P, SM, SN = 2, 16, 64, 512, 512
+N = P * H
+Q, K, V = [torch.randn([SN, B, N]), torch.randn([SM, B, N]), torch.randn([SM, B, N])]
+
+# DaCe module used as a wrapper
+ptmodel = torch.nn.MultiheadAttention(N, H, bias=False)
+dace_model = DaceModule(ptmodel)
+outputs_wrapped = dace_model(Q, K, V)
+
+# DaCe module used as a decorator
+@dace_module
+class Model(nn.Module):
+    def __init__(self, kernel_size):
+        super().__init__()
+        self.conv1 = nn.Conv2d(1, 4, kernel_size)
+        self.conv2 = nn.Conv2d(4, 4, kernel_size)
+
+    def forward(self, x):
+        x = F.relu(self.conv1(x))
+        return F.relu(self.conv2(x))
+
+dace_model = Model(3)
+outputs_dec = dace_model(torch.rand(1, 1, 8, 8))
 ```
 
 ## Library Nodes
