@@ -34,6 +34,7 @@ class DaceModule(nn.Module):
                 opset_version=12)
 
             onnx_model = infer_shapes(onnx.load(export_name))
+            self.onnx_model = onnx_model
 
             dace_model = ONNXModel("dace_model", onnx_model, cuda=self.cuda)
             self.sdfg = dace_model.sdfg

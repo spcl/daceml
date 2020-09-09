@@ -28,7 +28,7 @@ ifneq ($(VENV_PATH),)
 	$(ACTIVATE) pip install --upgrade pip
 endif
 	$(ACTIVATE) $(PIP) install $(TORCH_VERSION) 
-	$(ACTIVATE) $(PIP) install -e .[testing]
+	$(ACTIVATE) $(PIP) install -e .[testing,debug]
 
 test: 
 	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests

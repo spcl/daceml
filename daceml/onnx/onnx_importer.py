@@ -40,13 +40,14 @@ class ONNXModel:
         :param name: the name for the SDFG.
         :param model: the model to import.
         :param cuda: if `True`, weights will be passed as cuda arrays.
-        :param apply_strict: if `True`, apply strict transformations after all nodes have
+        :param apply_strict: if `True`, apply strict transformation after all nodes have
                              been expanded calling (warning: this can be very slow!)
         """
 
         graph: onnx.GraphProto = model.graph
 
         self.sdfg = SDFG(name)
+        self.sdfg._parent_onnx_model = self
         self.cuda = cuda
         self.apply_strict = apply_strict
         self.state = self.sdfg.add_state()
@@ -267,6 +268,10 @@ class ONNXModel:
                                     tensor_type.elem_type),
                                 transient=transient)
 
+    @property
+    def clean_weights(self):
+        return {clean_onnx_name(k): v for k, v in self.weights.items()}
+
     def __call__(self, *args, **inputs):
         sdfg = deepcopy(self.sdfg)
 
@@ -277,18 +282,17 @@ class ONNXModel:
 
         inputs.update(dict(zip(self.inputs, args)))
 
-        # check that there are no missing inputs
-        if len(set(self.inputs).difference(inputs)) != 0:
-            raise ValueError("Missing inputs {}".format(", ".join(
-                set(self.inputs).difference(inputs))))
+        ## check that there are no missing inputs
+        #if len(set(self.inputs).difference(inputs)) != 0:
+        #    raise ValueError("Missing inputs {}".format(", ".join(
+        #        set(self.inputs).difference(inputs))))
 
-        # check that there are no unknown inputs
-        # NOTE symbols can only be passed as kwargs
-        if len(
-                set(inputs).difference(self.inputs).difference(
-                    sdfg.free_symbols)) != 0:
-            raise ValueError("Unknown inputs {}".format(", ".join(
-                set(inputs).difference(self.inputs))))
+        ## check that there are no unknown inputs
+        ## NOTE symbols can only be passed as kwargs
+        #if len(set(inputs).difference(self.inputs).difference(
+        #            sdfg.free_symbols)) != 0:
+        #    raise ValueError("Unknown inputs {}".format(", ".join(
+        #        set(inputs).difference(self.inputs))))
 
         clean_inputs = {}
         for input, arr in inputs.items():
