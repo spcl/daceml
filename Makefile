@@ -24,6 +24,9 @@ ifneq ($(VENV_PATH),)
 endif
 
 install: venv
+ifneq ($(VENV_PATH),)
+	$(ACTIVATE) pip install --upgrade pip
+endif
 	$(ACTIVATE) $(PIP) install $(TORCH_VERSION) 
 	$(ACTIVATE) $(PIP) install -e .[testing]
 
