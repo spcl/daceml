@@ -30,6 +30,9 @@ test:
 test-gpu: 
 	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests --gpu
 
+codecov:
+	$(ACTIVATE) codecov
+
 check-formatting:
 	$(ACTIVATE) $(YAPF) \
 		--parallel \

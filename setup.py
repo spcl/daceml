@@ -29,5 +29,8 @@ setup(
     # install with pip and --find-links (see Makefile)
     # See https://github.com/pypa/pip/issues/5898
     extras_require={
-        'testing': ['coverage', 'pytest', 'yapf', 'torch==1.6.0+cpu']
+        'testing': [
+            'coverage', 'pytest', 'yapf', 'torch==1.6.0+cpu', 'codecov',
+            'pytest-cov'
+        ]
     })
