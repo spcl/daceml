@@ -1,7 +1,4 @@
-try:
-    import torch
-except ModuleNotFoundError:
-    raise ImportError("To use the torch frontend, please install torch")
+import torch
 
 import os
 import tempfile

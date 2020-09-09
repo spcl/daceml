@@ -3,8 +3,8 @@ from copy import deepcopy
 from itertools import chain, repeat
 
 import numpy as np
-import numba.cuda
 import onnx
+import torch
 from onnx import numpy_helper
 
 import dace
@@ -306,7 +306,7 @@ class ONNXModel:
                 if self.cuda:
                     clean_name = clean_onnx_name(name)
                     sdfg.arrays[clean_name].storage = StorageType.GPU_Global
-                    params[clean_name] = numba.cuda.to_device(arr)
+                    params[clean_name] = torch.tensor(arr).cuda()
                 else:
                     params[clean_onnx_name(name)] = arr.copy()
 

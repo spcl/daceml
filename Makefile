@@ -4,6 +4,8 @@ PYTEST ?= pytest
 PIP ?= pip
 YAPF ?= yapf
 
+TORCH_VERSION ?= torch==1.6.0+cpu torchvision==0.7.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
+
 ifeq ($(VENV_PATH),)
 ACTIVATE = 
 else
@@ -22,7 +24,8 @@ ifneq ($(VENV_PATH),)
 endif
 
 install: venv
-	$(ACTIVATE) $(PIP) install -e .[testing] --find-links https://download.pytorch.org/whl/torch_stable.html
+	$(ACTIVATE) $(PIP) install $(TORCH_VERSION) 
+	$(ACTIVATE) $(PIP) install -e .[testing]
 
 test: 
 	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests
