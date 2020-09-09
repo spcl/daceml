@@ -23,7 +23,7 @@ setup(
     packages=['daceml'],
     package_data={'': ['*.cpp']},
     install_requires=[
-        'dace@git+https://github.com/spcl/dace.git@1534a61', 'onnx == 1.7.0',
+        'dace@git+https://github.com/orausch/dace.git@d3c5406', 'onnx == 1.7.0',
         'numba'
     ],
     # install with pip and --find-links (see Makefile)

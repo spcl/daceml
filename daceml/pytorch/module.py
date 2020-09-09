@@ -25,23 +25,23 @@ class DaceModule(nn.Module):
 
     def initialize_sdfg(self, dummy_inputs) -> ONNXModel:
 
-        export_fd, export_name = tempfile.mkstemp(suffix=".onnx")
+        with tempfile.TemporaryDirectory() as dir_name:
+            export_name = os.path.join(dir_name, "export.onnx")
 
-        torch.onnx.export(
-            self.model,
-            dummy_inputs,
-            export_name,
-            verbose=True,  # TODO read log level
-            opset_version=12)
+            torch.onnx.export(
+                self.model,
+                dummy_inputs,
+                export_name,
+                verbose=True,  # TODO read log level
+                opset_version=12)
 
-        onnx_model = infer_shapes(onnx.load(export_name))
+            onnx_model = infer_shapes(onnx.load(export_name))
 
-        dace_model = ONNXModel("dace_model", onnx_model)
-        self.sdfg = dace_model.sdfg
-        self.sdfg.validate()
+            dace_model = ONNXModel("dace_model", onnx_model)
+            self.sdfg = dace_model.sdfg
+            self.sdfg.validate()
 
-        os.close(export_fd)
-        return dace_model
+            return dace_model
 
     def forward(self, *actual_inputs):
         if self.sdfg is None:
