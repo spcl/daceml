@@ -24,7 +24,7 @@ def test_attn(gpu):
 
     assert np.allclose(pt_outputs[0].detach().numpy(),
                        dace_outputs[0],
-                       atol=1e-07)
+                       atol=1e-06)
     assert np.allclose(pt_outputs[1].detach().numpy(),
                        dace_outputs[1],
-                       atol=1e-07)
+                       atol=1e-06)
