@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 import torch
 from dace.transformation.dataflow import RedundantSecondArray
@@ -10,7 +11,8 @@ from daceml.pytorch import DaceModule
 from daceml.transformation import ConstantFolding
 
 
-def test_bert_encoder(gpu):
+@pytest.mark.parametrize("apply_strict", [True, False])
+def test_bert_encoder(gpu, apply_strict):
     batch_size = 8
     seq_len = 512
     hidden_size = 768
@@ -20,7 +22,7 @@ def test_bert_encoder(gpu):
     ptmodel = BertLayer(BertConfig())
     pt_outputs = ptmodel(input.clone())
 
-    dace_model = DaceModule(ptmodel)
+    dace_model = DaceModule(ptmodel, cuda=gpu)
     dace_outputs0 = dace_model(input.clone())
     dace_model.dace_model.sdfg.view()
 
@@ -31,13 +33,13 @@ def test_bert_encoder(gpu):
 
     dace_model.dace_model.sdfg.apply_transformations_repeated(
         [ConstantFolding, RedundantSecondArray], validate_all=True)
-    dace_model.dace_model.sdfg.view()
-    dace_outputs1 = dace_model(input.clone())
 
-    assert np.allclose(dace_outputs1, ort_outputs[0], atol=1e-6)
-    assert np.allclose(dace_outputs0, dace_outputs1)
+    dace_outputs1 = dace_model(input.clone())
 
     diff = np.abs(dace_outputs1 - pt_outputs[0].detach().numpy())
     print(diff)
     print(np.max(diff))
     print(np.median(diff))
+
+    assert np.allclose(dace_outputs1, ort_outputs[0], atol=1e-6)
+    assert np.allclose(dace_outputs0, dace_outputs1)
