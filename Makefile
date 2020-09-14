@@ -37,7 +37,7 @@ test-gpu:
 	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests --gpu
 
 codecov:
-	$(ACTIVATE) codecov
+	curl -s https://codecov.io/bash | bash
 
 check-formatting:
 	$(ACTIVATE) $(YAPF) \
