@@ -1,3 +1,4 @@
+import logging
 from collections import Iterable, defaultdict
 from copy import deepcopy
 from functools import reduce
@@ -15,6 +16,8 @@ from daceml.onnx.check_impl import check_op, ONNXOpValidationError
 from daceml.onnx.converters import ONNX_DTYPES_TO_DACE_TYPE_CLASS, clean_onnx_name, typeclass_to_onnx_str
 from daceml.onnx.nodes.node_utils import get_position
 from daceml.onnx.schema import ONNXAttributeType, _ATTR_TYPE_TO_PYTHON_TYPE, ONNXAttribute
+
+log = logging.getLogger(__name__)
 
 
 def _add_ort_init_code(sdfg: SDFG):
@@ -461,7 +464,10 @@ def expand_node(node, state, sdfg):
         "__ort_api->ReleaseExecutableKernel(__ort_kernel_{});\n".format(
             unique_id))
 
-    tasklet_code += 'fprintf(stderr, "Launching {}\\n");\n'.format(unique_id)
+    if logging.root.level <= logging.DEBUG:
+        tasklet_code += 'fprintf(stderr, "Launching {}\\n");\n'.format(
+            unique_id)
+
     tasklet_code += "__ort_check_status(__ort_api->ExecutableKernel_Compute(__ort_kernel_{}));\n".format(
         unique_id)
 
