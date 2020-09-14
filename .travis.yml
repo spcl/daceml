@@ -7,9 +7,8 @@ install:
   - wget https://github.com/orausch/onnxruntime/releases/download/build1/onnxruntime_dist_cpu.tar.gz
   - tar -xzf onnxruntime_dist_cpu.tar.gz
   - make install
-  - pip install codecov pytest-cov
 script:
   # test_bert takes quite long, so we wait for up to 30 minutes
   - travis_wait 30 make test
-  - codecov
+  - make codecov
   - make check-formatting

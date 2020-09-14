@@ -24,10 +24,8 @@ setup(
     package_data={'': ['*.cpp']},
     install_requires=[
         'dace@git+https://github.com/spcl/dace.git@491c377', 'onnx == 1.7.0',
-        'numba'
+        'torch'
     ],
     # install with pip and --find-links (see Makefile)
     # See https://github.com/pypa/pip/issues/5898
-    extras_require={
-        'testing': ['coverage', 'pytest', 'yapf', 'torch==1.6.0+cpu']
-    })
+    extras_require={'testing': ['coverage', 'pytest', 'yapf', 'pytest-cov']})

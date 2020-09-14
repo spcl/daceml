@@ -1,9 +1,18 @@
 import os
+import logging
+
 import dace.library
+from dace.config import Config
+
+log = logging.getLogger(__name__)
 
 if 'ORT_ROOT' not in os.environ and 'ORT_RELEASE' not in os.environ:
     raise ValueError("This environment expects the environment variable "
                      "ORT_ROOT or ORT_RELEASE to be set (see README.md)")
+
+if Config.get("compiler", "cuda", "max_concurrent_streams") != -1:
+    log.info("Setting compiler.cuda.max_concurrent_streams to -1")
+    Config.set("compiler", "cuda", "max_concurrent_streams", value=-1)
 
 
 def _get_src_includes():
