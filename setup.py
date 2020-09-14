@@ -28,6 +28,4 @@ setup(
     ],
     # install with pip and --find-links (see Makefile)
     # See https://github.com/pypa/pip/issues/5898
-    extras_require={
-        'testing': ['coverage', 'pytest', 'yapf', 'codecov', 'pytest-cov']
-    })
+    extras_require={'testing': ['coverage', 'pytest', 'yapf', 'pytest-cov']})
