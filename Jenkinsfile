@@ -22,8 +22,13 @@ pipeline {
         sh '''
 	LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 	PATH=/usr/local/cuda/bin:$PATH
-        make test codecov check-formatting
+        make test check-formatting
         '''
+      }
+    }
+    stage ('Report Codecov') {
+      steps {
+        sh 'make codecov'
       }
     }
   }
