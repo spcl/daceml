@@ -18,7 +18,6 @@ def test_bert_subgraph():
     dace_model.sdfg.apply_transformations_repeated(
         [ConstantFolding, RedundantSecondArray], validate_all=True)
 
-    dace_model.sdfg.view()
     out_after = dace_model()
 
     assert np.allclose(out_before, out_after)

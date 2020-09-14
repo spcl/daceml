@@ -29,6 +29,7 @@ setup(
     # install with pip and --find-links (see Makefile)
     # See https://github.com/pypa/pip/issues/5898
     extras_require={
-        'testing': ['coverage', 'pytest', 'yapf', 'pytest-cov'],
+        'testing':
+        ['coverage', 'pytest', 'yapf', 'pytest-cov', 'transformers'],
         'debug': ['onnxruntime']
     })
