@@ -282,17 +282,18 @@ class ONNXModel:
 
         inputs.update(dict(zip(self.inputs, args)))
 
-        ## check that there are no missing inputs
-        #if len(set(self.inputs).difference(inputs)) != 0:
-        #    raise ValueError("Missing inputs {}".format(", ".join(
-        #        set(self.inputs).difference(inputs))))
+        # check that there are no missing inputs
+        if len(set(self.inputs).difference(inputs)) != 0:
+            raise ValueError("Missing inputs {}".format(", ".join(
+                set(self.inputs).difference(inputs))))
 
-        ## check that there are no unknown inputs
-        ## NOTE symbols can only be passed as kwargs
-        #if len(set(inputs).difference(self.inputs).difference(
-        #            sdfg.free_symbols)) != 0:
-        #    raise ValueError("Unknown inputs {}".format(", ".join(
-        #        set(inputs).difference(self.inputs))))
+        # check that there are no unknown inputs
+        # NOTE symbols can only be passed as kwargs
+        if len(
+                set(inputs).difference(self.inputs).difference(
+                    sdfg.free_symbols)) != 0:
+            raise ValueError("Unknown inputs {}".format(", ".join(
+                set(inputs).difference(self.inputs))))
 
         clean_inputs = {}
         for input, arr in inputs.items():

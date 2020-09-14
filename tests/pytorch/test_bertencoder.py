@@ -24,7 +24,6 @@ def test_bert_encoder(gpu, apply_strict):
 
     dace_model = DaceModule(ptmodel, cuda=gpu)
     dace_outputs0 = dace_model(input.clone())
-    dace_model.dace_model.sdfg.view()
 
     onnx.save(dace_model.onnx_model, "encoder.onnx")
     sess = rt.InferenceSession("encoder.onnx")

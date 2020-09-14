@@ -235,10 +235,6 @@ class ConstantFolding(pattern_matching.Transformation):
         state = sdfg.nodes()[self.state_id]
         node = state.nodes()[self.subgraph[ConstantFolding._onnx_node]]
 
-        print("-" * 100)
-        print(node)
-        print("-" * 100)
-
         if isinstance(node, donnx.ONNXShape):
             # if we have a shape node, replace it with a constant
             assert len(state.in_edges(node)) == 1
