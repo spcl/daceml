@@ -40,7 +40,7 @@ class ONNXModel:
         :param name: the name for the SDFG.
         :param model: the model to import.
         :param cuda: if `True`, weights will be passed as cuda arrays.
-        :param apply_strict: if `True`, apply strict transformation after all nodes have
+        :param apply_strict: if `True`, apply strict transformations after all nodes have
                              been expanded calling (warning: this can be very slow!)
         """
 

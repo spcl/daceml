@@ -6,6 +6,7 @@ import numpy as np
 
 import dace
 import dace.data as dt
+from dace import registry
 from dace.properties import make_properties
 from dace.transformation import pattern_matching
 from dace.sdfg import nodes as nd
@@ -18,11 +19,13 @@ from daceml.onnx import ONNXModel
 
 # blocklist of nondeterministic ops
 # yapf: disable
-NONDETERMINISTIC_OPS = {'ONNXGradient',
+NONDETERMINISTIC_OPS = {'ONNXDropout',
+                        'ONNXGradient',
                         'ONNXGraphCall',
                         'ONNXIf',
                         'ONNXLoop',
                         'ONNXMomentum',
+                        'ONNXMultinomial',
                         'ONNXRandomNormal',
                         'ONNXRandomNormalLike',
                         'ONNXRandomUniform',
@@ -35,6 +38,7 @@ NONDETERMINISTIC_OPS = {'ONNXGradient',
 # yapf: enable
 
 
+@registry.autoregister_params(singlestate=True)
 @make_properties
 class ConstantFolding(pattern_matching.Transformation):
     # pattern matching only checks that the type of the node matches,
