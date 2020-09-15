@@ -1,3 +1,4 @@
+import logging
 from collections import Iterable, defaultdict
 from copy import deepcopy
 from functools import reduce
@@ -15,6 +16,8 @@ from daceml.onnx.check_impl import check_op, ONNXOpValidationError
 from daceml.onnx.converters import ONNX_DTYPES_TO_DACE_TYPE_CLASS, clean_onnx_name, typeclass_to_onnx_str
 from daceml.onnx.nodes.node_utils import get_position
 from daceml.onnx.schema import ONNXAttributeType, _ATTR_TYPE_TO_PYTHON_TYPE, ONNXAttribute
+
+log = logging.getLogger(__name__)
 
 
 def _add_ort_init_code(sdfg: SDFG):
@@ -461,7 +464,10 @@ def expand_node(node, state, sdfg):
         "__ort_api->ReleaseExecutableKernel(__ort_kernel_{});\n".format(
             unique_id))
 
-    tasklet_code += 'fprintf(stderr, "Launching {}\\n");\n'.format(unique_id)
+    if logging.root.level <= logging.DEBUG:
+        tasklet_code += 'fprintf(stderr, "Launching {}\\n");\n'.format(
+            unique_id)
+
     tasklet_code += "__ort_check_status(__ort_api->ExecutableKernel_Compute(__ort_kernel_{}));\n".format(
         unique_id)
 
@@ -517,12 +523,12 @@ def expand_node(node, state, sdfg):
                     access = nstate.add_read(parameter_name)
                     nstate.add_edge(access, None, ntasklet,
                                     "_conn_" + parameter_name,
-                                    nsdfg.get_array_memlet(parameter_name))
+                                    nsdfg.make_array_memlet(parameter_name))
                 else:
                     access = nstate.add_write(parameter_name)
                     nstate.add_edge(ntasklet, "_conn_" + parameter_name,
                                     access, None,
-                                    nsdfg.get_array_memlet(parameter_name))
+                                    nsdfg.make_array_memlet(parameter_name))
                 continue
 
             copy_options = input_copy_required[
@@ -545,7 +551,7 @@ def expand_node(node, state, sdfg):
                 access = nstate.add_read(parameter_name)
                 access_copy = nstate.add_access("copy_" + memlet.data)
                 nstate.add_edge(access, None, access_copy, None,
-                                nsdfg.get_array_memlet("copy_" + memlet.data))
+                                nsdfg.make_array_memlet("copy_" + memlet.data))
                 nstate.add_edge(access_copy, None, ntasklet,
                                 "_conn_" + parameter_name, nmemlet)
             else:
@@ -554,7 +560,7 @@ def expand_node(node, state, sdfg):
                 nstate.add_edge(ntasklet, "_conn_" + parameter_name,
                                 access_copy, None, nmemlet)
                 nstate.add_edge(access_copy, None, access, None,
-                                nsdfg.get_array_memlet("copy_" + memlet.data))
+                                nsdfg.make_array_memlet("copy_" + memlet.data))
 
         return nsdfg
 

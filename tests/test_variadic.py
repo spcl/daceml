@@ -25,14 +25,14 @@ def test_sum(gpu):
     for i in range(3):
         op_node.add_in_connector("data_0__{}".format(i))
     state.add_edge(access_A, None, op_node, "data_0__0",
-                   sdfg.get_array_memlet("A_arr"))
+                   sdfg.make_array_memlet("A_arr"))
     state.add_edge(access_B, None, op_node, "data_0__1",
-                   sdfg.get_array_memlet("B_arr"))
+                   sdfg.make_array_memlet("B_arr"))
     state.add_edge(access_C, None, op_node, "data_0__2",
-                   sdfg.get_array_memlet("C_arr"))
+                   sdfg.make_array_memlet("C_arr"))
 
     state.add_edge(op_node, "sum", access_result, None,
-                   sdfg.get_array_memlet("__return"))
+                   sdfg.make_array_memlet("__return"))
 
     A = np.random.rand(2, 2).astype(np.float32)
     B = np.random.rand(2, 2).astype(np.float32)

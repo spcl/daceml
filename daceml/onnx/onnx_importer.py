@@ -47,6 +47,7 @@ class ONNXModel:
         graph: onnx.GraphProto = model.graph
 
         self.sdfg = SDFG(name)
+        self.sdfg._parent_onnx_model = self
         self.cuda = cuda
         self.apply_strict = apply_strict
         self.state = self.sdfg.add_state()
@@ -266,6 +267,10 @@ class ONNXModel:
                                 dtype=onnx_tensor_type_to_typeclass(
                                     tensor_type.elem_type),
                                 transient=transient)
+
+    @property
+    def clean_weights(self):
+        return {clean_onnx_name(k): v for k, v in self.weights.items()}
 
     def __call__(self, *args, **inputs):
         sdfg = deepcopy(self.sdfg)
