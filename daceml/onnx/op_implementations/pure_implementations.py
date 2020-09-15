@@ -2,23 +2,25 @@ import copy
 from math import sqrt
 
 import dace
+from dace import SDFGState, SDFG
 from dace.libraries.standard.nodes.code import _get_inputs_and_outputs
 from dace.registry import autoregister_params
 from dace.sdfg.nodes import Node
 from dace.symbolic import symstr
 
+from daceml.onnx import ONNXOp
 from daceml.onnx.implementation_abc import ONNXForward
 
 
 @autoregister_params(op="Div")
 class PureDiv(ONNXForward):
     @staticmethod
-    def forward_can_be_applied(node, state, sdfg) -> bool:
-        pass
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
+        return True
 
     @staticmethod
-    def forward(node, state, sdfg) -> Node:
-        node.validate(sdfg, state)
+    def forward(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> Node:
 
         in_edges = state.in_edges(node)
         out_edges = state.out_edges(node)
@@ -37,13 +39,12 @@ class PureDiv(ONNXForward):
 @autoregister_params(op="Mul")
 class PureMul(ONNXForward):
     @staticmethod
-    def forward_can_be_applied(node, state, sdfg) -> bool:
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
         pass
 
     @staticmethod
-    def forward(node, state, sdfg) -> Node:
-        node.validate(sdfg, state)
-
+    def forward(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> Node:
         in_edges = state.in_edges(node)
         out_edges = state.out_edges(node)
 
@@ -51,72 +52,39 @@ class PureMul(ONNXForward):
         btype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
         ctype = copy.deepcopy(sdfg.arrays[out_edges[0].data.data])
 
-        input0_dim = len(in_edges[0].data.subset.size())
-        input1_dim = len(in_edges[1].data.subset.size())
+        @dace.program
+        def mulop(A: atype, B: btype, C: ctype):
+            C[:] = A * B
 
-        if input0_dim == 4 and input1_dim == 1:
-            mm = in_edges[0].data.subset.size()[0]
-            nn = in_edges[0].data.subset.size()[1]
-            gg = in_edges[0].data.subset.size()[2]
-            hh = in_edges[0].data.subset.size()[3]
-
-            M = str(mm)
-            N = str(nn)
-            G = str(gg)
-            H = str(hh)
-
-            sdfg_exp = dace.SDFG('mulExpansion')
-            sdfg_exp.add_array('A', (mm, nn, gg, hh), dace.float32)
-            sdfg_exp.add_array('B', (1, ), dace.float32)
-            sdfg_exp.add_array('C', (mm, nn, gg, hh), dace.float32)
-            state_exp = sdfg_exp.add_state()
-
-            me, mx = state_exp.add_map(
-                'outer_map',
-                dict(i='0:' + M, j='0:' + N, k='0:' + G, l='0:' + H))
-
-            A = state_exp.add_read('A')
-            B = state_exp.add_read('B')
-            C = state_exp.add_access('C')
-            texp = state_exp.add_tasklet('tasklet', {'a', 'b'}, {'c'},
-                                         'c = a * b')
-
-            state_exp.add_edge(
-                A, None, me, None,
-                dace.Memlet.simple(
-                    A, '0:' + M + ', 0:' + N + ', 0:' + G + ', 0:' + H))
-            state_exp.add_edge(B, None, me, None, dace.Memlet.simple(B, '0'))
-            state_exp.add_edge(me, None, texp, "a",
-                               dace.Memlet.simple(A, 'i, j, k, l'))
-            state_exp.add_edge(me, None, texp, "b", dace.Memlet.simple(B, '0'))
-            state_exp.add_edge(texp, "c", mx, None,
-                               dace.Memlet.simple(C, 'i, j, k, l'))
-            state_exp.add_edge(
-                mx, None, C, None,
-                dace.Memlet.simple(
-                    C, '0:' + M + ', 0:' + N + ', 0:' + G + ', 0:' + H))
-
-            sdfg_exp.fill_scope_connectors()
-            return sdfg_exp
-        else:
-
-            @dace.program
-            def mulop(A: atype, B: btype, C: ctype):
-                C[:] = A * B
-
-            return mulop.to_sdfg()
+        return mulop.to_sdfg()
 
 
 @autoregister_params(op="MatMul")
 class PureMatMul(ONNXForward):
     @staticmethod
-    def forward_can_be_applied(node, state, sdfg) -> bool:
-        pass
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
+        in_edges = state.in_edges(node)
+        input0_dim = len(in_edges[0].data.subset.size())
+        input1_dim = len(in_edges[1].data.subset.size())
+
+        if input0_dim == 2 and input1_dim == 2:
+            return True
+
+        if input0_dim == 1 and input1_dim == 2:
+            return True
+
+        if input1_dim == 2 and input0_dim == 1:
+            return True
+
+        # this can be relaxed
+        if input0_dim == 4 and input1_dim == 4:
+            return True
+
+        return False
 
     @staticmethod
-    def forward(node, state, sdfg) -> Node:
-        inputs, outputs = _get_inputs_and_outputs(sdfg, state, node)
-        node.validate(sdfg, state)
+    def forward(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> Node:
 
         in_edges = state.in_edges(node)
         out_edges = state.out_edges(node)
@@ -129,7 +97,6 @@ class PureMatMul(ONNXForward):
         input1_dim = len(in_edges[1].data.subset.size())
 
         if input0_dim == 4 and input1_dim == 4:
-
             sdfg_exp = dace.SDFG('matmulExpansion')
             mm = in_edges[0].data.subset.size()[0]
             nn = in_edges[0].data.subset.size()[1]
@@ -180,82 +147,23 @@ class PureMatMul(ONNXForward):
                 },
                 external_edges=True)
             return sdfg_exp
-        elif input0_dim == 2 and input1_dim == 2:
-            sdfg_exp = dace.SDFG('matmulExpansion')
-            ii = in_edges[0].data.subset.size()[0]
-            kk = in_edges[0].data.subset.size()[1]
-            jj = in_edges[1].data.subset.size()[1]
-
-            I = str(ii)
-            K = str(kk)
-            J = str(jj)
-
-            sdfg_exp.add_array('A', (ii, kk), dace.float32)
-            sdfg_exp.add_array('B', (kk, jj), dace.float32)
-            sdfg_exp.add_array('Y', (ii, jj), dace.float32)
-
-            init_state = sdfg_exp.add_state()
-            init_state.add_mapped_tasklet(
-                'batched_matmul_init', {
-                    '_o%d' % i: '0:%s' % symstr(d)
-                    for i, d in enumerate((ii, jj))
-                }, {},
-                'out = 0', {
-                    'out':
-                    dace.Memlet.simple(
-                        'Y', ','.join(
-                            ['_o%d' % i for i in range(len((ii, jj)))]))
-                },
-                external_edges=True)
-
-            state_exp = sdfg_exp.add_state_after(init_state)
-
-            state_exp.add_mapped_tasklet(
-                '_BatchedBatchedMatMult_',
-                {'__i%d' % i: '0:%s' % s
-                 for i, s in enumerate([I, J, K])}, {
-                     '_a': dace.Memlet.simple("A", ('__i0, __i2')),
-                     '_b': dace.Memlet.simple("B", ('__i2, __i1'))
-                 },
-                '_c = _a * _b', {
-                    '_c':
-                    dace.Memlet.simple(
-                        "Y", '__i0, __i1', wcr_str='lambda x, y: x + y')
-                },
-                external_edges=True)
-            return sdfg_exp
         else:
-            print("Unsupported dimensions for MatMul")
-            # @dace.program
-            # def matmulop(A: atype, B: btype, Y: ctype):
-            #    Y[:] = A @ B
-            # return matmulop.to_sdfg()
+            @dace.program
+            def matmultop(A: atype, B: btype, C: ctype):
+                C[:] = A @ B
 
-
-#@register_pure_expansion("OneHot")
-#def expansion(node, state, sdfg):
-#    node.validate(sdfg, state)
-#
-#    in_edges = state.in_edges(node)
-#    out_edges = state.out_edges(node)
-#
-#    # atype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
-#    # btype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
-#    # ctype = copy.deepcopy(sdfg.arrays[in_edges[2].data.data])
-#    # dtype = copy.deepcopy(sdfg.arrays[out_edges[0].data.data])
-#    sdfg_exp = dace.SDFG('mulExpansion')
-#    return sdfg_exp
+            return matmultop.to_sdfg()
 
 
 @autoregister_params(op="Sub")
 class PureSub(ONNXForward):
     @staticmethod
-    def forward_can_be_applied(node, state, sdfg) -> bool:
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
         pass
 
     @staticmethod
-    def forward(node, state, sdfg) -> Node:
-        node.validate(sdfg, state)
+    def forward(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> Node:
 
         in_edges = state.in_edges(node)
         out_edges = state.out_edges(node)
@@ -323,38 +231,13 @@ class PureSub(ONNXForward):
 @autoregister_params(op="Add")
 class PureAdd(ONNXForward):
     @staticmethod
-    def forward_can_be_applied(node, state, sdfg) -> bool:
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
         pass
 
     @staticmethod
-    def forward(node, state, sdfg) -> Node:
+    def forward(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> Node:
         inputs, outputs = _get_inputs_and_outputs(sdfg, state, node)
-        node.validate(sdfg, state)
-
-        in_edges = state.in_edges(node)
-        out_edges = state.out_edges(node)
-
-        atype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
-        btype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
-        ctype = copy.deepcopy(sdfg.arrays[out_edges[0].data.data])
-
-        @dace.program
-        def addop(A: atype, B: btype, C: ctype):
-            C[:] = A + B
-
-        return addop.to_sdfg()
-
-
-@autoregister_params(op="Pow")
-class PurePow(ONNXForward):
-    @staticmethod
-    def forward_can_be_applied(node, state, sdfg) -> bool:
-        pass
-
-    @staticmethod
-    def forward(node, state, sdfg) -> Node:
-        inputs, outputs = _get_inputs_and_outputs(sdfg, state, node)
-        node.validate(sdfg, state)
 
         in_edges = state.in_edges(node)
         out_edges = state.out_edges(node)
@@ -373,12 +256,12 @@ class PurePow(ONNXForward):
 @autoregister_params(op="Identity")
 class PureIdentity(ONNXForward):
     @staticmethod
-    def forward_can_be_applied(node, state, sdfg) -> bool:
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
         pass
 
     @staticmethod
-    def forward(node, state, sdfg) -> Node:
-        node.validate(sdfg, state)
+    def forward(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> Node:
 
         # in_edges = state.in_edges(node)
         # out_edges = state.out_edges(node)
@@ -390,8 +273,6 @@ class PureIdentity(ONNXForward):
         # def idop(input: atype, output: btype):
         #    output[:] = input
         # return idop.to_sdfg()
-
-        node.validate(sdfg, state)
 
         in_edges = state.in_edges(node)
         out_edges = state.out_edges(node)
@@ -469,12 +350,12 @@ class PureIdentity(ONNXForward):
 @autoregister_params(op="Reciprocal")
 class PureReciprocal(ONNXForward):
     @staticmethod
-    def forward_can_be_applied(node, state, sdfg) -> bool:
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
         pass
 
     @staticmethod
-    def forward(node, state, sdfg) -> Node:
-        node.validate(sdfg, state)
+    def forward(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> Node:
 
         in_edges = state.in_edges(node)
         out_edges = state.out_edges(node)
@@ -492,13 +373,13 @@ class PureReciprocal(ONNXForward):
 @autoregister_params(op="Sqrt")
 class PureSqrt(ONNXForward):
     @staticmethod
-    def forward_can_be_applied(node, state, sdfg) -> bool:
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
         pass
 
     @staticmethod
-    def forward(node, state, sdfg) -> Node:
+    def forward(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> Node:
         inputs, outputs = _get_inputs_and_outputs(sdfg, state, node)
-        node.validate(sdfg, state)
 
         in_edges = state.in_edges(node)
         out_edges = state.out_edges(node)
@@ -517,13 +398,13 @@ class PureSqrt(ONNXForward):
 @autoregister_params(op="Tanh")
 class PureTanh(ONNXForward):
     @staticmethod
-    def forward_can_be_applied(node, state, sdfg) -> bool:
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
         pass
 
     @staticmethod
-    def forward(node, state, sdfg) -> Node:
+    def forward(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> Node:
         inputs, outputs = _get_inputs_and_outputs(sdfg, state, node)
-        node.validate(sdfg, state)
 
         in_edges = state.in_edges(node)
 
@@ -585,12 +466,12 @@ class PureTanh(ONNXForward):
 @autoregister_params(op="ReduceSum")
 class PureReduceSum(ONNXForward):
     @staticmethod
-    def forward_can_be_applied(node, state, sdfg) -> bool:
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
         pass
 
     @staticmethod
-    def forward(node, state, sdfg) -> Node:
-        node.validate(sdfg, state)
+    def forward(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> Node:
 
         in_edges = state.in_edges(node)
         mm = in_edges[0].data.subset.size()[0]
@@ -639,11 +520,12 @@ class PureReduceSum(ONNXForward):
 @autoregister_params(op="ReduceMean")
 class PureReduceMean(ONNXForward):
     @staticmethod
-    def forward_can_be_applied(node, state, sdfg) -> bool:
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
         pass
 
     @staticmethod
-    def forward(node, state, sdfg) -> Node:
+    def forward(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> Node:
         inputs, outputs = _get_inputs_and_outputs(sdfg, state, node)
         axes = None
         keepdims = None
@@ -654,7 +536,6 @@ class PureReduceMean(ONNXForward):
                 elif str(node.schema.attributes[name]) == "keepdims":
                     keepdims = getattr(node, name)
 
-        node.validate(sdfg, state)
         sdfg_exp = dace.SDFG('reducemeanExpansion')
 
         in_edges = state.in_edges(node)
@@ -741,12 +622,12 @@ class PureReduceMean(ONNXForward):
 @autoregister_params(op="Softmax")
 class PureSoftmax(ONNXForward):
     @staticmethod
-    def forward_can_be_applied(node, state, sdfg) -> bool:
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
         pass
 
     @staticmethod
-    def forward(node, state, sdfg) -> Node:
-        node.validate(sdfg, state)
+    def forward(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> Node:
 
         axis = None
         for name, attr in node.schema.attributes.items():
