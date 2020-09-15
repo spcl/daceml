@@ -1,6 +1,6 @@
 import itertools
 import logging
-from typing import Iterator, Tuple, List, Type
+from typing import Iterator, Tuple, List, Dict, Type
 
 import dace
 import dace.frontend.common.op_repository as dace_op_repo
@@ -12,7 +12,7 @@ from dace.sdfg.graph import MultiConnectorEdge
 from dace.transformation.transformation import ExpandTransformation
 
 from daceml.onnx.environments import ONNXRuntime
-from daceml.onnx.implementation_repository import ONNXImplementations
+from daceml.onnx.implementation_abc import ONNXForward
 from daceml.onnx.nodes.node_utils import parse_variadic_param
 from daceml.onnx.schema import ONNXSchema, ONNXAttributeType, _ATTR_TYPE_TO_PYTHON_TYPE, ONNXParameterType, ONNXAttribute, ONNXParameter, ONNXTypeConstraint
 from daceml.onnx.nodes.codegen import expand_node
@@ -578,15 +578,18 @@ for schema in onnx.defs.get_all_schemas():
     # Register pure implementations
     ##########################################
 
-    if ONNXImplementations.has_implementation(schema.name):
-        for i, impl in enumerate(ONNXImplementations.get(schema.name)):
-            # subclass the implementation to get _register_implementation to work
-            class Expansion(impl):
-                pass
+    for impl, args in ONNXForward.extensions().items():
+        if "op" in args and args["op"] == schema.name:
+            pass
+            # TODO
+            #class Expansion(ExpandTransformation):
+            #    @staticmethod
+            #    def expansion(node, state, sdfg):
+            #        impl.forward(node, state, sdfg)
 
-            implementation_name = 'pure_{}'.format(i)
-            cls.register_implementation(implementation_name, Expansion)
-            cls.default_implementation = implementation_name
+            # implementation_name = impl.__name__
+            # cls.register_implementation(implementation_name, Expansion)
+            # cls.default_implementation = implementation_name
 
     # register python frontend replacement
     #######################################
