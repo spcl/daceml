@@ -36,9 +36,12 @@ def test_bert_encoder(gpu, apply_strict):
     dace_outputs1 = dace_model(input.clone())
 
     diff = np.abs(dace_outputs1 - pt_outputs[0].detach().numpy())
-    print(diff)
-    print(np.max(diff))
-    print(np.median(diff))
+    print("Max diff to Pytorch:", np.max(diff))
+    print("Median diff to Pytorch:", np.median(diff))
+
+    diff = np.abs(dace_outputs1 - ort_outputs[0])
+    print("Max diff to ORT:", np.max(diff))
+    print("Median diff to ORT:", np.median(diff))
 
     assert np.allclose(dace_outputs1, ort_outputs[0], atol=1e-6)
     assert np.allclose(dace_outputs0, dace_outputs1)
