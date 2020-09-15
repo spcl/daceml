@@ -58,17 +58,17 @@ def test_squeeze(gpu, apply_strict, break_opchecker):
 
         state.add_node(op_node)
         state.add_edge(access_X, None, op_node, "data",
-                       sdfg.get_array_memlet("X_arr"))
+                       sdfg.make_array_memlet("X_arr"))
 
         state.add_edge(op_node, "squeezed", access_scalar, None,
-                       sdfg.get_array_memlet("scalar"))
+                       sdfg.make_array_memlet("scalar"))
 
         unsqueeze_op = donnx.ONNXUnsqueeze("Unsqueeze", axes=[0])
         state.add_node(unsqueeze_op)
         state.add_edge(access_scalar, None, unsqueeze_op, "data",
-                       sdfg.get_array_memlet("scalar"))
+                       sdfg.make_array_memlet("scalar"))
         state.add_edge(unsqueeze_op, "expanded", access_result, None,
-                       sdfg.get_array_memlet("__return"))
+                       sdfg.make_array_memlet("__return"))
 
         X = np.random.rand(1).astype(np.float32)
 
@@ -104,10 +104,10 @@ def test_shape(gpu, apply_strict, break_opchecker):
 
         state.add_node(op_node)
         state.add_edge(access_X, None, op_node, "data",
-                       sdfg.get_array_memlet("X_arr"))
+                       sdfg.make_array_memlet("X_arr"))
 
         state.add_edge(op_node, "shape", access_result, None,
-                       sdfg.get_array_memlet("__return"))
+                       sdfg.make_array_memlet("__return"))
 
         X = np.random.rand(2, 4).astype(np.float32)
 
@@ -141,10 +141,10 @@ def test_unsqueeze(gpu, apply_strict, break_opchecker):
 
         state.add_node(op_node)
         state.add_edge(access_X, None, op_node, "data",
-                       sdfg.get_array_memlet("X_arr"))
+                       sdfg.make_array_memlet("X_arr"))
 
         state.add_edge(op_node, "expanded", access_result, None,
-                       sdfg.get_array_memlet("__return"))
+                       sdfg.make_array_memlet("__return"))
 
         X = np.float32(np.random.rand())
 
@@ -191,24 +191,24 @@ def test_add(gpu, scalars, apply_strict, break_opchecker):
 
         state.add_node(op_node)
         state.add_edge(access_X, None, op_node, "A",
-                       sdfg.get_array_memlet("X_arr"))
+                       sdfg.make_array_memlet("X_arr"))
         state.add_edge(access_W, None, op_node, "B",
-                       sdfg.get_array_memlet("W_arr"))
+                       sdfg.make_array_memlet("W_arr"))
 
         if scalars:
             state.add_edge(op_node, "C", access_Z, None,
-                           sdfg.get_array_memlet("Z_arr"))
+                           sdfg.make_array_memlet("Z_arr"))
         else:
             state.add_edge(op_node, "C", access_result, None,
-                           sdfg.get_array_memlet("__return"))
+                           sdfg.make_array_memlet("__return"))
 
         if scalars:
             unsqueeze_op = donnx.ONNXUnsqueeze("Unsqueeze", axes=[0])
             state.add_node(unsqueeze_op)
             state.add_edge(access_Z, None, unsqueeze_op, "data",
-                           sdfg.get_array_memlet("Z_arr"))
+                           sdfg.make_array_memlet("Z_arr"))
             state.add_edge(unsqueeze_op, "expanded", access_result, None,
-                           sdfg.get_array_memlet("__return"))
+                           sdfg.make_array_memlet("__return"))
 
         shapes = [] if scalars else [2, 2]
         X = np.random.rand(*shapes)

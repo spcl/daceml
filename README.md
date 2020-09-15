@@ -94,9 +94,9 @@ access_Z = state.add_access("Z_arr")
 conv = ONNXConv("MyConvNode")
 
 state.add_node(conv)
-state.add_edge(access_X, None, conv, "X", sdfg.get_array_memlet("X_arr"))
-state.add_edge(access_W, None, conv, "W", sdfg.get_array_memlet("W_arr"))
-state.add_edge(conv, "Y", access_Z, None, sdfg.get_array_memlet("Z_arr"))
+state.add_edge(access_X, None, conv, "X", sdfg.make_array_memlet("X_arr"))
+state.add_edge(access_W, None, conv, "W", sdfg.make_array_memlet("W_arr"))
+state.add_edge(conv, "Y", access_Z, None, sdfg.make_array_memlet("Z_arr"))
 
 X = np.random.rand(5, 3, 10, 10).astype(np.float32)
 W = np.random.rand(16, 3, 3, 3).astype(np.float32)

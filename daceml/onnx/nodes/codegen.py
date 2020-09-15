@@ -523,12 +523,12 @@ def expand_node(node, state, sdfg):
                     access = nstate.add_read(parameter_name)
                     nstate.add_edge(access, None, ntasklet,
                                     "_conn_" + parameter_name,
-                                    nsdfg.get_array_memlet(parameter_name))
+                                    nsdfg.make_array_memlet(parameter_name))
                 else:
                     access = nstate.add_write(parameter_name)
                     nstate.add_edge(ntasklet, "_conn_" + parameter_name,
                                     access, None,
-                                    nsdfg.get_array_memlet(parameter_name))
+                                    nsdfg.make_array_memlet(parameter_name))
                 continue
 
             copy_options = input_copy_required[
@@ -551,7 +551,7 @@ def expand_node(node, state, sdfg):
                 access = nstate.add_read(parameter_name)
                 access_copy = nstate.add_access("copy_" + memlet.data)
                 nstate.add_edge(access, None, access_copy, None,
-                                nsdfg.get_array_memlet("copy_" + memlet.data))
+                                nsdfg.make_array_memlet("copy_" + memlet.data))
                 nstate.add_edge(access_copy, None, ntasklet,
                                 "_conn_" + parameter_name, nmemlet)
             else:
@@ -560,7 +560,7 @@ def expand_node(node, state, sdfg):
                 nstate.add_edge(ntasklet, "_conn_" + parameter_name,
                                 access_copy, None, nmemlet)
                 nstate.add_edge(access_copy, None, access, None,
-                                nsdfg.get_array_memlet("copy_" + memlet.data))
+                                nsdfg.make_array_memlet("copy_" + memlet.data))
 
         return nsdfg
 

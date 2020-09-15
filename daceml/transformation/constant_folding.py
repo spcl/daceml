@@ -256,7 +256,7 @@ class ConstantFolding(pattern_matching.Transformation):
             access_shape = state.add_access(clean_constant_name)
             state.add_edge(access_shape, None, output_edge.dst,
                            output_edge.dst_conn,
-                           sdfg.get_array_memlet(clean_constant_name))
+                           sdfg.make_array_memlet(clean_constant_name))
         else:
             # otherwise compute the result of the op
             sub_sdfg = dace.SDFG("sub_sdfg")
@@ -287,7 +287,7 @@ class ConstantFolding(pattern_matching.Transformation):
                 access = sub_state.add_access('array_' + edge.dst_conn)
                 sub_state.add_edge(
                     access, None, node_copy, edge.dst_conn,
-                    sub_sdfg.get_array_memlet('array_' + edge.dst_conn))
+                    sub_sdfg.make_array_memlet('array_' + edge.dst_conn))
 
             outputs = {}
             for edge in state.out_edges(node):
@@ -306,19 +306,19 @@ class ConstantFolding(pattern_matching.Transformation):
                     access = sub_state.add_access('array_' + edge.src_conn)
                     sub_state.add_edge(
                         node_copy, edge.src_conn, access_scalar, None,
-                        sub_sdfg.get_array_memlet('scalar_array_' +
-                                                  edge.src_conn))
+                        sub_sdfg.make_array_memlet('scalar_array_' +
+                                                   edge.src_conn))
 
                     sub_state.add_edge(
                         access_scalar, None, access, None,
-                        sub_sdfg.get_array_memlet('array_' + edge.src_conn))
+                        sub_sdfg.make_array_memlet('array_' + edge.src_conn))
                 else:
                     desc.transient = False
                     sub_sdfg.add_datadesc('array_' + edge.src_conn, desc)
                     access = sub_state.add_access('array_' + edge.src_conn)
                     sub_state.add_edge(
                         node_copy, edge.src_conn, access, None,
-                        sub_sdfg.get_array_memlet('array_' + edge.src_conn))
+                        sub_sdfg.make_array_memlet('array_' + edge.src_conn))
 
                 if len(desc.shape) == 0:
                     outputs['array_' + edge.src_conn] = np.empty(
@@ -346,7 +346,7 @@ class ConstantFolding(pattern_matching.Transformation):
 
                 access_constant = state.add_access(clean_constant_name)
                 state.add_edge(access_constant, None, edge.dst, edge.dst_conn,
-                               sdfg.get_array_memlet(clean_constant_name))
+                               sdfg.make_array_memlet(clean_constant_name))
 
         # remove all now useless nodes with a reverse BFS
         queue = deque([node])
