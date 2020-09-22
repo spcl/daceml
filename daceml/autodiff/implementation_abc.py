@@ -13,17 +13,18 @@ class ONNXBackward(abc.ABC):
 
         The register function expects an argument `op` containing the ONNX op name (string).
     """
-
     @staticmethod
     @abc.abstractmethod
-    def backward_can_be_applied(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> bool:
+    def backward_can_be_applied(node: ONNXOp, state: SDFGState,
+                                sdfg: SDFG) -> bool:
 
         # TODO docstring
         ...
 
     @staticmethod
     @abc.abstractmethod
-    def backward(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> typing.Union[Node, SDFG]:
+    def backward(node: ONNXOp, state: SDFGState,
+                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         # TODO docstring
         ...

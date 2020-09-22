@@ -1,5 +1,6 @@
 import copy
 from math import sqrt
+import typing
 
 import dace
 from dace import SDFGState, SDFG
@@ -8,7 +9,7 @@ from dace.registry import autoregister_params
 from dace.sdfg.nodes import Node
 from dace.symbolic import symstr
 
-from daceml.onnx import ONNXOp
+from daceml.onnx.nodes.onnx_op import ONNXOp
 from daceml.onnx.implementation_abc import ONNXForward
 
 
@@ -17,10 +18,11 @@ class PureDiv(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
-        return True
+        return False
 
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> Node:
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         in_edges = state.in_edges(node)
         out_edges = state.out_edges(node)
@@ -41,10 +43,12 @@ class PureMul(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
-        pass
+        return False
 
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> Node:
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+
         in_edges = state.in_edges(node)
         out_edges = state.out_edges(node)
 
@@ -84,7 +88,8 @@ class PureMatMul(ONNXForward):
         return False
 
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> Node:
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         in_edges = state.in_edges(node)
         out_edges = state.out_edges(node)
@@ -148,9 +153,10 @@ class PureMatMul(ONNXForward):
                 external_edges=True)
             return sdfg_exp
         else:
+
             @dace.program
-            def matmultop(A: atype, B: btype, C: ctype):
-                C[:] = A @ B
+            def matmultop(A: atype, B: btype, Y: ctype):
+                Y[:] = A @ B
 
             return matmultop.to_sdfg()
 
@@ -160,10 +166,11 @@ class PureSub(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
-        pass
+        return False
 
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> Node:
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         in_edges = state.in_edges(node)
         out_edges = state.out_edges(node)
@@ -233,10 +240,12 @@ class PureAdd(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
-        pass
+        return False
 
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> Node:
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+
         inputs, outputs = _get_inputs_and_outputs(sdfg, state, node)
 
         in_edges = state.in_edges(node)
@@ -258,10 +267,11 @@ class PureIdentity(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
-        pass
+        return False
 
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> Node:
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         # in_edges = state.in_edges(node)
         # out_edges = state.out_edges(node)
@@ -352,10 +362,11 @@ class PureReciprocal(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
-        pass
+        return False
 
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> Node:
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         in_edges = state.in_edges(node)
         out_edges = state.out_edges(node)
@@ -375,10 +386,12 @@ class PureSqrt(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
-        pass
+        return False
 
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> Node:
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+
         inputs, outputs = _get_inputs_and_outputs(sdfg, state, node)
 
         in_edges = state.in_edges(node)
@@ -400,10 +413,12 @@ class PureTanh(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
-        pass
+        return False
 
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> Node:
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+
         inputs, outputs = _get_inputs_and_outputs(sdfg, state, node)
 
         in_edges = state.in_edges(node)
@@ -468,10 +483,11 @@ class PureReduceSum(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
-        pass
+        return False
 
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> Node:
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         in_edges = state.in_edges(node)
         mm = in_edges[0].data.subset.size()[0]
@@ -522,10 +538,12 @@ class PureReduceMean(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
-        pass
+        return False
 
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> Node:
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+
         inputs, outputs = _get_inputs_and_outputs(sdfg, state, node)
         axes = None
         keepdims = None
@@ -624,10 +642,11 @@ class PureSoftmax(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
-        pass
+        return False
 
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> Node:
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         axis = None
         for name, attr in node.schema.attributes.items():

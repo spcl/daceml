@@ -12,7 +12,6 @@ from dace.sdfg.graph import MultiConnectorEdge
 from dace.transformation.transformation import ExpandTransformation
 
 from daceml.onnx.environments import ONNXRuntime
-from daceml.onnx.implementation_abc import ONNXForward
 from daceml.onnx.nodes.node_utils import parse_variadic_param
 from daceml.onnx.schema import ONNXSchema, ONNXAttributeType, _ATTR_TYPE_TO_PYTHON_TYPE, ONNXParameterType, ONNXAttribute, ONNXParameter, ONNXTypeConstraint
 from daceml.onnx.nodes.codegen import expand_node
@@ -563,13 +562,6 @@ for schema in onnx.defs.get_all_schemas():
 
         @staticmethod
         def expansion(node, state: SDFGState, sdfg: SDFG):
-            try:
-                node.validate(sdfg, state)
-            except Exception as ex:
-                raise ValueError(
-                    "Node validation failed: {} (at state {}, node {}, which is an ONNX Operator of type {})"
-                    .format(str(ex), state, node, schema.name)) from ex
-
             return node.expansion(node, state, sdfg)
 
     cls.register_implementation('onnxruntime', Expansion)
@@ -578,18 +570,29 @@ for schema in onnx.defs.get_all_schemas():
     # Register pure implementations
     ##########################################
 
-    for impl, args in ONNXForward.extensions().items():
-        if "op" in args and args["op"] == schema.name:
-            pass
-            # TODO
-            #class Expansion(ExpandTransformation):
-            #    @staticmethod
-            #    def expansion(node, state, sdfg):
-            #        impl.forward(node, state, sdfg)
+    # avoid import loop
+    from daceml.onnx.implementation_abc import ONNXForward
 
-            # implementation_name = impl.__name__
-            # cls.register_implementation(implementation_name, Expansion)
-            # cls.default_implementation = implementation_name
+    for impl, args in ONNXForward.extensions().items():
+
+        if "op" in args and args["op"] == schema.name:
+
+            class Expansion(ExpandTransformation):
+                environments = [ONNXRuntime]
+                forward_impl: ONNXForward = impl
+
+                @classmethod
+                def expansion(cls, node, state, sdfg):
+                    if cls.forward_impl.forward_can_be_applied(
+                            node, state, sdfg):
+                        return cls.forward_impl.forward(node, state, sdfg)
+                    else:
+                        # fall back to ORT
+                        return node.expansion(node, state, sdfg)
+
+            implementation_name = impl.__name__
+            cls.register_implementation(implementation_name, Expansion)
+            cls.default_implementation = implementation_name
 
     # register python frontend replacement
     #######################################

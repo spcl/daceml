@@ -58,6 +58,7 @@ class DaceModule(nn.Module):
             self.dace_model = self._initialize_sdfg(dummy_inputs)
 
     def _initialize_sdfg(self, dummy_inputs) -> ONNXModel:
+        # TODO change to StringIO if not too big
         with tempfile.TemporaryDirectory() as dir_name:
             export_name = os.path.join(dir_name, "export.onnx")
 
