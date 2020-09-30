@@ -3,7 +3,7 @@ from collections import defaultdict
 from typing import Type
 
 import dace
-from dace.transformation.pattern_matching import ExpandTransformation
+from dace.transformation.transformation import ExpandTransformation
 
 
 class ONNXImplementations:
