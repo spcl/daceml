@@ -8,18 +8,6 @@ from daceml.autodiff import AutoDiffException, add_backward_pass
 from utils import SDFGBackwardRunner, test_correctness
 
 @test_correctness
-def test_without_scalar():
-
-    @dace.program
-    def log_sdfg(Z: dace.float32[3, 3], W: dace.float32[3, 3]):
-        W[:] = dace.elementwise(lambda x: log(x), Z)
-
-    sdfg = log_sdfg.to_sdfg()
-    add_backward_pass(sdfg, sdfg.nodes()[0], inputs=["Z"], outputs=["W"], grads=["Z"])
-
-
-
-@test_correctness
 def test_gemm():
     def torch_gemm(*, X, Y):
         Z = X @ Y

@@ -57,6 +57,24 @@ def program_for_node(program, sdfg: SDFG, state: SDFGState,
     return result
 
 
+@autoregister_params(op="Log", name="pure")
+class PureLog(ONNXForward):
+    @staticmethod
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
+        return node.in_desc_with_name(sdfg, state, 'input').dtype in [
+            dace.float16, dace.float32, dace.float64
+        ]
+
+    @staticmethod
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+        def prog(input, output):
+            output[:] = dace.elementwise(lambda x: log(x), input)
+
+        return program_for_node(prog, sdfg, state, node).to_sdfg()
+
+
 @autoregister_params(op="Sqrt", name="pure")
 class PureSqrt(ONNXForward):
     @staticmethod

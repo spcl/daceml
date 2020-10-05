@@ -50,8 +50,7 @@ def add_backward_pass(
     gen = BackwardPassGenerator(sdfg=sdfg,
                                 state=state,
                                 outputs=outputs,
-                                inputs=inputs,
-                                grads=grads)
+                                inputs=inputs)
 
     # we ignore the input arrs because we are adding the backward state to the same sdfg;
     # the input arrays are already defined in the sdfg

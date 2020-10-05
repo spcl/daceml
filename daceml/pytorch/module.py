@@ -9,6 +9,7 @@ import torch.nn as nn
 import onnx
 from torch.onnx import TrainingMode
 
+from daceml.autodiff.pytorch import make_backward_function
 from daceml.onnx import ONNXModel
 from daceml.onnx.shape_inference import infer_shapes
 
@@ -46,9 +47,11 @@ class DaceModule(nn.Module):
             dummy_inputs: typing.Optional[typing.Tuple[torch.Tensor]] = None,
             cuda: bool = False,
             train: bool = False,
+            backward=False,
             apply_strict: bool = False):
         super(DaceModule, self).__init__()
 
+        self.backward = backward
         self.model = module
         self.train = train
         self.sdfg = None
@@ -81,14 +84,19 @@ class DaceModule(nn.Module):
             self.sdfg = dace_model.sdfg
             self.sdfg.validate()
 
-            return dace_model
+            if self.backward:
+                function = make_backward_function(dace_model)
+                return lambda *args: function.apply(*args)
+            else:
+                return dace_model
 
     def forward(self, *actual_inputs):
         """ Execute the forward pass using the traced ``module``."""
         if self.sdfg is None:
             self.dace_model = self._initialize_sdfg(actual_inputs)
 
-        return self.dace_model(*actual_inputs)
+        outputs = self.dace_model(*actual_inputs)
+        return outputs
 
 
 def dace_module(moduleclass):
