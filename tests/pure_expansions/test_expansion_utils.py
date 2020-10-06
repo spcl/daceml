@@ -6,7 +6,7 @@ import daceml.onnx as donnx
 
 def test_sqrt_expansion():
     # sqrt expansion makes use of the program_for_node function
-    sdfg = dace.SDFG("test_matmul_expansion")
+    sdfg = dace.SDFG("test_sqrt_expansion")
 
     sdfg.add_array("inp", [2, 4], dace.float32)
     sdfg.add_array("__return", [2, 4], dace.float32)

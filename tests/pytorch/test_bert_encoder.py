@@ -21,9 +21,11 @@ def test_bert_encoder(gpu, apply_strict):
 
     dace_model = DaceModule(ptmodel, cuda=gpu, train=False)
     dace_outputs0 = dace_model(input.clone())
+    dace_model.dace_model.sdfg.save("before_cf.sdfg")
 
     dace_model.dace_model.sdfg.apply_transformations_repeated(
         [ConstantFolding, RedundantSecondArray], validate_all=True)
+    dace_model.dace_model.sdfg.save("after_cf.sdfg")
 
     dace_outputs1 = dace_model(input.clone())
 
@@ -31,6 +33,7 @@ def test_bert_encoder(gpu, apply_strict):
 
     assert np.max(diff) < 1e-5
     assert np.allclose(dace_outputs1, dace_outputs0)
+    print("testing passed")
 
 
 if __name__ == "__main__":
