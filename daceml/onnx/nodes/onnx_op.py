@@ -98,7 +98,7 @@ class ONNXOp(nd.LibraryNode):
 
     def out_desc_with_name(self, sdfg: SDFG, state: SDFGState,
                            name: str) -> dt.Data:
-        return sdfg.arrays[self.in_edge_with_name(state, name).data.data]
+        return sdfg.arrays[self.out_edge_with_name(state, name).data.data]
 
     def in_edge_with_name(self, state: SDFGState,
                           name: str) -> MultiConnectorEdge:

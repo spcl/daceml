@@ -50,22 +50,22 @@ def program_for_node(program, sdfg: SDFG, state: SDFGState,
     return dace.parser.DaceProgram(program, (), {})
 
 
-#@autoregister_params(op="Sqrt")
-#class PureSqrt(ONNXForward):
-#    @staticmethod
-#    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
-#                               sdfg: SDFG) -> bool:
-#        return node.out_desc_with_name(sdfg, state, 'X').dtype in [
-#            dace.float16, dace.float32, dace.float64
-#        ]
-#
-#    @staticmethod
-#    def forward(node: ONNXOp, state: SDFGState,
-#                sdfg: SDFG) -> typing.Union[Node, SDFG]:
-#        def prog(X, Y):
-#            Y[:] = dace.elementwise(lambda x: sqrt(x), X)
-#
-#        return program_for_node(prog, sdfg, state, node).to_sdfg()
+@autoregister_params(op="Sqrt")
+class PureSqrt(ONNXForward):
+   @staticmethod
+   def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                              sdfg: SDFG) -> bool:
+       return node.in_desc_with_name(sdfg, state, 'X').dtype in [
+           dace.float16, dace.float32, dace.float64
+       ]
+
+   @staticmethod
+   def forward(node: ONNXOp, state: SDFGState,
+               sdfg: SDFG) -> typing.Union[Node, SDFG]:
+       def prog(X, Y):
+           Y[:] = dace.elementwise(lambda x: sqrt(x), X)
+
+       return program_for_node(prog, sdfg, state, node).to_sdfg()
 
 
 @autoregister_params(op="Div")
@@ -400,31 +400,6 @@ class PureErf(ONNXForward):
         sdfg_exp.fill_scope_connectors()
         return sdfg_exp
 
-@autoregister_params(op="Sqrt")
-class PureSqrt(ONNXForward):
-    @staticmethod
-    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
-                               sdfg: SDFG) -> bool:
-        return True
-
-    @staticmethod
-    def forward(node: ONNXOp, state: SDFGState,
-                sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        node.validate(sdfg, state)
-
-        in_edges = state.in_edges(node)
-        out_edges = state.out_edges(node)
-
-        atype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
-        btype = copy.deepcopy(sdfg.arrays[out_edges[0].data.data])
-
-        @dace.program
-        def sqrtop(X: atype, Y: btype):
-            # Y[:] = X ** dace.float32(0.5)
-            Y[:] = sqrt(X)
-
-        return sqrtop.to_sdfg()
 
 @autoregister_params(op="Pow")
 class PurePow(ONNXForward):
