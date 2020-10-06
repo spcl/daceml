@@ -3,8 +3,9 @@ import logging
 from typing import Iterator, Tuple, List, Dict, Type
 
 import dace
-import dace.frontend.common.op_repository as dace_op_repo
+import dace.data as dt
 import dace.sdfg.nodes as nd
+import dace.frontend.common.op_repository as dace_op_repo
 import onnx
 from dace import SDFG, SDFGState
 from dace.properties import Property, ListProperty
@@ -90,6 +91,34 @@ class ONNXOp(nd.LibraryNode):
     schema = Property(dtype=ONNXSchema,
                       desc="The operator's ONNX OpSchema",
                       allow_none=True)
+
+    def in_desc_with_name(self, sdfg: SDFG, state: SDFGState,
+                          name: str) -> dt.Data:
+        return sdfg.arrays[self.in_edge_with_name(state, name).data.data]
+
+    def out_desc_with_name(self, sdfg: SDFG, state: SDFGState,
+                           name: str) -> dt.Data:
+        return sdfg.arrays[self.in_edge_with_name(state, name).data.data]
+
+    def in_edge_with_name(self, state: SDFGState,
+                          name: str) -> MultiConnectorEdge:
+        in_edges: List[MultiConnectorEdge] = state.in_edges(self)
+        cands = [edge for edge in in_edges if edge.dst_conn == name]
+        if len(cands) != 1:
+            raise ValueError(
+                "Expected to find exactly one edge with name '{}', found {}".
+                format(name, len(cands)))
+        return cands[0]
+
+    def out_edge_with_name(self, state: SDFGState,
+                           name: str) -> MultiConnectorEdge:
+        out_edges: List[MultiConnectorEdge] = state.out_edges(self)
+        cands = [edge for edge in out_edges if edge.src_conn == name]
+        if len(cands) != 1:
+            raise ValueError(
+                "Expected to find exactly one edge with name '{}', found {}".
+                format(name, len(cands)))
+        return cands[0]
 
     def iter_outputs_in_onnx_order(
             self, state: SDFGState) -> List[MultiConnectorEdge]:

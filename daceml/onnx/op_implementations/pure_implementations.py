@@ -1,9 +1,11 @@
 import copy
+import inspect
 from math import sqrt
 import typing
 
 import dace
 from dace import SDFGState, SDFG
+from dace.frontend.python.parser import DaceProgram
 from dace.libraries.standard.nodes.code import _get_inputs_and_outputs
 from dace.registry import autoregister_params
 from dace.sdfg.nodes import Node
@@ -11,6 +13,58 @@ from dace.symbolic import symstr
 
 from daceml.onnx.nodes.onnx_op import ONNXOp
 from daceml.onnx.implementation_abc import ONNXForward
+
+
+def program_for_node(program, sdfg: SDFG, state: SDFGState,
+                     node: ONNXOp) -> DaceProgram:
+    """ Expand a function to a dace program.
+
+        The dtypes for the arguments will be extracted by matching the parameter names to edges.
+    """
+    input_names = set(inp.name for inp in node.schema.inputs)
+    output_names = set(outp.name for outp in node.schema.outputs)
+
+    if input_names.intersection(output_names):
+        # this is currently the case for only one onnx op
+        raise ValueError(
+            "program_for_node cannot be applied on nodes of this type;"
+            " '{}' is both an input and an output".format(
+                next(input_names.intersection(output_names))))
+
+    params = inspect.signature(program).parameters
+
+    annotations = {}
+    for name, param in params.items():
+        if name in input_names:
+            annotations[name] = node.in_desc_with_name(sdfg, state, name)
+        elif name in output_names:
+            annotations[name] = node.out_desc_with_name(sdfg, state, name)
+        else:
+            raise ValueError(
+                "'{}' was not found as an input or output for {}".format(
+                    name, node.schema.name))
+
+    program.__annotations__ = annotations
+
+    return dace.parser.DaceProgram(program, (), {})
+
+
+@autoregister_params(op="Sqrt")
+class PureSqrt(ONNXForward):
+    @staticmethod
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
+        return node.out_desc_with_name(sdfg, state, 'X').dtype in [
+            dace.float16, dace.float32, dace.float64
+        ]
+
+    @staticmethod
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+        def prog(X, Y):
+            Y[:] = dace.elementwise(lambda x: sqrt(x), X)
+
+        return program_for_node(prog, sdfg, state, node).to_sdfg()
 
 
 @autoregister_params(op="Div")
