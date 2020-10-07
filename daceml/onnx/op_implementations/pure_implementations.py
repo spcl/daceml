@@ -2,9 +2,10 @@ import copy
 import inspect
 from math import sqrt
 import typing
+import math
 
 import dace
-from dace import SDFGState, SDFG
+from dace import SDFGState, SDFG, dtypes
 from dace.frontend.python.parser import DaceProgram
 from dace.libraries.standard.nodes.code import _get_inputs_and_outputs
 from dace.registry import autoregister_params
@@ -14,6 +15,7 @@ from dace.symbolic import symstr
 from daceml.onnx.nodes.onnx_op import ONNXOp
 from daceml.onnx.implementation_abc import ONNXForward
 import numpy as np
+
 
 
 def program_for_node(program, sdfg: SDFG, state: SDFGState,
@@ -1049,7 +1051,7 @@ class PureSoftmax(ONNXForward):
         input = state_exp.add_read('input')
         output = state_exp.add_access('output')
 
-        red1 = state_exp.add_reduce('lambda a1, b1: max(a1, b1)', None, 0)
+        red1 = state_exp.add_reduce('lambda a1, b1: max(a1, b1)', None, dtypes.min_value(sdfg_exp.arrays['input'].dtype))
         texp1 = state_exp.add_tasklet('tasklet1', {'a2', 'b2'}, {'c2'},
                                       'c2 = exp(a2-b2)')
 
