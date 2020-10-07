@@ -33,7 +33,10 @@ def _strings_to_symbols(strings: Set[str]) -> Set[sp.Symbol]:
 def _symbols_to_strings(symbs: Set[sp.Symbol]) -> Set[str]:
     return {str(symb) for symb in symbs}
 
-def _add_backward_state_to_sdfg(sdfg: SDFG, forward: SDFGState, backward: SDFGState, grad_arrs: dict, nested_sdfg_forwarded_arrays: dict):
+
+def _add_backward_state_to_sdfg(sdfg: SDFG, forward: SDFGState,
+                                backward: SDFGState, grad_arrs: dict,
+                                nested_sdfg_forwarded_arrays: dict):
     # add the new backward state to the SDFG
     base_label = None if forward.label is None else forward.label + "_backward"
     i = len(sdfg)
@@ -53,6 +56,7 @@ def _add_backward_state_to_sdfg(sdfg: SDFG, forward: SDFGState, backward: SDFGSt
 
     sdfg.add_node(backward, is_start_state=False)
     sdfg.add_edge(forward, backward, dace.InterstateEdge())
+
 
 def is_initialization_state(state: SDFGState) -> bool:
     """Check if state is an initialization state, i.e. it initializes one or more arrays with zero values
@@ -258,16 +262,19 @@ class BackwardPassGenerator(object):
         :param backward_state: the state which the backward pass should be added to (must be added to `backward_sdfg`
                                before calling this method).
     """
-    def __init__(self, *, sdfg: SDFG,
-                 state: SDFGState,
-                 outputs: List[Union[nd.AccessNode, str]],
-                 inputs: List[Union[nd.AccessNode, str]],
-                 backward_sdfg: SDFG, # this can be the same as SDFG
-                 backward_state: SDFGState):
-
+    def __init__(
+            self,
+            *,
+            sdfg: SDFG,
+            state: SDFGState,
+            outputs: List[Union[nd.AccessNode, str]],
+            inputs: List[Union[nd.AccessNode, str]],
+            backward_sdfg: SDFG,  # this can be the same as SDFG
+            backward_state: SDFGState):
 
         if backward_state not in backward_sdfg.nodes():
-            raise AutoDiffException("Expected to find backward_state in backward_sdfg")
+            raise AutoDiffException(
+                "Expected to find backward_state in backward_sdfg")
 
         def str_to_access(data: str, source: str) -> nd.AccessNode:
             matches = [
@@ -340,11 +347,13 @@ class BackwardPassGenerator(object):
         if sdfg is backward_sdfg:
             # this only makes sense if the output is a single scalar.
             if len(outputs) != 1:
-                raise AutoDiffException("When the forward sdfg is the same as the backward sdfg, outputs must be a"
-                                        "single scalar")
+                raise AutoDiffException(
+                    "When the forward sdfg is the same as the backward sdfg, outputs must be a"
+                    "single scalar")
             if not _is_int_value(sdfg.arrays[outputs[0].data].total_size, 1):
-                raise AutoDiffException("When the forward sdfg is the same as the backward sdfg, outputs must be a"
-                                        "single scalar")
+                raise AutoDiffException(
+                    "When the forward sdfg is the same as the backward sdfg, outputs must be a"
+                    "single scalar")
             self.add_inputs = False
         else:
             self.add_inputs = True
@@ -367,12 +376,15 @@ class BackwardPassGenerator(object):
         # out of this class
         for node in self.forward_state.nodes():
             if isinstance(node, ONNXOp):
-                for impl in ONNXForward.registered_implementations(node.schema.name):
-                    if impl.forward_can_be_applied(node, self.forward_state, self.sdfg):
+                for impl in ONNXForward.registered_implementations(
+                        node.schema.name):
+                    if impl.forward_can_be_applied(node, self.forward_state,
+                                                   self.sdfg):
                         # try to apply the expansion
                         class Expansion(ExpandTransformation):
                             environments = []
                             _expansion_result = None
+
                             @classmethod
                             def expansion(cls, node, state, sdfg):
                                 return impl.forward(node, state, sdfg)
@@ -381,9 +393,10 @@ class BackwardPassGenerator(object):
                             def postprocessing(cls, sdfg, state, expansion):
                                 cls._expansion_result = expansion
 
-
                         Expansion._match_node = type(node)
-                        Expansion.apply_to(self.sdfg, verify=False, match_node=node)
+                        Expansion.apply_to(self.sdfg,
+                                           verify=False,
+                                           match_node=node)
 
         if self._applied:
             raise AutoDiffException(
@@ -394,7 +407,8 @@ class BackwardPassGenerator(object):
         # we do a reverse bfs and a forward bfs, then take the intersection of nodes found
         forward_nodes = {
             n
-            for e in self.forward_state.bfs_edges(self.inputs) for n in [e.src, e.dst]
+            for e in self.forward_state.bfs_edges(self.inputs)
+            for n in [e.src, e.dst]
         }
         backward_nodes = {
             n
@@ -403,7 +417,8 @@ class BackwardPassGenerator(object):
         }
 
         forward_subgraph = StateSubgraphView(
-            self.forward_state, list(forward_nodes.intersection(backward_nodes)))
+            self.forward_state,
+            list(forward_nodes.intersection(backward_nodes)))
         # recursively reverse the subgraph
         self._reverse_subgraph(forward_subgraph)
 
@@ -481,18 +496,21 @@ class BackwardPassGenerator(object):
                     # TODO test with identical nodes after one another; should fail (come up with better solution)
                     # this can clearly fail if someone chooses annoying array names; ignore this for now
                     if memlet.data + "_grad" in self.backward_grad_arrays:
-                        AutoDiffException("Unable to create array with name '{}'; it already exists".format(memlet.data + "_grad"))
+                        AutoDiffException(
+                            "Unable to create array with name '{}'; it already exists"
+                            .format(memlet.data + "_grad"))
 
-                    self.backward_grad_arrays[memlet.data + "_grad"] = cloned_datadesc
-                    self.backward_sdfg.arrays[memlet.data + "_grad"] = dc(cloned_datadesc)
+                    self.backward_grad_arrays[memlet.data +
+                                              "_grad"] = cloned_datadesc
+                    self.backward_sdfg.arrays[memlet.data +
+                                              "_grad"] = dc(cloned_datadesc)
 
                 self.grad_memlets[memlet.data].append(memlet)
                 memlet.data = memlet.data + "_grad"
 
                 self.backward_state.add_edge(
                     self.reverse_map[dest_node],
-                    self.get_grad_name(input_conn,
-                                       dest_node),
+                    self.get_grad_name(input_conn, dest_node),
                     rev,
                     self.get_grad_name(output_conn, node),
                     memlet,
@@ -544,7 +562,8 @@ class BackwardPassGenerator(object):
 
                             self.backward_input_arrays[data_name] = data_desc
                             if self.add_inputs:
-                                self.backward_sdfg.add_datadesc(data_name, dc(data_desc))
+                                self.backward_sdfg.add_datadesc(
+                                    data_name, dc(data_desc))
 
                         elif type(traversed_edge.src) is nd.CodeNode:
                             # code -> code edge:
@@ -595,7 +614,8 @@ class BackwardPassGenerator(object):
         `entry_node` (where `entry_node` is a node from the forward pass).
         """
         src_candidates = [
-            cast(nd.MapExit, node) for node in self.backward_state.nodes() if type(node) is nd.MapEntry
+            cast(nd.MapExit, node) for node in self.backward_state.nodes()
+            if type(node) is nd.MapEntry
             and node.map == self.reverse_map[entry_node.map]
         ]
         if len(src_candidates) != 1:
@@ -605,8 +625,9 @@ class BackwardPassGenerator(object):
 
         return src_candidates[0]
 
-    def _get_reverse_node(self, node, output_grad_connectors,
-                          input_grad_connectors) -> Union[nd.Node, Tuple[nd.Node, nd.Node]]:
+    def _get_reverse_node(
+            self, node, output_grad_connectors,
+            input_grad_connectors) -> Union[nd.Node, Tuple[nd.Node, nd.Node]]:
         """ Add the reverse node for a node from the forward pass to the backward pass, and return it.
 
             Resolution order:
@@ -632,9 +653,7 @@ class BackwardPassGenerator(object):
         # (2)
         # TODO: will be needed for a good softmax diff
 
-        raise AutoDiffException("Unsupported node type {}".format(
-            type(node)))
-
+        raise AutoDiffException("Unsupported node type {}".format(type(node)))
 
     def _reverse_NestedSDFG(
         self,
@@ -660,15 +679,13 @@ class BackwardPassGenerator(object):
         reverse_sdfg = dace.SDFG(node.sdfg.name + "_backward")
         backward_state = reverse_sdfg.add_state()
         # recursive call
-        gen = BackwardPassGenerator(
-            sdfg=node.sdfg,
-            state=state_to_diff,
-            outputs=output_grad_connectors,
-            inputs=input_grad_connectors,
-            backward_sdfg=reverse_sdfg,
-            backward_state=backward_state)
+        gen = BackwardPassGenerator(sdfg=node.sdfg,
+                                    state=state_to_diff,
+                                    outputs=output_grad_connectors,
+                                    inputs=input_grad_connectors,
+                                    backward_sdfg=reverse_sdfg,
+                                    backward_state=backward_state)
         backward_grad_arrays, backward_input_arrays = gen.backward()
-
 
         # we need to defer add edges until after the arrays have been added because creation of the nested
         # sdfg fails other wise
@@ -684,14 +701,17 @@ class BackwardPassGenerator(object):
                 #    from the output to there
                 # 3) add a read node to the backward state, and an edge into it
 
-
                 # (1)
                 new_name = name + "_forwarded"
                 if name in self.sdfg.arrays:
-                    raise AutoDiffException("Attempted to create array with name '{}', but it already existed".format(new_name))
+                    raise AutoDiffException(
+                        "Attempted to create array with name '{}', but it already existed"
+                        .format(new_name))
 
                 if name in self.backward_input_arrays:
-                    raise AutoDiffException("Attempted to create array with name '{}', but it already existed".format(new_name))
+                    raise AutoDiffException(
+                        "Attempted to create array with name '{}', but it already existed"
+                        .format(new_name))
 
                 self.sdfg.add_datadesc(new_name, dc(desc))
                 self.backward_input_arrays[new_name] = dc(desc)
@@ -705,20 +725,22 @@ class BackwardPassGenerator(object):
                 node.add_out_connector(name)
                 write = self.forward_state.add_write(new_name)
                 self.forward_state.add_edge(
-                    node, name, write, None, self.sdfg.make_array_memlet(new_name)
-                )
+                    node, name, write, None,
+                    self.sdfg.make_array_memlet(new_name))
 
                 # (3)
                 # TODO write test that needs this, then write this
 
-        inputs = set(self.get_grad_name(name, node) for name in output_grad_connectors).union(backward_input_arrays)
-        outputs = set(self.get_grad_name(name, node) for name in input_grad_connectors)
+        inputs = set(
+            self.get_grad_name(name, node)
+            for name in output_grad_connectors).union(backward_input_arrays)
+        outputs = set(
+            self.get_grad_name(name, node) for name in input_grad_connectors)
 
         for inp in inputs:
             reverse_sdfg.arrays[inp].transient = False
         for outp in outputs:
             reverse_sdfg.arrays[outp].transient = False
-
 
         # actually create the sdfg and return it
         nsdfg = self.backward_state.add_nested_sdfg(
@@ -761,8 +783,7 @@ class BackwardPassGenerator(object):
         self.backward_state.add_node(rev)
         return rev
 
-    def _reverse_Reduce(self, node: Reduce,
-                        output_grad_connectors: List[str],
+    def _reverse_Reduce(self, node: Reduce, output_grad_connectors: List[str],
                         input_grad_connectors: List[str]):
 
         reduction_type = detect_reduction_type(node.wcr)
@@ -771,12 +792,12 @@ class BackwardPassGenerator(object):
         if len(output_grad_connectors) != 1:
             raise AutoDiffException(
                 "recieved invalid SDFG: reduce node {} should have exactly one output edge"
-                    .format(node))
+                .format(node))
 
         if len(input_grad_connectors) != 1:
             raise AutoDiffException(
                 "recieved invalid SDFG: reduce node {} should have exactly one input edge"
-                    .format(node))
+                .format(node))
 
         cands = [
             edge for edge in self.forward_state.in_edges(node)
@@ -826,22 +847,24 @@ class BackwardPassGenerator(object):
                     for i, shape in enumerate(input_array.shape)
                 }, {
                     "__in":
-                        Memlet.simple(
-                            rev_input_conn_name,
-                            "0" if node.axes is None else ",".join(
-                                "i" + str(i) for i in non_reduce_axes))
+                    Memlet.simple(
+                        rev_input_conn_name,
+                        "0" if node.axes is None else ",".join(
+                            "i" + str(i) for i in non_reduce_axes))
                 },
                 "__out = __in", {
                     "__out":
-                        Memlet.simple(rev_output_conn_name, ",".join(
-                            "i" + str(i) for i in all_axes))
+                    Memlet.simple(rev_output_conn_name, ",".join(
+                        "i" + str(i) for i in all_axes))
                 },
                 external_edges=True)
 
-            return self.backward_state.add_nested_sdfg(sdfg, None, {"_reduce_in_grad"},
-                                              {"_reduce_out_grad"})
+            return self.backward_state.add_nested_sdfg(sdfg, None,
+                                                       {"_reduce_in_grad"},
+                                                       {"_reduce_out_grad"})
         else:
-            raise AutoDiffException("Unsupported reduction type '{}'".format(reduction_type))
+            raise AutoDiffException(
+                "Unsupported reduction type '{}'".format(reduction_type))
 
     def _reverse_MapExit(
         self,
@@ -889,7 +912,7 @@ class BackwardPassGenerator(object):
                 raise AutoDiffException(
                     "Autodiff only supported for tasklets with scalar inputs and outputs"
                 ) from e
-        
+
         code_str = tasklet.code.as_string
         output_exprs = code_to_exprs(code_str, tasklet.in_connectors,
                                      tasklet.out_connectors)
@@ -922,8 +945,7 @@ class BackwardPassGenerator(object):
                         "Unable to symbolically differentiate expression: {}".
                         format(diff_expr.expr))
 
-                rev_input_grad_name = self.get_grad_name(
-                    output_conn, tasklet)
+                rev_input_grad_name = self.get_grad_name(output_conn, tasklet)
                 rev_inputs |= _symbols_to_strings(
                     diff_expr.free_symbols) | {rev_input_grad_name}
 

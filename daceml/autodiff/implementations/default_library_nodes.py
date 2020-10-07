@@ -1,7 +1,8 @@
+import typing
+
 import dace
 from dace import SDFGState, SDFG
 from dace.sdfg.nodes import Node
-from websockets import typing
 
 from daceml.autodiff.implementation_abc import ONNXBackward
 from daceml.onnx import ONNXOp

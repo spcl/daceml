@@ -348,6 +348,7 @@ class ONNXModel:
             :param kwargs: named arguments to the model. The passed names should match the names in the ONNX model.
             :return: the output of the model (or a tuple of outputs if there are multiple).
         """
+
         inputs, params, symbols, outputs = self._call_args(args=args, kwargs=kwargs)
 
         sdfg = deepcopy(self.sdfg)
@@ -429,13 +430,18 @@ class ONNXModel:
         inferred_symbols = {k: int(v) for k, v in inferred_symbols.items()}
 
         if torch_outputs is None:
-            torch_outputs = any(isinstance(inp, torch.Tensor) for _, inp  in clean_inputs.items())
+            torch_outputs = any(
+                isinstance(inp, torch.Tensor)
+                for _, inp in clean_inputs.items())
 
         outputs = OrderedDict()
         # create numpy arrays for the outputs
         for output in self.outputs:
             clean_name = clean_onnx_name(output)
-            outputs[clean_name] = create_output_array(inferred_symbols, self.sdfg.arrays[clean_name], use_torch=torch_outputs)
+            outputs[clean_name] = create_output_array(
+                inferred_symbols,
+                self.sdfg.arrays[clean_name],
+                use_torch=torch_outputs)
 
         # check that there's no overlap
         seen = set()
@@ -446,9 +452,12 @@ class ONNXModel:
 
         return clean_inputs, params, inferred_symbols, outputs
 
-def create_output_array(inferred_symbols: typing.Dict[str, int],
-                        desc: dt.Data, use_torch=False,
-                        zeros: bool = False) -> typing.Union[np.ndarray, torch.tensor]:
+
+def create_output_array(
+        inferred_symbols: typing.Dict[str, int],
+        desc: dt.Data,
+        use_torch=False,
+        zeros: bool = False) -> typing.Union[np.ndarray, torch.tensor]:
     """ Create the array for an output. This is either a numpy array or a torch tensor depending on `use_torch`
 
         When `self.force_torch_outputs` is True, the outputs will be tensors. Otherwise, the outputs will be tensors
@@ -458,17 +467,20 @@ def create_output_array(inferred_symbols: typing.Dict[str, int],
         :param use_torch: whether to return a numpy array or a torch tensor.
         :param zeros: if true init with zeros else empty.
     """
-
     def eval_dim(dim):
         for sym in dim.free_symbols:
             dim = dim.subs(sym, inferred_symbols[sym.name])
         return dim
 
-    shape = [
-        eval_dim(d) if type(d) is dace.symbol else d for d in desc.shape
-    ]
+    shape = [eval_dim(d) if type(d) is dace.symbol else d for d in desc.shape]
     if use_torch:
         # as_numpy_dtype doesn't seem to work for indexing into the dict
-        return (torch.zeros if zeros else torch.empty)(*shape, dtype=numpy_to_torch_dtype_dict[getattr(np, desc.dtype.to_string())])
+        return (torch.zeros if zeros else torch.empty)(
+            *shape,
+            dtype=numpy_to_torch_dtype_dict[getattr(np,
+                                                    desc.dtype.to_string())])
     else:
-        return (np.zeros if zeros else np.empty)(shape, dtype=getattr(np, desc.dtype.to_string()))
+        return (np.zeros if zeros else np.empty)(shape,
+                                                 dtype=getattr(
+                                                     np,
+                                                     desc.dtype.to_string()))

@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from daceml.autodiff import AutoDiffException, add_backward_pass
 from utils import SDFGBackwardRunner, test_correctness
 
+
 @test_correctness
 def test_gemm():
     def torch_gemm(*, X, Y):
@@ -461,9 +462,8 @@ def test_reduce_node_1_axis_and_none_axis():
         return dict(X_grad=X.grad, Y_grad=Y.grad, W_grad=W.grad)
 
     @dace.program
-    def dace_func(
-        X: dace.float32[4, 5], Y: dace.float32[4, 3], W: dace.float32[7, 4, 3]
-    ):
+    def dace_func(X: dace.float32[4, 5], Y: dace.float32[4, 3],
+                  W: dace.float32[7, 4, 3]):
 
         Xt[:] = np.transpose(X)
         YW[:] = np.sum(W, axis=0) * Y
@@ -525,9 +525,8 @@ def test_reduce_max_node_1_axis():
         return dict(X_grad=X.grad, Y_grad=Y.grad, W_grad=W.grad)
 
     @dace.program
-    def dace_func(
-        X: dace.float64[4, 5], Y: dace.float64[4, 3], W: dace.float64[7, 4, 3]
-    ):
+    def dace_func(X: dace.float64[4, 5], Y: dace.float64[4, 3],
+                  W: dace.float64[7, 4, 3]):
 
         Xt[:] = np.transpose(X)
         YW[:] = np.min(W, axis=0) * Y

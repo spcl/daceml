@@ -24,8 +24,7 @@ def test_correctness(func):
         for k, v in torch_results.items():
             v = v.detach().numpy()
             diff = np.linalg.norm(sdfg_results[k] - v) / reduce(
-                lambda x, y: x * y, v.shape
-            )
+                lambda x, y: x * y, v.shape)
             print("Difference:", diff)
             assert diff < 1e-5
 
@@ -40,12 +39,8 @@ class SDFGBackwardRunner:
         self.target = target
         state = sdfg.nodes()[0]
         required_grads = list(
-            set(
-                node.data
-                for node in state.source_nodes()
-                if isinstance(node, nd.AccessNode)
-            )
-        )
+            set(node.data for node in state.source_nodes()
+                if isinstance(node, nd.AccessNode)))
 
         add_backward_pass(self.sdfg, state, [self.target], required_grads)
         self.sdfg.view()
@@ -57,15 +52,13 @@ class SDFGBackwardRunner:
         intermediate_arrs = {
             name: np.zeros(arr.shape, dtype=getattr(np, arr.dtype.to_string()))
             for name, arr in self.sdfg.arrays.items()
-            if name != self.target + "_grad"
-            if not name.startswith("__")
-            if name not in inputs
-            if not arr.transient
+            if name != self.target + "_grad" if not name.startswith("__")
+            if name not in inputs if not arr.transient
         }
         inputs.update(intermediate_arrs)
         inputs[self.target + "_grad"] = np.ones(
-            (1,), dtype=getattr(np, self.sdfg.arrays[self.target].dtype.to_string())
-        )
+            (1, ),
+            dtype=getattr(np, self.sdfg.arrays[self.target].dtype.to_string()))
         self.sdfg.save("out.sdfg")
         self.sdfg(**inputs)
 
@@ -75,5 +68,3 @@ class SDFGBackwardRunner:
             # if name.endswith("_grad") and name != self.target + "_grad"
         }
         return results
-
-

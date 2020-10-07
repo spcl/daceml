@@ -4,10 +4,7 @@ from dace import SDFG, SDFGState, InterstateEdge
 from dace.sdfg.nodes import AccessNode
 
 from daceml.autodiff.backward_pass_generator import (
-    BackwardPassGenerator,
-    AutoDiffException,
-    _add_backward_state_to_sdfg
-)
+    BackwardPassGenerator, AutoDiffException, _add_backward_state_to_sdfg)
 
 
 def add_backward_pass(
@@ -56,6 +53,5 @@ def add_backward_pass(
     # the input arrays are already defined in the sdfg
     backward_state, grad_arrs, _, nested_sdfg_forwarded_arrays = gen.backward()
 
-    _add_backward_state_to_sdfg(sdfg, state, backward_state, grad_arrs, nested_sdfg_forwarded_arrays)
-
-
+    _add_backward_state_to_sdfg(sdfg, state, backward_state, grad_arrs,
+                                nested_sdfg_forwarded_arrays)

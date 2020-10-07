@@ -15,6 +15,7 @@ from daceml.onnx.onnx_importer import create_output_array
 
 log = logging.getLogger(__name__)
 
+
 def make_backward_function(model: ONNXModel) -> Type[torch.autograd.Function]:
     """ Convert an ONNXModel to a PyTorch differentiable function. The backward pass is automatically added.
 
@@ -37,8 +38,7 @@ def make_backward_function(model: ONNXModel) -> Type[torch.autograd.Function]:
         outputs=[clean_onnx_name(name) for name in model.outputs],
         inputs=[clean_onnx_name(name) for name in model.inputs],
         backward_sdfg=backward_sdfg,
-        backward_state=backward_state
-    )
+        backward_state=backward_state)
 
     backward_grad_arrays, backward_input_arrays = gen.backward()
 
@@ -69,19 +69,27 @@ def make_backward_function(model: ONNXModel) -> Type[torch.autograd.Function]:
                 copied_inputs.append(inp)
 
             # prepare the arguments
-            inputs, params, symbols, outputs = model._call_args(args=copied_inputs,
-                                      kwargs={})
+            inputs, params, symbols, outputs = model._call_args(
+                args=copied_inputs, kwargs={})
 
             # add the intermediate values we need as empty tensors
-            filtered_backward_input_arrays = {inp: val for inp, val in backward_input_arrays.items() if inp not in inputs}
+            filtered_backward_input_arrays = {
+                inp: val
+                for inp, val in backward_input_arrays.items()
+                if inp not in inputs
+            }
             inputs.update({
-                name: create_output_array(symbols, desc, use_torch=True) for name, desc, in filtered_backward_input_arrays.items()
+                name: create_output_array(symbols, desc, use_torch=True)
+                for name, desc, in filtered_backward_input_arrays.items()
             })
 
             model.sdfg(**inputs, **symbols, **params, **outputs)
 
             # save the arrays we need for the backward pass
-            backward_inputs = {name: inputs[name] for name in backward_input_arrays}
+            backward_inputs = {
+                name: inputs[name]
+                for name in backward_input_arrays
+            }
             ctx.dace_backward_inputs = backward_inputs
             ctx.dace_symbols = symbols
 
@@ -98,7 +106,9 @@ def make_backward_function(model: ONNXModel) -> Type[torch.autograd.Function]:
                 raise ValueError("Expected to receive {} grads, got {}".format(
                     len(model.outputs), len(grads)))
 
-            given_grads = dict(zip((clean_onnx_name(outp) + "_grad" for outp in model.outputs), grads))
+            given_grads = dict(
+                zip((clean_onnx_name(outp) + "_grad"
+                     for outp in model.outputs), grads))
             for name, value in given_grads.items():
                 if type(value) is not torch.Tensor:
                     raise ValueError(
@@ -109,21 +119,34 @@ def make_backward_function(model: ONNXModel) -> Type[torch.autograd.Function]:
                     given_grads[name] = value.contiguous()
 
             # these are the grads we will calculate
-            input_grad_names = [clean_onnx_name(inp) + "_grad" for inp in model.inputs]
+            input_grad_names = [
+                clean_onnx_name(inp) + "_grad" for inp in model.inputs
+            ]
 
-            debug_grad_names = set(backward_grad_arrays).difference(input_grad_names).difference(given_grads)
+            debug_grad_names = set(backward_grad_arrays).difference(
+                input_grad_names).difference(given_grads)
 
-            debug_grad_dict = {name: create_output_array(ctx.dace_symbols, backward_grad_arrays[name], use_torch=True, zeros=True) for name in debug_grad_names}
+            debug_grad_dict = {
+                name: create_output_array(ctx.dace_symbols,
+                                          backward_grad_arrays[name],
+                                          use_torch=True,
+                                          zeros=True)
+                for name in debug_grad_names
+            }
             for name in debug_grad_dict:
                 backward_sdfg.arrays[name].transient = False
 
             # init not-given grads with zeros
             grad_values = OrderedDict()
             for name in input_grad_names:
-                grad_values[name] =  create_output_array(ctx.dace_symbols,
-                backward_grad_arrays[name], use_torch=True, zeros=True)
+                grad_values[name] = create_output_array(
+                    ctx.dace_symbols,
+                    backward_grad_arrays[name],
+                    use_torch=True,
+                    zeros=True)
 
-            backward_sdfg(**grad_values, **backward_inputs, **given_grads, **debug_grad_dict)
+            backward_sdfg(**grad_values, **backward_inputs, **given_grads,
+                          **debug_grad_dict)
 
             return tuple(grad_values.values())
 

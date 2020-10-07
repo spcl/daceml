@@ -6,9 +6,11 @@ import torch
 import dace
 from utils import SDFGBackwardRunner, test_correctness
 
+
 @dace.program
 def inner_sdfg(Z: dace.float32[3, 3], W: dace.float32[3, 3]):
     W[:] = dace.elementwise(lambda x: log(x), Z)
+
 
 @dace.program
 def middle_sqrt(Y: dace.float32[3, 3]):
@@ -19,9 +21,10 @@ def middle_sqrt(Y: dace.float32[3, 3]):
     Z = np.sum(W)
     return Z
 
+
 @test_correctness
 def test_nested():
-    def torch_func(* ,X):
+    def torch_func(*, X):
         Y = torch.sqrt(X)
         Z = torch.sqrt(Y)
         W = torch.sqrt(Z)
@@ -36,6 +39,5 @@ def test_nested():
         Z = np.sum(W)
         return dict(Y_grad=Y.grad)
 
-    return (SDFGBackwardRunner(sdfg, "__return", strict=False), torch_func, dict(X=np.random.rand(3, 3).astype(np.float32)))
-
-
+    return (SDFGBackwardRunner(sdfg, "__return", strict=False), torch_func,
+            dict(X=np.random.rand(3, 3).astype(np.float32)))
