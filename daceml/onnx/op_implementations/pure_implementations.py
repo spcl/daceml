@@ -16,7 +16,6 @@ from daceml.onnx.implementation_abc import ONNXForward
 import numpy as np
 
 
-
 def program_for_node(program, sdfg: SDFG, state: SDFGState,
                      node: ONNXOp) -> DaceProgram:
     """ Expand a function to a dace program.
@@ -63,12 +62,14 @@ class PureSqrt(ONNXForward):
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        
+
         node.validate(sdfg, state)
+
         def prog(X, Y):
             Y[:] = dace.elementwise(lambda x: sqrt(x), X)
 
         return program_for_node(prog, sdfg, state, node).to_sdfg()
+
 
 @autoregister_params(op="Pow")
 class PurePow(ONNXForward):
@@ -82,12 +83,14 @@ class PurePow(ONNXForward):
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        
+
         node.validate(sdfg, state)
+
         def prog(X, Y, Z):
-            Z[:] = X ** Y
+            Z[:] = X**Y
 
         return program_for_node(prog, sdfg, state, node).to_sdfg()
+
 
 @autoregister_params(op="Add")
 class PureAdd(ONNXForward):
@@ -102,19 +105,19 @@ class PureAdd(ONNXForward):
         input0_dim = len(in_edges[0].data.subset.size())
         input1_dim = len(in_edges[1].data.subset.size())
 
-        if istype and ((input0_dim == 1 and input1_dim == 4) or 
-                       (input0_dim == 1 and input1_dim <= 3) or 
-                       (input0_dim <= 3 and input1_dim == 1) or 
-                       (input0_dim == 3 and input1_dim == 3) or 
+        if istype and ((input0_dim == 1 and input1_dim == 4) or
+                       (input0_dim == 1 and input1_dim <= 3) or
+                       (input0_dim <= 3 and input1_dim == 1) or
+                       (input0_dim == 3 and input1_dim == 3) or
                        (input0_dim == 2 and input1_dim == 2)):
             return True
-        
+
         return False
 
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        
+
         node.validate(sdfg, state)
         in_edges = state.in_edges(node)
         out_edges = state.out_edges(node)
@@ -171,10 +174,12 @@ class PureAdd(ONNXForward):
             sdfg_exp.fill_scope_connectors()
             return sdfg_exp
         else:
+
             def prog(A, B, C):
                 C[:] = A + B
 
             return program_for_node(prog, sdfg, state, node).to_sdfg()
+
 
 @autoregister_params(op="Sub")
 class PureSub(ONNXForward):
@@ -189,19 +194,19 @@ class PureSub(ONNXForward):
         input0_dim = len(in_edges[0].data.subset.size())
         input1_dim = len(in_edges[1].data.subset.size())
 
-        if istype and ((input0_dim == 1 and input1_dim == 4) or 
-                       (input0_dim == 1 and input1_dim <= 3) or 
-                       (input0_dim <= 3 and input1_dim == 1) or 
-                       (input0_dim == 3 and input1_dim == 3) or 
+        if istype and ((input0_dim == 1 and input1_dim == 4) or
+                       (input0_dim == 1 and input1_dim <= 3) or
+                       (input0_dim <= 3 and input1_dim == 1) or
+                       (input0_dim == 3 and input1_dim == 3) or
                        (input0_dim == 2 and input1_dim == 2)):
             return True
-        
+
         return False
 
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-         
+
         node.validate(sdfg, state)
         in_edges = state.in_edges(node)
         out_edges = state.out_edges(node)
@@ -257,10 +262,12 @@ class PureSub(ONNXForward):
             sdfg_exp.fill_scope_connectors()
             return sdfg_exp
         else:
+
             def prog(A, B, C):
                 C[:] = A - B
 
             return program_for_node(prog, sdfg, state, node).to_sdfg()
+
 
 @autoregister_params(op="Mul")
 class PureMul(ONNXForward):
@@ -275,19 +282,19 @@ class PureMul(ONNXForward):
         input0_dim = len(in_edges[0].data.subset.size())
         input1_dim = len(in_edges[1].data.subset.size())
 
-        if istype and ((input0_dim == 1 and input1_dim == 4) or 
-                       (input0_dim == 1 and input1_dim <= 3) or 
-                       (input0_dim <= 3 and input1_dim == 1) or 
-                       (input0_dim == 3 and input1_dim == 3) or 
+        if istype and ((input0_dim == 1 and input1_dim == 4) or
+                       (input0_dim == 1 and input1_dim <= 3) or
+                       (input0_dim <= 3 and input1_dim == 1) or
+                       (input0_dim == 3 and input1_dim == 3) or
                        (input0_dim == 2 and input1_dim == 2)):
             return True
-        
+
         return False
 
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-         
+
         node.validate(sdfg, state)
         in_edges = state.in_edges(node)
         out_edges = state.out_edges(node)
@@ -344,10 +351,12 @@ class PureMul(ONNXForward):
             sdfg_exp.fill_scope_connectors()
             return sdfg_exp
         else:
+
             def prog(A, B, C):
                 C[:] = A * B
 
             return program_for_node(prog, sdfg, state, node).to_sdfg()
+
 
 @autoregister_params(op="Div")
 class PureDiv(ONNXForward):
@@ -362,13 +371,13 @@ class PureDiv(ONNXForward):
         input0_dim = len(in_edges[0].data.subset.size())
         input1_dim = len(in_edges[1].data.subset.size())
 
-        if istype and ((input0_dim == 1 and input1_dim == 4) or 
-                       (input0_dim == 1 and input1_dim <= 3) or 
-                       (input0_dim <= 3 and input1_dim == 1) or 
-                       (input0_dim == 3 and input1_dim == 3) or 
+        if istype and ((input0_dim == 1 and input1_dim == 4) or
+                       (input0_dim == 1 and input1_dim <= 3) or
+                       (input0_dim <= 3 and input1_dim == 1) or
+                       (input0_dim == 3 and input1_dim == 3) or
                        (input0_dim == 2 and input1_dim == 2)):
             return True
-        
+
         return False
 
     @staticmethod
@@ -431,10 +440,12 @@ class PureDiv(ONNXForward):
             sdfg_exp.fill_scope_connectors()
             return sdfg_exp
         else:
+
             def prog(A, B, C):
                 C[:] = A / B
 
             return program_for_node(prog, sdfg, state, node).to_sdfg()
+
 
 @autoregister_params(op="ReduceMean")
 class PureReduceMean(ONNXForward):
@@ -510,6 +521,7 @@ class PureReduceMean(ONNXForward):
 
         return sdfg_exp
 
+
 @autoregister_params(op="Cast")
 class PureCast(ONNXForward):
     @staticmethod
@@ -535,6 +547,7 @@ class PureCast(ONNXForward):
 
         return castop.to_sdfg()
 
+
 @autoregister_params(op="Erf")
 class PureErf(ONNXForward):
     @staticmethod
@@ -547,19 +560,21 @@ class PureErf(ONNXForward):
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        
+
         node.validate(sdfg, state)
+
         def prog(input, output):
             output[:] = dace.elementwise(lambda x: erf(x), input)
 
         return program_for_node(prog, sdfg, state, node).to_sdfg()
+
 
 @autoregister_params(op="Reshape")
 class PureReshape(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
-        
+
         in_edges = state.in_edges(node)
         out_edges = state.out_edges(node)
         input_dim = len(in_edges[0].data.subset.size())
@@ -577,7 +592,7 @@ class PureReshape(ONNXForward):
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         node.validate(sdfg, state)
-        
+
         in_edges = state.in_edges(node)
         out_edges = state.out_edges(node)
 
@@ -592,7 +607,7 @@ class PureReshape(ONNXForward):
             ll = in_edges[0].data.subset.size()[3]
 
             rr = in_edges[1].data.subset.size()[0]
-            
+
             I = str(ii)
             J = str(jj)
             K = str(kk)
@@ -609,7 +624,7 @@ class PureReshape(ONNXForward):
             P = str(pp)
 
             sdfg_exp.add_array('data', (ii, jj, kk, ll), dace.float32)
-            sdfg_exp.add_array('shape', (rr,), dace.float32)
+            sdfg_exp.add_array('shape', (rr, ), dace.float32)
             sdfg_exp.add_array('reshaped', (mm, nn, pp), dace.float32)
 
             state_exp = sdfg_exp.add_state()
@@ -621,21 +636,32 @@ class PureReshape(ONNXForward):
             shape = state_exp.add_read('shape')
             reshaped = state_exp.add_access('reshaped')
 
-            me1, mx1 = state_exp.add_map('map1', dict(i='0:' + I, j='0:' + J, k='0:' + K, l='0:' + L))
-            state_exp.add_edge(data, None, me1, None,
-                               dace.Memlet.simple(data, '0:'+I+', 0:'+J+', 0:'+K+', 0:'+L))
-            state_exp.add_edge(shape, None, me1, None, dace.Memlet.simple(shape, '0:'+R))
-            state_exp.add_edge(me1, None, task1, '_a', dace.Memlet.simple(data, 'i, j, k, l'))
-            state_exp.add_edge(me1, None, task1, '_dummy', dace.Memlet.simple(shape, '0'))
+            me1, mx1 = state_exp.add_map(
+                'map1', dict(i='0:' + I, j='0:' + J, k='0:' + K, l='0:' + L))
+            state_exp.add_edge(
+                data, None, me1, None,
+                dace.Memlet.simple(
+                    data, '0:' + I + ', 0:' + J + ', 0:' + K + ', 0:' + L))
+            state_exp.add_edge(shape, None, me1, None,
+                               dace.Memlet.simple(shape, '0:' + R))
+            state_exp.add_edge(me1, None, task1, '_a',
+                               dace.Memlet.simple(data, 'i, j, k, l'))
+            state_exp.add_edge(me1, None, task1, '_dummy',
+                               dace.Memlet.simple(shape, '0'))
 
-            state_exp.add_edge(task1, '_b', mx1, None, 
-                               dace.Memlet.simple(reshaped,
-                                                  'int((i*{0}*{1}*{2}+j*{1}*{2}+k*{2}+l)/({3}*{4})), \
-                                                   int((i*{0}*{1}*{2}+j*{1}*{2}+k*{2}+l)%({3}*{4})/{4}), \
-                                                   (i*{0}*{1}*{2}+j*{1}*{2}+k*{2}+l)%({3}*{4})%{4}'.format(J, K, L, N, P)))
+            state_exp.add_edge(
+                task1, '_b', mx1, None,
+                dace.Memlet.simple(
+                    reshaped,
+                    'int((i*{0}*{1}*{2}+j*{1}*{2}+k*{2}+l)/({3}*{4})), \
+                     int((i*{0}*{1}*{2}+j*{1}*{2}+k*{2}+l)%({3}*{4})/{4}), \
+                     (i*{0}*{1}*{2}+j*{1}*{2}+k*{2}+l)%({3}*{4})%{4}'
+                    .format(J, K, L, N, P)))
 
-            state_exp.add_edge(mx1, None, reshaped, None,
-                               dace.Memlet.simple(reshaped, '0:'+M+', 0:'+N+', 0:'+P))
+            state_exp.add_edge(
+                mx1, None, reshaped, None,
+                dace.Memlet.simple(reshaped,
+                                   '0:' + M + ', 0:' + N + ', 0:' + P))
 
             sdfg_exp.fill_scope_connectors()
 
@@ -645,7 +671,7 @@ class PureReshape(ONNXForward):
             kk = in_edges[0].data.subset.size()[2]
 
             rr = in_edges[1].data.subset.size()[0]
-            
+
             I = str(ii)
             J = str(jj)
             K = str(kk)
@@ -663,39 +689,48 @@ class PureReshape(ONNXForward):
             Q = str(qq)
 
             sdfg_exp.add_array('data', (ii, jj, kk), dace.float32)
-            sdfg_exp.add_array('shape', (rr,), dace.float32)
+            sdfg_exp.add_array('shape', (rr, ), dace.float32)
             sdfg_exp.add_array('reshaped', (mm, nn, pp, qq), dace.float32)
 
             state_exp = sdfg_exp.add_state()
 
-            task1 = state_exp.add_tasklet('reshape',
-                                          {'_a', '_dummy'},
-                                          {'_b'},
+            task1 = state_exp.add_tasklet('reshape', {'_a', '_dummy'}, {'_b'},
                                           '_b = _a')
 
             data = state_exp.add_read('data')
             shape = state_exp.add_read('shape')
             reshaped = state_exp.add_access('reshaped')
 
-            me1, mx1 = state_exp.add_map('map1', dict(i='0:' + I, j='0:' + J, k='0:' + K))
-            state_exp.add_edge(data, None, me1, None,
-                               dace.Memlet.simple(data, '0:'+I+', 0:'+J+', 0:'+K))
-            state_exp.add_edge(shape, None, me1, None, dace.Memlet.simple(shape, '0:'+R))
-            state_exp.add_edge(me1, None, task1, '_a', dace.Memlet.simple(data, 'i, j, k'))
-            state_exp.add_edge(me1, None, task1, '_dummy', dace.Memlet.simple(shape, '0'))
+            me1, mx1 = state_exp.add_map(
+                'map1', dict(i='0:' + I, j='0:' + J, k='0:' + K))
+            state_exp.add_edge(
+                data, None, me1, None,
+                dace.Memlet.simple(data, '0:' + I + ', 0:' + J + ', 0:' + K))
+            state_exp.add_edge(shape, None, me1, None,
+                               dace.Memlet.simple(shape, '0:' + R))
+            state_exp.add_edge(me1, None, task1, '_a',
+                               dace.Memlet.simple(data, 'i, j, k'))
+            state_exp.add_edge(me1, None, task1, '_dummy',
+                               dace.Memlet.simple(shape, '0'))
 
-            state_exp.add_edge(task1, '_b', mx1, None,
-                               dace.Memlet.simple(reshaped,
-                                                  'int((i*{0}*{1}+j*{1}+k)/({2}*{3}*{4})), \
-                                                   int(((i*{0}*{1}+j*{1}+k)%({2}*{3}*{4}))/({3}*{4})), \
-                                                   int(((i*{0}*{1}+j*{1}+k)%({2}*{3}*{4})%({3}*{4}))/{4}), \
-                                                   (i*{0}*{1}+j*{1}+k)%({2}*{3}*{4})%({3}*{4})%{4}'.format(J, K, N, P, Q)))
+            state_exp.add_edge(
+                task1, '_b', mx1, None,
+                dace.Memlet.simple(
+                    reshaped,
+                    'int((i*{0}*{1}+j*{1}+k)/({2}*{3}*{4})), \
+                     int(((i*{0}*{1}+j*{1}+k)%({2}*{3}*{4}))/({3}*{4})), \
+                     int(((i*{0}*{1}+j*{1}+k)%({2}*{3}*{4})%({3}*{4}))/{4}), \
+                     (i*{0}*{1}+j*{1}+k)%({2}*{3}*{4})%({3}*{4})%{4}'
+                    .format(J, K, N, P, Q)))
 
-            state_exp.add_edge(mx1, None, reshaped, None,
-                               dace.Memlet.simple(reshaped, '0:'+M+', 0:'+N+', 0:'+P+', 0:'+Q))
+            state_exp.add_edge(
+                mx1, None, reshaped, None,
+                dace.Memlet.simple(
+                    reshaped, '0:' + M + ', 0:' + N + ', 0:' + P + ', 0:' + Q))
 
             sdfg_exp.fill_scope_connectors()
         return sdfg_exp
+
 
 @autoregister_params(op="MatMul")
 class PureMatMul(ONNXForward):
@@ -732,15 +767,19 @@ class PureMatMul(ONNXForward):
         input0_dim = len(in_edges[0].data.subset.size())
         input1_dim = len(in_edges[1].data.subset.size())
         if input0_dim == 4 and input1_dim == 4:
+
             @dace.program
             def einsumop(A: atype, B: btype, Y: ctype):
                 Y[:] = np.einsum('abik,abkj->abij', A, B)
+
             return einsumop.to_sdfg()
 
         if input0_dim == 3 and input1_dim == 2:
+
             @dace.program
             def einsumop(A: atype, B: btype, Y: ctype):
                 Y[:] = np.einsum('bik,kj->bij', A, B)
+
             return einsumop.to_sdfg()
 
         if input0_dim == 2 and input1_dim == 2:
@@ -752,19 +791,24 @@ class PureMatMul(ONNXForward):
             I = str(ii)
             K = str(kk)
             J = str(jj)
-            sdfg_exp.add_array('A', (ii, kk), sdfg.arrays[in_edges[0].data.data].dtype)
-            sdfg_exp.add_array('B', (kk, jj), sdfg.arrays[in_edges[1].data.data].dtype)
-            sdfg_exp.add_array('Y', (ii, jj), sdfg.arrays[out_edges[0].data.data].dtype)
+            sdfg_exp.add_array('A', (ii, kk),
+                               sdfg.arrays[in_edges[0].data.data].dtype)
+            sdfg_exp.add_array('B', (kk, jj),
+                               sdfg.arrays[in_edges[1].data.data].dtype)
+            sdfg_exp.add_array('Y', (ii, jj),
+                               sdfg.arrays[out_edges[0].data.data].dtype)
 
             init_state = sdfg_exp.add_state()
             init_state.add_mapped_tasklet(
-                'batched_matmul_init',
-                {'_o%d' % i: '0:%s' % symstr(d)
-                 for i, d in enumerate((ii, jj))}, {},
+                'batched_matmul_init', {
+                    '_o%d' % i: '0:%s' % symstr(d)
+                    for i, d in enumerate((ii, jj))
+                }, {},
                 'out = 0', {
                     'out':
                     dace.Memlet.simple(
-                        'Y', ','.join(['_o%d' % i for i in range(len((ii, jj)))]))
+                        'Y', ','.join(
+                            ['_o%d' % i for i in range(len((ii, jj)))]))
                 },
                 external_edges=True)
 
@@ -786,6 +830,7 @@ class PureMatMul(ONNXForward):
             return sdfg_exp
             return einsumop.to_sdfg()
 
+
 @autoregister_params(op="Identity")
 class PureIdentity(ONNXForward):
     @staticmethod
@@ -796,12 +841,14 @@ class PureIdentity(ONNXForward):
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        
+
         node.validate(sdfg, state)
+
         def prog(input, output):
             output[:] = dace.elementwise(lambda x: x, input)
 
         return program_for_node(prog, sdfg, state, node).to_sdfg()
+
 
 @autoregister_params(op="Reciprocal")
 class PureReciprocal(ONNXForward):
@@ -815,12 +862,14 @@ class PureReciprocal(ONNXForward):
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        
+
         node.validate(sdfg, state)
+
         def prog(X, Y):
             Y[:] = dace.elementwise(lambda x: 1 / x, X)
 
         return program_for_node(prog, sdfg, state, node).to_sdfg()
+
 
 @autoregister_params(op="Tanh")
 class PureTanh(ONNXForward):
@@ -912,7 +961,6 @@ class PureReduceSum(ONNXForward):
 
         return False
 
-
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
@@ -961,6 +1009,7 @@ class PureReduceSum(ONNXForward):
 
         return sdfg_exp
 
+
 @autoregister_params(op="Softmax")
 class PureSoftmax(ONNXForward):
     @staticmethod
@@ -971,7 +1020,7 @@ class PureSoftmax(ONNXForward):
             if hasattr(node, name):
                 if str(node.schema.attributes[name]) == "axis":
                     axis = getattr(node, name)
-         
+
         in_edges = state.in_edges(node)
         input_dim = len(in_edges[0].data.subset.size())
         if input_dim == 4 and axis == 3:
@@ -1008,15 +1057,16 @@ class PureSoftmax(ONNXForward):
         input = state_exp.add_read('input')
         output = state_exp.add_access('output')
 
-        red1 = state_exp.add_reduce('lambda a1, b1: max(a1, b1)', None, 
-                                    dtypes.min_value(sdfg_exp.arrays['input'].dtype))
+        red1 = state_exp.add_reduce(
+            'lambda a1, b1: max(a1, b1)', None,
+            dtypes.min_value(sdfg_exp.arrays['input'].dtype))
         texp1 = state_exp.add_tasklet('tasklet1', {'a2', 'b2'}, {'c2'},
                                       'c2 = exp(a2-b2)')
 
         state_exp.add_edge(
             input, None, ome, None,
-            dace.Memlet.simple(input,
-                               '0:' + I + ', 0:' + J + ', 0:' + K + ', 0:' + L))
+            dace.Memlet.simple(input, '0:' + I + ', 0:' + J + ', 0:' + K +
+                               ', 0:' + L))
         state_exp.add_edge(ome, None, red1, None,
                            dace.Memlet.simple(input, 'i, j, k, 0:' + L))
         state_exp.add_edge(red1, None, tmp_max, None,
@@ -1037,11 +1087,11 @@ class PureSoftmax(ONNXForward):
                            dace.Memlet.simple(tmp_out, 'i, j, k, 0:' + L))
         state_exp.add_edge(
             omx, None, tmp_out, None,
-            dace.Memlet.simple(tmp_out,
-                               '0:' + I + ', 0:' + J + ', 0:' + K + ', 0:' + L))
+            dace.Memlet.simple(tmp_out, '0:' + I + ', 0:' + J + ', 0:' + K +
+                               ', 0:' + L))
 
-        ome1, omx1 = state_exp.add_map('outer_map1',
-                                       dict(i='0:' + I, j='0:' + J, k='0:' + K))
+        ome1, omx1 = state_exp.add_map(
+            'outer_map1', dict(i='0:' + I, j='0:' + J, k='0:' + K))
         ime1, imx1 = state_exp.add_map('inner_map1', dict(l='0:' + L))
         red2 = state_exp.add_reduce('lambda a3, b3: a3 + b3', None, 0)
         texp2 = state_exp.add_tasklet('tasklet2', {'a4', 'b4'}, {'c4'},
@@ -1049,8 +1099,8 @@ class PureSoftmax(ONNXForward):
 
         state_exp.add_edge(
             tmp_out, None, ome1, None,
-            dace.Memlet.simple(tmp_out,
-                               '0:' + I + ', 0:' + J + ', 0:' + K + ', 0:' + L))
+            dace.Memlet.simple(tmp_out, '0:' + I + ', 0:' + J + ', 0:' + K +
+                               ', 0:' + L))
         state_exp.add_edge(ome1, None, red2, None,
                            dace.Memlet.simple(tmp_out, 'i, j, k, 0:' + L))
         state_exp.add_edge(red2, None, tmp_sum, None,
@@ -1071,12 +1121,13 @@ class PureSoftmax(ONNXForward):
                            dace.Memlet.simple(output, 'i, j, k, 0:' + L))
         state_exp.add_edge(
             omx1, None, output, None,
-            dace.Memlet.simple(output,
-                               '0:' + I + ', 0:' + J + ', 0:' + K + ', 0:' + L))
+            dace.Memlet.simple(output, '0:' + I + ', 0:' + J + ', 0:' + K +
+                               ', 0:' + L))
 
         sdfg_exp.fill_scope_connectors()
 
         return sdfg_exp
+
 
 @autoregister_params(op="Transpose")
 class PureTranspose(ONNXForward):
@@ -1088,7 +1139,7 @@ class PureTranspose(ONNXForward):
             if hasattr(node, name):
                 if str(node.schema.attributes[name]) == "perm":
                     perm = getattr(node, name)
-        
+
         in_edges = state.in_edges(node)
         input_dim = len(in_edges[0].data.subset.size())
 
@@ -1110,7 +1161,7 @@ class PureTranspose(ONNXForward):
             if hasattr(node, name):
                 if str(node.schema.attributes[name]) == "perm":
                     perm = getattr(node, name)
-        
+
         in_edges = state.in_edges(node)
 
         sdfg_exp = dace.SDFG('TransposeExpansion')
@@ -1130,21 +1181,27 @@ class PureTranspose(ONNXForward):
 
             state_exp = sdfg_exp.add_state()
 
-            task1 = state_exp.add_tasklet('transpose', {'_a'}, {'_b'}, '_b = _a')
+            task1 = state_exp.add_tasklet('transpose', {'_a'}, {'_b'},
+                                          '_b = _a')
 
             data = state_exp.add_read('data')
             transposed = state_exp.add_access('transposed')
 
-            me1, mx1 = state_exp.add_map('map1',
-                                         dict(i='0:' + I, j='0:' + J, k='0:' + K, l='0:' + L))
-            state_exp.add_edge(data, None, me1, None,
-                               dace.Memlet.simple(data, '0:'+I+', 0:'+J+', 0:'+K+', 0:'+L))
+            me1, mx1 = state_exp.add_map(
+                'map1', dict(i='0:' + I, j='0:' + J, k='0:' + K, l='0:' + L))
+            state_exp.add_edge(
+                data, None, me1, None,
+                dace.Memlet.simple(
+                    data, '0:' + I + ', 0:' + J + ', 0:' + K + ', 0:' + L))
             state_exp.add_edge(me1, None, task1, '_a',
                                dace.Memlet.simple(data, 'i, j, k, l'))
             state_exp.add_edge(task1, '_b', mx1, None,
                                dace.Memlet.simple(transposed, 'i, k, j, l'))
-            state_exp.add_edge(mx1, None, transposed, None,
-                               dace.Memlet.simple(transposed, '0:'+I+', 0:'+K+', 0:'+J+', 0:'+L))
+            state_exp.add_edge(
+                mx1, None, transposed, None,
+                dace.Memlet.simple(
+                    transposed,
+                    '0:' + I + ', 0:' + K + ', 0:' + J + ', 0:' + L))
             sdfg_exp.fill_scope_connectors()
 
         elif perm == [0, 2, 3, 1]:
@@ -1153,20 +1210,26 @@ class PureTranspose(ONNXForward):
 
             state_exp = sdfg_exp.add_state()
 
-            task1 = state_exp.add_tasklet('transpose', {'_a'}, {'_b'}, '_b = _a')
+            task1 = state_exp.add_tasklet('transpose', {'_a'}, {'_b'},
+                                          '_b = _a')
 
             data = state_exp.add_read('data')
             transposed = state_exp.add_access('transposed')
 
-            me1, mx1 = state_exp.add_map('map1',
-                                         dict(i='0:' + I, j='0:' + J, k='0:' + K, l='0:' + L))
-            state_exp.add_edge(data, None, me1, None,
-                               dace.Memlet.simple(data, '0:'+I+', 0:'+J+', 0:'+K+', 0:'+L))
+            me1, mx1 = state_exp.add_map(
+                'map1', dict(i='0:' + I, j='0:' + J, k='0:' + K, l='0:' + L))
+            state_exp.add_edge(
+                data, None, me1, None,
+                dace.Memlet.simple(
+                    data, '0:' + I + ', 0:' + J + ', 0:' + K + ', 0:' + L))
             state_exp.add_edge(me1, None, task1, '_a',
                                dace.Memlet.simple(data, 'i, j, k, l'))
             state_exp.add_edge(task1, '_b', mx1, None,
                                dace.Memlet.simple(transposed, 'i, k, l, j'))
-            state_exp.add_edge(mx1, None, transposed, None,
-                               dace.Memlet.simple(transposed, '0:'+I+', 0:'+K+', 0:'+L+', 0:'+J))
+            state_exp.add_edge(
+                mx1, None, transposed, None,
+                dace.Memlet.simple(
+                    transposed,
+                    '0:' + I + ', 0:' + K + ', 0:' + L + ', 0:' + J))
             sdfg_exp.fill_scope_connectors()
         return sdfg_exp
