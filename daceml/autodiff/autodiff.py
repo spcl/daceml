@@ -3,8 +3,8 @@ from typing import List, Optional, Union
 from dace import SDFG, SDFGState, InterstateEdge
 from dace.sdfg.nodes import AccessNode
 
-from daceml.autodiff.backward_pass_generator import (
-    BackwardPassGenerator, AutoDiffException, _add_backward_state_to_sdfg)
+from daceml.autodiff.backward_pass_generator import (BackwardPassGenerator,
+                                                     AutoDiffException)
 
 
 def add_backward_pass(
@@ -13,7 +13,7 @@ def add_backward_pass(
     outputs: List[Union[AccessNode, str]],
     inputs: List[Union[AccessNode, str]],
 ):
-    """ Experimental: Add a backward pass to `state` using reverse-mode autodiff.
+    """ Experimental: Add a backward pass to `state` using reverse-mode automatic differentiation.
 
         `inputs`, `outputs` and `grads` can be provided either as `AccessNode`s, or as `str`s, in which case
         the graph will be searched for exactly one matching `AccessNode` with data matching the `str`.
@@ -25,8 +25,6 @@ def add_backward_pass(
         - ONNXOps
         - NestedSDFGs containing a single SDFGState (subject to the same constraints). NestedSDFGs may contain multiple
           states as long as all other states are only used for zero initalization.
-
-        Note that the algorithm assumes that all memlets with WCR write into zero initialized arrays!
 
         When differentiating `ONNXOp`s, the ONNXBackward registry will be checked for any matching backward pass
         implementations. If none are found, the ONNXForward registry will be checked for matching pure implementations.
@@ -44,14 +42,11 @@ def add_backward_pass(
     """
     sdfg.validate()
 
+    backward_state = sdfg.add_state_after(state)
     gen = BackwardPassGenerator(sdfg=sdfg,
                                 state=state,
                                 outputs=outputs,
-                                inputs=inputs)
-
-    # we ignore the input arrs because we are adding the backward state to the same sdfg;
-    # the input arrays are already defined in the sdfg
-    backward_state, grad_arrs, _, nested_sdfg_forwarded_arrays = gen.backward()
-
-    _add_backward_state_to_sdfg(sdfg, state, backward_state, grad_arrs,
-                                nested_sdfg_forwarded_arrays)
+                                inputs=inputs,
+                                backward_sdfg=sdfg,
+                                backward_state=backward_state)
+    gen.backward()

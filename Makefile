@@ -60,6 +60,8 @@ check-formatting:
 		--recursive \
 		daceml tests setup.py \
 		--exclude daceml/onnx/shape_inference/symbolic_shape_infer.py
+	# check for sdfg.view()
+	! git grep '\.view()' -- tests/** daceml/**
 
 check-formatting-names:
 	$(ACTIVATE) $(YAPF) \

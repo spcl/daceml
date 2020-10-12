@@ -13,6 +13,7 @@ from dace import Memlet, SDFG, SDFGState
 from dace import dtypes, data as dt
 from dace.frontend.operations import detect_reduction_type
 from dace.libraries.standard import Reduce
+from dace.sdfg.graph import MultiConnectorEdge
 from dace.sdfg.state import StateSubgraphView
 from dace.sdfg.utils import dfs_topological_sort
 from dace.transformation.transformation import ExpandTransformation
@@ -32,30 +33,6 @@ def _strings_to_symbols(strings: Set[str]) -> Set[sp.Symbol]:
 
 def _symbols_to_strings(symbs: Set[sp.Symbol]) -> Set[str]:
     return {str(symb) for symb in symbs}
-
-
-def _add_backward_state_to_sdfg(sdfg: SDFG, forward: SDFGState,
-                                backward: SDFGState, grad_arrs: dict,
-                                nested_sdfg_forwarded_arrays: dict):
-    # add the new backward state to the SDFG
-    base_label = None if forward.label is None else forward.label + "_backward"
-    i = len(sdfg)
-    while True:
-        # Append a number. If the state already exists, increment the
-        # number until it doesn't
-        label = "{}_{}".format(base_label, i)
-        if any([s.label == label for s in sdfg.nodes()]):
-            i += 1
-        else:
-            break
-
-    # add all new arrays
-    for name, desc in grad_arrs.items():
-        desc.transient = True
-        sdfg.add_datadesc(name, desc)
-
-    sdfg.add_node(backward, is_start_state=False)
-    sdfg.add_edge(forward, backward, dace.InterstateEdge())
 
 
 def is_initialization_state(state: SDFGState) -> bool:
@@ -354,9 +331,9 @@ class BackwardPassGenerator(object):
                 raise AutoDiffException(
                     "When the forward sdfg is the same as the backward sdfg, outputs must be a"
                     "single scalar")
-            self.add_inputs = False
+            self.separate_sdfgs = False
         else:
-            self.add_inputs = True
+            self.separate_sdfgs = True
 
     def backward(self) -> Tuple[Dict[str, dt.Array], Dict[str, dt.Array]]:
         """ Generate the backward pass in backward_state.
@@ -441,175 +418,272 @@ class BackwardPassGenerator(object):
         else:
             return conn + "_grad"
 
+    def _init_grad(self, data: str):
+        """Add a state where `data` is initialized with zero.
+           self.sdfg.arrays[data] should have type Union[dt.Array, dt.Scalar]
+        """
+        state = self.backward_sdfg.add_state_before(self.backward_state,
+                                                    label="init_" + data)
+
+        arr = self.backward_sdfg.arrays[data]
+        scalar = 0
+        if type(arr) is dt.Array:
+            state.add_mapped_tasklet(
+                "_init_" + data + "_", {
+                    "i{}".format(i): "0:{}".format(shape)
+                    for i, shape in enumerate(arr.shape)
+                }, {},
+                "__out = {}".format(scalar), {
+                    "__out":
+                    dace.Memlet.simple(
+                        data, ", ".join("i{}".format(i)
+                                        for i in range(len(arr.shape))))
+                },
+                external_edges=True)
+        elif type(arr) is dt.Scalar:
+            tasklet = state.add_tasklet("_init_" + data + "_", {}, {"__out"},
+                                        "__out = {}".format(scalar))
+            write = state.add_write(data)
+            state.add_edge(tasklet, "__out", write, None,
+                           Memlet.simple(data, "0"))
+        else:
+            raise AutoDiffException(
+                "Unsupported data descriptor {}".format(arr))
+
     def _reverse_subgraph(self, subgraph: StateSubgraphView):
-        """Reverse a given subgraph. All nodes in the subgraph will be reversed."""
+        """ Reverse a given subgraph. All nodes in the subgraph will be reversed. """
 
         # a reversed topological sort is a topological sort on the reverse graph
         for node in reversed(
                 list(dfs_topological_sort(subgraph, subgraph.source_nodes()))):
 
-            # output name on the forward node (for which the gradient will be connected as an input on the reverse node)
-            output_grad_connectors = [
-                edge.src_conn for edge in subgraph.out_edges(node)
-            ]
+            try:
+                # output name on the forward node (for which the gradient will be connected as an input on the reverse node)
+                output_grad_connectors = [
+                    edge.src_conn for edge in subgraph.out_edges(node)
+                ]
 
-            # input name on the forward node that the gradient should be generated for
-            input_grad_connectors = [
-                edge.dst_conn for edge in subgraph.in_edges(node)
-            ]
+                # input name on the forward node that the gradient should be generated for
+                input_grad_connectors = [
+                    edge.dst_conn for edge in subgraph.in_edges(node)
+                ]
 
-            rev = self._get_reverse_node(node, output_grad_connectors,
-                                         input_grad_connectors)
+                rev = self._get_reverse_node(node, output_grad_connectors,
+                                             input_grad_connectors)
 
-            self.reverse_map[node] = rev
+                self.reverse_map[node] = rev
 
-            # connect the gradients of the outputs (as inputs)
-            for _, output_conn, dest_node, input_conn, memlet in subgraph.out_edges(
-                    node):
-                if detect_reduction_type(memlet.wcr) not in [
-                        None,
-                        dtypes.ReductionType.Sum,
-                ]:
+                # connect the required inputs of the reverse node: the gradients and any output values from the forward pass
+                self._connect_input_gradients(subgraph, node)
+                self._connect_forward_inputs(subgraph, node)
+
+                if isinstance(node, nd.AccessNode):
+                    # this means we are writing out a grad to an array. In this case, we need to set
+                    # all incoming memlets to WCR Sum
+                    # TODO @orausch there could/should be an intersection check here to remove this if not required...
+                    for edge in self.backward_state.in_edges(rev):
+                        for path_edge in self.backward_state.memlet_tree(edge):
+                            path_edge.data.wcr = "lambda x, y: x + y"
+
+            except AutoDiffException as e:
+                raise AutoDiffException(
+                    "Failed at node {}".format(node)) from e
+
+    def _connect_input_gradients(self, subgraph: StateSubgraphView,
+                                 forward_node):
+        """ Connect the gradients of the outputs of forward_node as inputs to the corresponding reverse node. """
+
+        for _, output_conn, dest_node, input_conn, memlet in subgraph.out_edges(
+                forward_node):
+            if detect_reduction_type(memlet.wcr) not in [
+                    None,
+                    dtypes.ReductionType.Sum,
+            ]:
+                raise AutoDiffException("Unsupported reduction type {}".format(
+                    detect_reduction_type(memlet.wcr)))
+
+            memlet = dc(memlet)
+
+            # TODO what happens when multiple edges read from the same place? Should be fine because of the grad sum
+            # WCR, but double check this
+
+            # remove the WCR since these are now read edges
+            memlet.wcr = None
+
+            if memlet.data not in self.grad_memlets:
+                # this grad hasn't been written before: initialize it
+                array = self.sdfg.arrays[memlet.data]
+
+                if type(array) is not dt.Scalar and type(
+                        array) is not dt.Array:
                     raise AutoDiffException(
-                        "Unsupported reduction type {}".format(
-                            detect_reduction_type(memlet.wcr)))
+                        "Unsupported data descriptor {}".format(array))
 
-                memlet = dc(memlet)
+                cloned_datadesc = dc(array)
 
-                # remove the WCR since these are now read edges
-                memlet.wcr = None
+                # only the grads of the inputs and the outputs are not transient
+                cloned_datadesc.transient = memlet.data not in self.input_names and memlet.data not in self.output_names
 
-                if memlet.data not in self.grad_memlets:
-                    # this grad hasn't been written before: initialize it
-                    array = self.sdfg.arrays[memlet.data]
+                # TODO test with identical nodes after one another; should fail (come up with better solution)
+                # this can clearly fail if someone chooses annoying array names; ignore this for now
+                if memlet.data + "_grad" in self.backward_grad_arrays:
+                    AutoDiffException(
+                        "Unable to create array with name '{}'; it already exists"
+                        .format(memlet.data + "_grad"))
 
-                    if type(array) is not dt.Scalar and type(
-                            array) is not dt.Array:
-                        raise AutoDiffException(
-                            "Unsupported data descriptor {}".format(array))
+                self.backward_grad_arrays[memlet.data +
+                                          "_grad"] = cloned_datadesc
+                self.backward_sdfg.arrays[memlet.data +
+                                          "_grad"] = dc(cloned_datadesc)
 
-                    cloned_datadesc = dc(array)
+                if cloned_datadesc.transient:
+                    self._init_grad(memlet.data + "_grad")
 
-                    # only the grads of the inputs and the outputs are not transient
-                    cloned_datadesc.transient = memlet.data not in self.input_names and memlet.data not in self.output_names
+            self.grad_memlets[memlet.data].append(memlet)
+            memlet.data = memlet.data + "_grad"
 
-                    # TODO test with identical nodes after one another; should fail (come up with better solution)
-                    # this can clearly fail if someone chooses annoying array names; ignore this for now
-                    if memlet.data + "_grad" in self.backward_grad_arrays:
-                        AutoDiffException(
-                            "Unable to create array with name '{}'; it already exists"
-                            .format(memlet.data + "_grad"))
+            self.backward_state.add_edge(
+                self.reverse_map[dest_node],
+                self.get_grad_name(input_conn, dest_node),
+                self.reverse_map[forward_node],
+                self.get_grad_name(output_conn, forward_node),
+                memlet,
+            )
 
-                    self.backward_grad_arrays[memlet.data +
-                                              "_grad"] = cloned_datadesc
-                    self.backward_sdfg.arrays[memlet.data +
-                                              "_grad"] = dc(cloned_datadesc)
+    def _connect_forward_inputs(self, subgraph: StateSubgraphView,
+                                forward_node):
+        """ Connect the reversed node of `forward_node` to all required non-gradient inputs.
 
-                self.grad_memlets[memlet.data].append(memlet)
-                memlet.data = memlet.data + "_grad"
-
-                self.backward_state.add_edge(
-                    self.reverse_map[dest_node],
-                    self.get_grad_name(input_conn, dest_node),
-                    rev,
-                    self.get_grad_name(output_conn, node),
-                    memlet,
-                )
-
-            if isinstance(node, nd.AccessNode):
-                # this means we are writing out a grad to an array. In this case, we need to set
-                # all incoming memlets to WCR Sum
-                # TODO @orausch there could/should be an intersection check here to remove this if not required...
-                for edge in self.backward_state.in_edges(rev):
-                    for path_edge in self.backward_state.memlet_tree(edge):
-                        pass
-                        # path_edge.data.wcr = "lambda x, y: x + y"
-
-            # connect any required inputs from the forward pass
-            # we subtract the input gradient connections; these were connected above
-            required_inputs = set(rev.in_connectors).difference(
-                self.get_grad_name(conn, node)
-                for conn in output_grad_connectors)
-
-            self._connect_inputs(subgraph, node, required_inputs)
-
-    def _connect_inputs(self, subgraph, forward_node, required_inputs):
-        """For each connector in `required_inputs`, connect the reversed node of `node` that input
-        from the forward pass, routing through maps from the backward pass if required.
+            There are non-trivial points to handle:
+            1. When we read an input from an accessnode in the forward pass, we need to route through maps in the
+               backward pass.
+            2. In some cases, we need to save the value of a connector to an array so that the backward pass can
+               read it.
+               For now, this is only supported when the node is at the "top level" of the SDFG, since it's quite
+               difficult to handle otherwise (you have to decide whether to recompute or to store the value, and you
+               have to store the value once for every iteration in the map)
         """
-        for edge in subgraph.graph.in_edges(forward_node):
-            if edge.dst_conn in required_inputs:
-                path = subgraph.graph.memlet_path(edge)
-                conn_map = dict()
 
-                for i, traversed_edge in enumerate(path):
-                    throw = False
-                    src = None
-                    dst = None
-                    src_conn = traversed_edge.src_conn
-                    dst_conn = traversed_edge.dst_conn
+        rev = self.reverse_map[forward_node]
 
-                    if i == 0:
-                        # the start of the path is in the forward pass.
-                        if type(traversed_edge.src) is nd.AccessNode:
-                            # we add an access node to the backward pass
-                            data_name = traversed_edge.src.data
-                            data_desc = dc(self.sdfg.arrays[data_name])
-                            src = self.backward_state.add_access(data_name)
-                            if data_name in self.backward_input_arrays:
-                                AutoDiffException("Internal error")
-                            data_desc.transient = False
+        ####################################
+        # Determine which inputs we need to connect.
+        # these are the in_connectors on the reverse node, minus the gradients.
+        # (these are connected in _connect_input_gradients)
+        required_inputs = set(rev.in_connectors).difference(
+            self.get_grad_name(edge.src_conn, forward_node)
+            for edge in subgraph.out_edges(forward_node))
 
-                            self.backward_input_arrays[data_name] = data_desc
-                            if self.add_inputs:
-                                self.backward_sdfg.add_datadesc(
-                                    data_name, dc(data_desc))
+        edges_to_connect = (edge for edge in subgraph.in_edges(forward_node)
+                            if edge.dst_conn in required_inputs)
 
-                        elif type(traversed_edge.src) is nd.CodeNode:
-                            # code -> code edge:
-                            # we need to add an output to the forward pass that outputs the intermediate value
-                            raise NotImplemented("TODO")
+        for edge in edges_to_connect:
+            path = subgraph.memlet_path(edge)
 
-                        throw |= type(traversed_edge.dst) is not nd.MapEntry
+            ####################################
+            # we can only add this edge if the first node in the path not within a map scope. Otherwise the value read
+            # in the backward pass might be different to the one read in the forward pass
+
+            if subgraph.scope_dict()[path[0].src] is not None:
+                parent = subgraph.scope_dict()[path[0].src]
+                raise AutoDiffException(
+                    "Unexpected graph structure: unable to access value of {} in the"
+                    " backward pass. This can be remedied by moving the node outside the scope it "
+                    "is in (it's parent is {})".format(path[0].src, parent))
+
+            if len(path) == 1 and isinstance(path[0].src,
+                                             nd.CodeNode) and isinstance(
+                                                 path[0].dst, nd.CodeNode):
+                # paths of length one with scalar data are allowed; these are code -> code edges
+                # however, in this case it must be a scalar edge
+                if not _is_int_value(
+                        self.sdfg.arrays[path[0].data.data].total_size, 1):
+                    raise AutoDiffException(
+                        "Unexpected graph structure: encountered code -> code edge with scalar size "
+                        "!= 1 (was {})".format(
+                            self.sdfg.arrays[path[0].data].total_size))
+
+                raise NotImplementedError()
+            else:
+                # otherwise we expect AccessNode -> MapEntry -> ... -> MapEntry -> CodeNode
+                if not (type(path[0].src) is nd.AccessNode
+                        and isinstance(path[-1].dst, nd.CodeNode)):
+                    raise AutoDiffException(
+                        "Unexpected graph structure: expected memlet path that starts with an "
+                        "AccessNode and ends with CodeNode")
+
+                conn_map = {}
+                for i, path_edge in enumerate(path):
+
+                    ####################################
+                    # Get the dst node and connector
 
                     if i == len(path) - 1:
-                        # the end of the path should be in the backward pass
-                        dst = self.reverse_map[traversed_edge.dst]
-                        throw |= type(traversed_edge.src) is not nd.MapEntry
+                        if not isinstance(path_edge.dst, nd.CodeNode):
+                            raise AutoDiffException(
+                                "Unexpected graph structure: expected memlet path that starts with an "
+                                "AccessNode and ends with CodeNode")
+                        new_edge_dst = self.reverse_map[path_edge.dst]
+                        new_edge_dst_conn = edge.dst_conn
+                    else:
+                        # if we have more than one edge, check that all intermediate nodes are MapEntry
+                        if type(path_edge.dst) is not nd.MapEntry:
+                            raise AutoDiffException(
+                                "Unexpected graph structure")
 
-                    if i != 0 and i != len(path) - 1:
-                        # leave dst and src as None; we will later replace them with the correct map nodes
-                        throw |= type(traversed_edge.src) is not nd.MapEntry
-                        throw |= type(traversed_edge.dst) is not nd.MapEntry
+                        new_edge_dst = self._find_backward_entry_node_for_map_entry(
+                            path_edge.dst)
+                        new_edge_dst_conn, _src_conn = _add_through_connector(
+                            new_edge_dst)
+                        # save the newly added connector so that we can use for the next loop iteration
+                        conn_map[new_edge_dst] = _src_conn
 
-                    if len(path) == 1:
-                        # if len path == 1, throw will be true because the ends are not maps
-                        # however, this is fine in this case as long as we have code -> code or access -> code
-                        throw = not (
-                            (isinstance(traversed_edge.src, nd.CodeNode) and
-                             isinstance(traversed_edge.dst, nd.CodeNode)) or
-                            (isinstance(traversed_edge.src, nd.AccessNode)
-                             and isinstance(traversed_edge.dst, nd.CodeNode)))
+                    ####################################
+                    # Get the src node and connector
 
-                    if throw:
-                        raise AutoDiffException("Unexpected graph structure")
+                    if i == 0:
+                        if type(path_edge.src) is not nd.AccessNode:
+                            raise AutoDiffException(
+                                "Unexpected graph structure: expected memlet path that starts with an "
+                                "AccessNode and ends with CodeNode")
 
-                    if dst is None:
-                        dst = self._find_backward_entry_node_for_map_entry(
-                            subgraph.graph, traversed_edge.dst)
-                        dst_conn, _src_conn = _add_through_connector(dst)
-                        conn_map[dst] = _src_conn
+                        new_edge_src_conn = None
+                        if path_edge.src in self.reverse_map:
+                            new_edge_src = self.reverse_map[path_edge.src]
+                        else:
+                            # Add an AccessNode for this to the backward pass
+                            data_name = path_edge.src.data
+                            data_desc = dc(self.sdfg.arrays[data_name])
+                            assert data_name not in self.backward_input_arrays
 
-                    if src is None:
-                        src = self._find_backward_entry_node_for_map_entry(
-                            subgraph.graph, traversed_edge.src)
-                        src_conn = conn_map[src]
+                            if self.separate_sdfgs:
+                                data_desc.transient = False
+                                self.backward_sdfg.add_datadesc(
+                                    data_name, data_desc)
 
-                    self.backward_state.add_edge(src, src_conn, dst, dst_conn,
-                                                 traversed_edge.data)
+                            self.backward_input_arrays[data_name] = data_desc
+
+                            new_edge_src = self.backward_state.add_access(
+                                data_name)
+                            self.reverse_map[path_edge.src] = new_edge_src
+                    else:
+                        # if we have more than one edge, check that all intermediate nodes are MapEntry
+                        if type(path_edge.src) is not nd.MapEntry:
+                            raise AutoDiffException(
+                                "Unexpected graph structure")
+
+                        new_edge_src = self._find_backward_entry_node_for_map_entry(
+                            path_edge.src)
+                        new_edge_src_conn = conn_map[new_edge_src]
+
+                    self.backward_state.add_edge(new_edge_src,
+                                                 new_edge_src_conn,
+                                                 new_edge_dst,
+                                                 new_edge_dst_conn,
+                                                 dc(path_edge.data))
 
     def _find_backward_entry_node_for_map_entry(
-            self, graph, entry_node: nd.MapEntry) -> nd.MapExit:
+            self, entry_node: nd.MapEntry) -> nd.MapExit:
         """Find the entry node in the backward pass corresponding to the exit node opened by
         `entry_node` (where `entry_node` is a node from the forward pass).
         """
@@ -716,7 +790,7 @@ class BackwardPassGenerator(object):
                 self.sdfg.add_datadesc(new_name, dc(desc))
                 self.backward_input_arrays[new_name] = dc(desc)
 
-                if self.add_inputs:
+                if self.separate_sdfgs:
                     to_add = dc(desc)
                     to_add.transient = False
                     self.backward_sdfg.add_datadesc(new_name, to_add)

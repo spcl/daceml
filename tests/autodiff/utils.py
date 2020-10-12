@@ -25,7 +25,15 @@ def test_correctness(func):
             v = v.detach().numpy()
             diff = np.linalg.norm(sdfg_results[k] - v) / reduce(
                 lambda x, y: x * y, v.shape)
+
+            print("-" * 10, k, "-" * 10)
             print("Difference:", diff)
+
+            print("Torch results:", "-" * 10)
+            print(v)
+            print("SDFG results:", "-" * 10)
+            print(sdfg_results[k])
+
             assert diff < 1e-5
 
     return test_correctness
@@ -38,16 +46,15 @@ class SDFGBackwardRunner:
         self.sdfg = sdfg
         self.target = target
         state = sdfg.nodes()[0]
-        required_grads = list(
-            set(node.data for node in state.source_nodes()
-                if isinstance(node, nd.AccessNode)))
+        required_grads = list(node for node in state.source_nodes()
+                              if isinstance(node, nd.AccessNode))
 
         add_backward_pass(self.sdfg, state, [self.target], required_grads)
-        self.sdfg.view()
-        self.sdfg.validate()
         self.sdfg.apply_strict_transformations()
+        self.debug = False
 
     def run(self, **inputs):
+
         # zero out all arrays
         intermediate_arrs = {
             name: np.zeros(arr.shape, dtype=getattr(np, arr.dtype.to_string()))
@@ -59,8 +66,24 @@ class SDFGBackwardRunner:
         inputs[self.target + "_grad"] = np.ones(
             (1, ),
             dtype=getattr(np, self.sdfg.arrays[self.target].dtype.to_string()))
-        self.sdfg.save("out.sdfg")
+
+        print("Pre-execution arrays")
+        print("-" * 10)
+        for k, v in inputs.items():
+            print(k, "-" * 10)
+            print(v.dtype)
+            print("is_contiguous:", v.flags['C_CONTIGUOUS'])
+            print(v)
+
         self.sdfg(**inputs)
+
+        print("Post-execution arrays")
+        print("-" * 10)
+        for k, v in inputs.items():
+            print(k, "-" * 10)
+            print(v.dtype)
+            print("is_contiguous:", v.flags['C_CONTIGUOUS'])
+            print(v)
 
         results = {
             name: arr
