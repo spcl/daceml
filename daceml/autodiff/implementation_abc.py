@@ -17,16 +17,25 @@ class ONNXBackward(abc.ABC):
     @abc.abstractmethod
     def backward_can_be_applied(node: ONNXOp, state: SDFGState,
                                 sdfg: SDFG) -> bool:
+        """ Return whether this expansion can be applied.
 
-        # TODO docstring
+            :param node: the candidate node.
+            :param state: the candidate state.
+            :param sdfg: the candidate sdfg.
+        """
         ...
 
     @staticmethod
     @abc.abstractmethod
     def backward(node: ONNXOp, state: SDFGState,
                  sdfg: SDFG) -> typing.Union[Node, SDFG]:
+        """ Expand `node` and return its expansion.
 
-        # TODO docstring
+            :param node: the candidate node.
+            :param state: the candidate state.
+            :param sdfg: the candidate sdfg.
+            :return: the expanded node.
+        """
         ...
 
 

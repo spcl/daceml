@@ -581,9 +581,6 @@ class BackwardPassGenerator(object):
 
             memlet = dc(memlet)
 
-            # TODO what happens when multiple edges read from the same place? Should be fine because of the grad sum
-            # WCR, but double check this
-
             # remove the WCR since these are now read edges
             memlet.wcr = None
 

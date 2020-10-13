@@ -1,6 +1,3 @@
-# TODO
-# 1. test for 3 layers of nesting
-# 2. test for forwarding intermediate value
 import numpy as np
 import torch
 
@@ -97,7 +94,6 @@ def outer_sqrt_with_intermediate(Y: dace.float32[3, 3]):
 
 @run_correctness
 def test_triple_nested_forwarding():
-    # TODO check this test once #399 in dace is merged
     sdfg = outer_sqrt_with_intermediate.to_sdfg(strict=False)
 
     sdfg.apply_transformations_repeated([StateFusion])
