@@ -106,6 +106,7 @@ class PureAdd(ONNXForward):
         input1_dim = len(in_edges[1].data.subset.size())
 
         if istype and ((input0_dim == 1 and input1_dim == 4) or
+                       (input0_dim == 4 and input1_dim == 1) or
                        (input0_dim == 1 and input1_dim <= 3) or
                        (input0_dim <= 3 and input1_dim == 1) or
                        (input0_dim == 3 and input1_dim == 3) or
@@ -122,8 +123,15 @@ class PureAdd(ONNXForward):
         in_edges = state.in_edges(node)
         out_edges = state.out_edges(node)
 
-        atype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
-        btype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
+        atype = None
+        btype = None
+        if in_edges[0].dst_conn == "A" and in_edges[1].dst_conn == "B":
+            atype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
+            btype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
+        if in_edges[0].dst_conn == "B" and in_edges[1].dst_conn == "A":
+            atype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
+            btype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
+
         ctype = copy.deepcopy(sdfg.arrays[out_edges[0].data.data])
 
         input0_dim = len(in_edges[0].data.subset.size())
@@ -140,7 +148,7 @@ class PureAdd(ONNXForward):
             G = str(gg)
             H = str(hh)
 
-            sdfg_exp = dace.SDFG('subExpansion')
+            sdfg_exp = dace.SDFG('addExpansion')
             sdfg_exp.add_array('A', (1, ), dace.float32)
             sdfg_exp.add_array('B', (mm, nn, gg, hh), dace.float32)
             sdfg_exp.add_array('C', (mm, nn, gg, hh), dace.float32)
@@ -195,6 +203,7 @@ class PureSub(ONNXForward):
         input1_dim = len(in_edges[1].data.subset.size())
 
         if istype and ((input0_dim == 1 and input1_dim == 4) or
+                       (input0_dim == 4 and input1_dim == 1) or
                        (input0_dim == 1 and input1_dim <= 3) or
                        (input0_dim <= 3 and input1_dim == 1) or
                        (input0_dim == 3 and input1_dim == 3) or
@@ -211,8 +220,15 @@ class PureSub(ONNXForward):
         in_edges = state.in_edges(node)
         out_edges = state.out_edges(node)
 
-        atype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
-        btype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
+        atype = None
+        btype = None
+        if in_edges[0].dst_conn == "A" and in_edges[1].dst_conn == "B":
+            atype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
+            btype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
+        if in_edges[0].dst_conn == "B" and in_edges[1].dst_conn == "A":
+            atype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
+            btype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
+
         ctype = copy.deepcopy(sdfg.arrays[out_edges[0].data.data])
 
         input0_dim = len(in_edges[0].data.subset.size())
@@ -283,6 +299,7 @@ class PureMul(ONNXForward):
         input1_dim = len(in_edges[1].data.subset.size())
 
         if istype and ((input0_dim == 1 and input1_dim == 4) or
+                       (input0_dim == 4 and input1_dim == 1) or
                        (input0_dim == 1 and input1_dim <= 3) or
                        (input0_dim <= 3 and input1_dim == 1) or
                        (input0_dim == 3 and input1_dim == 3) or
@@ -299,8 +316,15 @@ class PureMul(ONNXForward):
         in_edges = state.in_edges(node)
         out_edges = state.out_edges(node)
 
-        atype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
-        btype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
+        atype = None
+        btype = None
+        if in_edges[0].dst_conn == "A" and in_edges[1].dst_conn == "B":
+            atype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
+            btype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
+        if in_edges[0].dst_conn == "B" and in_edges[1].dst_conn == "A":
+            atype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
+            btype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
+
         ctype = copy.deepcopy(sdfg.arrays[out_edges[0].data.data])
 
         input0_dim = len(in_edges[0].data.subset.size())
@@ -317,7 +341,7 @@ class PureMul(ONNXForward):
             G = str(gg)
             H = str(hh)
 
-            sdfg_exp = dace.SDFG('subExpansion')
+            sdfg_exp = dace.SDFG('mulExpansion')
             sdfg_exp.add_array('A', (1, ), dace.float32)
             sdfg_exp.add_array('B', (mm, nn, gg, hh), dace.float32)
             sdfg_exp.add_array('C', (mm, nn, gg, hh), dace.float32)
@@ -372,6 +396,7 @@ class PureDiv(ONNXForward):
         input1_dim = len(in_edges[1].data.subset.size())
 
         if istype and ((input0_dim == 1 and input1_dim == 4) or
+                       (input0_dim == 4 and input1_dim == 1) or
                        (input0_dim == 1 and input1_dim <= 3) or
                        (input0_dim <= 3 and input1_dim == 1) or
                        (input0_dim == 3 and input1_dim == 3) or
@@ -388,8 +413,15 @@ class PureDiv(ONNXForward):
         in_edges = state.in_edges(node)
         out_edges = state.out_edges(node)
 
-        atype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
-        btype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
+        atype = None
+        btype = None
+        if in_edges[0].dst_conn == "A" and in_edges[1].dst_conn == "B":
+            atype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
+            btype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
+        if in_edges[0].dst_conn == "B" and in_edges[1].dst_conn == "A":
+            atype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
+            btype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
+
         ctype = copy.deepcopy(sdfg.arrays[out_edges[0].data.data])
 
         input0_dim = len(in_edges[0].data.subset.size())
@@ -406,7 +438,7 @@ class PureDiv(ONNXForward):
             G = str(gg)
             H = str(hh)
 
-            sdfg_exp = dace.SDFG('subExpansion')
+            sdfg_exp = dace.SDFG('divExpansion')
             sdfg_exp.add_array('A', (1, ), dace.float32)
             sdfg_exp.add_array('B', (mm, nn, gg, hh), dace.float32)
             sdfg_exp.add_array('C', (mm, nn, gg, hh), dace.float32)
@@ -454,12 +486,10 @@ class PureReduceMean(ONNXForward):
                                sdfg: SDFG) -> bool:
         axes = None
         keepdims = None
-        for name, attr in node.schema.attributes.items():
-            if hasattr(node, name):
-                if str(node.schema.attributes[name]) == "axes":
-                    axes = getattr(node, name)
-                elif str(node.schema.attributes[name]) == "keepdims":
-                    keepdims = getattr(node, name)
+        if hasattr(node, "axes"):
+            axes = node.axes
+        if hasattr(node, "keepdims"):
+            keepdims = node.keepdims
 
         in_edges = state.in_edges(node)
         input_dim = len(in_edges[0].data.subset.size())
@@ -760,8 +790,15 @@ class PureMatMul(ONNXForward):
         in_edges = state.in_edges(node)
         out_edges = state.out_edges(node)
 
-        atype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
-        btype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
+        atype = None
+        btype = None
+        if in_edges[0].dst_conn == "A" and in_edges[1].dst_conn == "B":
+            atype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
+            btype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
+        if in_edges[0].dst_conn == "B" and in_edges[1].dst_conn == "A":
+            atype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
+            btype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
+
         ctype = copy.deepcopy(sdfg.arrays[out_edges[0].data.data])
 
         input0_dim = len(in_edges[0].data.subset.size())
@@ -946,12 +983,10 @@ class PureReduceSum(ONNXForward):
                                sdfg: SDFG) -> bool:
         axes = None
         keepdims = None
-        for name, attr in node.schema.attributes.items():
-            if hasattr(node, name):
-                if str(node.schema.attributes[name]) == "axes":
-                    axes = getattr(node, name)
-                elif str(node.schema.attributes[name]) == "keepdims":
-                    keepdims = getattr(node, name)
+        if hasattr(node, "axes"):
+            axes = node.axes
+        if hasattr(node, "keepdims"):
+            keepdims = node.keepdims
 
         in_edges = state.in_edges(node)
         input_dim = len(in_edges[0].data.subset.size())
@@ -1016,10 +1051,8 @@ class PureSoftmax(ONNXForward):
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
         axis = None
-        for name, attr in node.schema.attributes.items():
-            if hasattr(node, name):
-                if str(node.schema.attributes[name]) == "axis":
-                    axis = getattr(node, name)
+        if hasattr(node, "axis"):
+            axis = node.axis
 
         in_edges = state.in_edges(node)
         input_dim = len(in_edges[0].data.subset.size())
@@ -1135,11 +1168,9 @@ class PureTranspose(ONNXForward):
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
         perm = None
-        for name, attr in node.schema.attributes.items():
-            if hasattr(node, name):
-                if str(node.schema.attributes[name]) == "perm":
-                    perm = getattr(node, name)
-
+        if hasattr(node, "perm"):
+            perm = node.perm
+        
         in_edges = state.in_edges(node)
         input_dim = len(in_edges[0].data.subset.size())
 
@@ -1156,11 +1187,7 @@ class PureTranspose(ONNXForward):
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         node.validate(sdfg, state)
-        perm = None
-        for name, attr in node.schema.attributes.items():
-            if hasattr(node, name):
-                if str(node.schema.attributes[name]) == "perm":
-                    perm = getattr(node, name)
+        perm = node.perm
 
         in_edges = state.in_edges(node)
 
