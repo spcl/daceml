@@ -374,7 +374,7 @@ class BackwardPassGenerator(object):
             # This could later on be changed to check if the expansion is differentiable and if not, move
             # on to the next expansion. For now we will just apply the first one that matches, prioritizing ones that have
             # "pure" in the name
-            if isinstance(node, nd.LibraryNode):
+            if isinstance(node, nd.LibraryNode) and not isinstance(node, ONNXOp):
                 # try to select an expansion
                 if hasattr(node, "implementations"):
                     implementations = node.implementations
