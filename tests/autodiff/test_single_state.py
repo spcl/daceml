@@ -1,14 +1,101 @@
-import dace
+from functools import reduce
+
 import numpy as np
 import pytest
 import torch
 import torch.nn.functional as F
 
+import dace
+import dace.sdfg.nodes as nd
+
 from daceml.autodiff import AutoDiffException, add_backward_pass
-from utils import SDFGBackwardRunner, test_correctness
 
 
-@test_correctness
+def run_correctness(func):
+    def test_correctness():
+        runner, pytorch_func, inputs = func()
+        sdfg_dict = {name: arr.copy() for name, arr in inputs.items()}
+        torch_dict = {
+            name: torch.tensor(arr.copy(), requires_grad=True)
+            for name, arr in inputs.items()
+        }
+
+        sdfg_results = runner.run(**sdfg_dict)
+        torch_results = pytorch_func(**torch_dict)
+
+        for k, v in torch_results.items():
+            v = v.detach().numpy()
+            diff = np.linalg.norm(sdfg_results[k] - v) / reduce(
+                lambda x, y: x * y, v.shape)
+
+            print("-" * 10, k, "-" * 10)
+            print("Difference:", diff)
+
+            print("Torch results:", "-" * 10)
+            print(v)
+            print("SDFG results:", "-" * 10)
+            print(sdfg_results[k])
+
+            assert diff < 1e-5
+
+    return test_correctness
+
+
+class SDFGBackwardRunner:
+    def __init__(self, sdfg, target, strict=True):
+        if strict:
+            sdfg.apply_strict_transformations()
+        self.sdfg = sdfg
+        self.target = target
+        state = sdfg.nodes()[0]
+        required_grads = list(node for node in state.source_nodes()
+                              if isinstance(node, nd.AccessNode))
+
+        add_backward_pass(self.sdfg, state, [self.target], required_grads)
+        self.sdfg.apply_strict_transformations()
+        self.debug = False
+
+    def run(self, **inputs):
+
+        # zero out all arrays
+        intermediate_arrs = {
+            name: np.zeros(arr.shape, dtype=getattr(np, arr.dtype.to_string()))
+            for name, arr in self.sdfg.arrays.items()
+            if name != self.target + "_grad" if not name.startswith("__")
+            if name not in inputs if not arr.transient
+        }
+        inputs.update(intermediate_arrs)
+        inputs[self.target + "_grad"] = np.ones(
+            (1, ),
+            dtype=getattr(np, self.sdfg.arrays[self.target].dtype.to_string()))
+
+        print("Pre-execution arrays")
+        print("-" * 10)
+        for k, v in inputs.items():
+            print(k, "-" * 10)
+            print(v.dtype)
+            print("is_contiguous:", v.flags['C_CONTIGUOUS'])
+            print(v)
+
+        self.sdfg(**inputs)
+
+        print("Post-execution arrays")
+        print("-" * 10)
+        for k, v in inputs.items():
+            print(k, "-" * 10)
+            print(v.dtype)
+            print("is_contiguous:", v.flags['C_CONTIGUOUS'])
+            print(v)
+
+        results = {
+            name: arr
+            for name, arr in inputs.items()
+            # if name.endswith("_grad") and name != self.target + "_grad"
+        }
+        return results
+
+
+@run_correctness
 def test_gemm():
     def torch_gemm(*, X, Y):
         Z = X @ Y
@@ -44,7 +131,7 @@ def test_gemm():
     )
 
 
-@test_correctness
+@run_correctness
 def test_sum():
     def torch_sum(*, X, Y):
         Z = X + Y
@@ -82,7 +169,7 @@ def test_sum():
     )
 
 
-@test_correctness
+@run_correctness
 def test_complex_tasklet():
     def torch_sum(*, X, Y):
         Z = X + Y
@@ -216,7 +303,7 @@ def test_reused_scalar_inplace_error():
 
 
 @pytest.mark.skip(reason="this was rewritten and needs to be reimplemented")
-@test_correctness
+@run_correctness
 def test_tasklets_direct_scalar_edges():
     def torch_func(*, A):
         tmp_a = torch.sqrt(A)
@@ -266,7 +353,7 @@ def test_tasklets_direct_scalar_edges():
     )
 
 
-@test_correctness
+@run_correctness
 def test_tasklets_only_reuse():
     def torch_func(*, A):
         tmp_a = torch.sqrt(A)
@@ -309,7 +396,7 @@ def test_tasklets_only_reuse():
     )
 
 
-@test_correctness
+@run_correctness
 def test_tasklets_multioutput():
     def torch_func(*, A, B):
         tmp_a = torch.sqrt(A)
@@ -359,7 +446,7 @@ def test_tasklets_multioutput():
     )
 
 
-@test_correctness
+@run_correctness
 def test_tasklets_only():
     def torch_func(*, A, B):
         tmp_a = torch.sqrt(A)
@@ -405,7 +492,7 @@ def test_tasklets_only():
     )
 
 
-@test_correctness
+@run_correctness
 def test_add_mmul_transpose_log():
     def torch_func(*, X, Y, W):
 
@@ -450,7 +537,7 @@ def test_add_mmul_transpose_log():
 
 
 @pytest.mark.skip()
-@test_correctness
+@run_correctness
 def test_reduce_node_1_axis_and_none_axis():
     def torch_func(*, X, Y, W):
 
@@ -489,7 +576,7 @@ def test_reduce_node_1_axis_and_none_axis():
 
 
 @pytest.mark.skip()
-@test_correctness
+@run_correctness
 def test_reduce_max_simple():
     def torch_func(*, W):
 
@@ -515,7 +602,7 @@ def test_reduce_max_simple():
 
 
 @pytest.mark.skip()
-@test_correctness
+@run_correctness
 def test_reduce_max_node_1_axis():
     def torch_func(*, X, Y, W):
 
@@ -554,7 +641,7 @@ def test_reduce_max_node_1_axis():
 
 
 @pytest.mark.skip()
-@test_correctness
+@run_correctness
 def test_softmax():
     def torch_func(*, X):
         Y = F.softmax(X, 1)

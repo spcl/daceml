@@ -40,7 +40,10 @@ def is_initialization_state(state: SDFGState) -> bool:
 
     This is an over- and underapproximation; e.g. it doesn't check that the whole array is initalized with zero, but
     it also clearly doesn't detect all possible ways of filling an array with zero.
+
     """
+
+    # TODO rewrite this with source and sink like Tal suggested
     for sink in state.sink_nodes():
         # sink nodes should be AccessNodes
         if type(sink) is not nd.AccessNode:
