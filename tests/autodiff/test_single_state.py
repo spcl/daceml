@@ -55,7 +55,8 @@ class SDFGBackwardRunner:
                               if isinstance(node, nd.AccessNode))
 
         add_backward_pass(self.sdfg, state, [self.target], required_grads)
-        self.sdfg.apply_strict_transformations()
+        # self.sdfg.apply_strict_transformations()
+        self.sdfg.view()
 
     def run(self, **inputs):
 
