@@ -1049,7 +1049,6 @@ class PureMatMul(ONNXForward):
                 },
                 external_edges=True)
             return sdfg_exp
-            return einsumop.to_sdfg()
 
 
 @autoregister_params(op="Identity")
