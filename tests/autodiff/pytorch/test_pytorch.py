@@ -52,6 +52,7 @@ def test_simple():
 
     run_pytorch_module(Module())
 
+
 def test_repeated():
     class Module(torch.nn.Module):
         def forward(self, x):

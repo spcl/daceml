@@ -10,9 +10,9 @@ import dace.sdfg.nodes as nd
 
 from daceml.autodiff import AutoDiffException, add_backward_pass
 
-
 ##################################
 # Testing utilities
+
 
 def run_correctness(func):
     def test_correctness():
@@ -97,8 +97,10 @@ class SDFGBackwardRunner:
         }
         return results
 
+
 ##################################
 # Tests
+
 
 @run_correctness
 def test_gemm():

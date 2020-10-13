@@ -53,6 +53,7 @@ def make_backward_function(model: ONNXModel) -> Type[torch.autograd.Function]:
     class DaceFunction(torch.autograd.Function):
         _backward_sdfg = backward_sdfg
         _forward_model = model
+
         @staticmethod
         def forward(ctx, *inputs):
             # setup the intermediate buffers
@@ -83,7 +84,8 @@ def make_backward_function(model: ONNXModel) -> Type[torch.autograd.Function]:
                 for name, desc, in filtered_backward_input_arrays.items()
             })
 
-            DaceFunction._forward_model.sdfg(**inputs, **symbols, **params, **outputs)
+            DaceFunction._forward_model.sdfg(**inputs, **symbols, **params,
+                                             **outputs)
 
             # save the arrays we need for the backward pass
             backward_inputs = {
@@ -132,7 +134,8 @@ def make_backward_function(model: ONNXModel) -> Type[torch.autograd.Function]:
                     use_torch=True,
                     zeros=True)
 
-            DaceFunction._backward_sdfg(**grad_values, **backward_inputs, **given_grads)
+            DaceFunction._backward_sdfg(**grad_values, **backward_inputs,
+                                        **given_grads)
 
             return tuple(grad_values.values())
 
