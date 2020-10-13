@@ -215,7 +215,7 @@ def test_reused_scalar_inplace_error():
     assert "Inplace" in str(execinfo.value)
 
 
-@pytest.mark.skip()
+@pytest.mark.skip(reason="this was rewritten and needs to be reimplemented")
 @test_correctness
 def test_tasklets_direct_scalar_edges():
     def torch_func(*, A):
@@ -405,7 +405,6 @@ def test_tasklets_only():
     )
 
 
-@pytest.mark.skip()
 @test_correctness
 def test_add_mmul_transpose_log():
     def torch_func(*, X, Y, W):

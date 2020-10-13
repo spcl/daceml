@@ -335,23 +335,14 @@ class BackwardPassGenerator(object):
         else:
             self.separate_sdfgs = True
 
-    def backward(self) -> Tuple[Dict[str, dt.Array], Dict[str, dt.Array]]:
-        """ Generate the backward pass in backward_state.
-
-            Returns
-            1. dict of data descriptors for the gradients (i.e. the outputs of the backward pass)
-            2. dict of data descriptors of required outputs from the forward pass. These need to be added to the parent
-               SDFG of the backward pass.
-
-            All returned data descriptors are not transient.
+    def _expand_nodes(self, subgraph: StateSubgraphView) -> bool:
+        """ Expand all library nodes in the graph to pure implementations. Returns whether something was expanded
         """
 
-        # expand ONNXOps. This should later on be changed to check if the expansion is differentiable and if not, move
-        # on to the next expansion. For now we will just apply the first one that matches.
-
-        # TODO this should cover libnodes in general, not just ONNXOps. This would mean the reduce stuff can be moved
-        # out of this class
-        for node in self.forward_state.nodes():
+        # TODO only expand when node is not found in backward pass repository
+        # (this issue will be apparent when we add a softmax test)
+        expanded_something = False
+        for node in subgraph.nodes():
             if isinstance(node, ONNXOp):
                 for impl in ONNXForward.registered_implementations(
                         node.schema.name):
@@ -374,14 +365,75 @@ class BackwardPassGenerator(object):
                         Expansion.apply_to(self.sdfg,
                                            verify=False,
                                            match_node=node)
+                        expanded_something = True
+                        continue
+
+            # This could later on be changed to check if the expansion is differentiable and if not, move
+            # on to the next expansion. For now we will just apply the first one that matches, prioritizing ones that have
+            # "pure" in the name
+            if isinstance(node, nd.LibraryNode):
+                # try to select an expansion
+                if hasattr(node, "implementations"):
+                    implementations = node.implementations
+
+                    def contains_pure(name, impl):
+                        return "pure" in name.lower(
+                        ) or "pure" in impl.__name__.lower()
+
+                    pure_candidates = [
+                        name for name, impl in implementations.items()
+                        if contains_pure(name, impl)
+                    ]
+                    if len(pure_candidates) > 0:
+                        expansion = pure_candidates[0]
+                    else:
+                        expansion = node.implementation
+                else:
+                    expansion = node.implementation
+
+                node.implementation = expansion
+                node.expand(self.sdfg, self.forward_state)
+                expanded_something = True
+                continue
+
+        return expanded_something
+
+    def backward(self) -> Tuple[Dict[str, dt.Array], Dict[str, dt.Array]]:
+        """ Generate the backward pass in backward_state.
+
+            Returns
+            1. dict of data descriptors for the gradients (i.e. the outputs of the backward pass)
+            2. dict of data descriptors of required outputs from the forward pass. These need to be added to the parent
+               SDFG of the backward pass.
+
+            All returned data descriptors are not transient.
+        """
 
         if self._applied:
             raise AutoDiffException(
                 "Backward may only be called once. Instantiate a new BackwardPassGenerator."
             )
 
-        # determine which nodes we need to reverse; this forms the subgraph we will differentiate:
-        # we do a reverse bfs and a forward bfs, then take the intersection of nodes found
+        forward_subgraph = self._find_subgraph_to_differentiate()
+
+        # expand until there is nothing left to expand
+        while self._expand_nodes(forward_subgraph):
+            # Nodes have been expanded again on the expanded graph; recalculate the forward graph
+            forward_subgraph = self._find_subgraph_to_differentiate()
+
+        # recursively reverse the subgraph
+        self._reverse_subgraph(forward_subgraph)
+
+        # execute any hooks that were added during the call
+        for hook in self._post_grad_hooks:
+            hook()
+        self._applied = True
+        return self.backward_grad_arrays, self.backward_input_arrays
+
+    def _find_subgraph_to_differentiate(self):
+        """ Determine which nodes we need to reverse; this forms the subgraph we will differentiate:
+            we do a reverse bfs and a forward bfs, then take the intersection of nodes found
+        """
         forward_nodes = {
             n
             for e in self.forward_state.bfs_edges(self.inputs)
@@ -396,14 +448,7 @@ class BackwardPassGenerator(object):
         forward_subgraph = StateSubgraphView(
             self.forward_state,
             list(forward_nodes.intersection(backward_nodes)))
-        # recursively reverse the subgraph
-        self._reverse_subgraph(forward_subgraph)
-
-        # execute any hooks that were added during the call
-        for hook in self._post_grad_hooks:
-            hook()
-        self._applied = True
-        return self.backward_grad_arrays, self.backward_input_arrays
+        return forward_subgraph
 
     def get_grad_name(self, conn: str, node: nd.Node):
         if type(node) in [nd.MapExit, nd.MapEntry]:
@@ -458,7 +503,8 @@ class BackwardPassGenerator(object):
                 list(dfs_topological_sort(subgraph, subgraph.source_nodes()))):
 
             try:
-                # output name on the forward node (for which the gradient will be connected as an input on the reverse node)
+                # output name on the forward node
+                # (for which the gradient will be connected as an input on the reverse node)
                 output_grad_connectors = [
                     edge.src_conn for edge in subgraph.out_edges(node)
                 ]
@@ -473,8 +519,10 @@ class BackwardPassGenerator(object):
 
                 self.reverse_map[node] = rev
 
-                # connect the required inputs of the reverse node: the gradients and any output values from the forward pass
+                # connect the required inputs of the reverse node:
+                # the gradients ...
                 self._connect_input_gradients(subgraph, node)
+                # ... and any required output values from the forward pass
                 self._connect_forward_inputs(subgraph, node)
 
                 if isinstance(node, nd.AccessNode):
@@ -707,8 +755,6 @@ class BackwardPassGenerator(object):
             Resolution order:
             1) check for methods on this class
             2) check the backward pass repository
-            3) check the forward pass repository, and try to differentiate the expansion (these should already be
-               expanded, so no work is necessary).
 
             :param node: node on the forward pass
             :param output_grad_connectors: output names on the forward node (for which the gradient will be connected as
@@ -727,7 +773,8 @@ class BackwardPassGenerator(object):
         # (2)
         # TODO: will be needed for a good softmax diff
 
-        raise AutoDiffException("Unsupported node type {}".format(type(node)))
+        raise AutoDiffException("Unable to differentiate node type {}".format(
+            type(node)))
 
     def _reverse_NestedSDFG(
         self,
@@ -746,7 +793,7 @@ class BackwardPassGenerator(object):
                     "A nested SDFG may consist of at most one state (with the "
                     "exception of initalization states), found {} states".
                     format(num_non_init_states))
-            state_to_diff = [state for state, b in is_init_state if b][0]
+            state_to_diff = [state for state, b in is_init_state if not b][0]
         else:
             state_to_diff = node.sdfg.nodes()[0]
 
