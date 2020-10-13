@@ -11,6 +11,9 @@ import dace.sdfg.nodes as nd
 from daceml.autodiff import AutoDiffException, add_backward_pass
 
 
+##################################
+# Testing utilities
+
 def run_correctness(func):
     def test_correctness():
         runner, pytorch_func, inputs = func()
@@ -53,7 +56,7 @@ class SDFGBackwardRunner:
 
         add_backward_pass(self.sdfg, state, [self.target], required_grads)
         self.sdfg.apply_strict_transformations()
-        self.debug = False
+        self.sdfg.view()
 
     def run(self, **inputs):
 
@@ -94,6 +97,8 @@ class SDFGBackwardRunner:
         }
         return results
 
+##################################
+# Tests
 
 @run_correctness
 def test_gemm():

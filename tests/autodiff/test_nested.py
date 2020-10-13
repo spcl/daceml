@@ -1,10 +1,12 @@
 # TODO
 # 1. test for 3 layers of nesting
 # 2. test for forwarding intermediate value
-
+import numpy as np
 import torch
+
 import dace
-from utils import SDFGBackwardRunner, test_correctness
+from dace.transformation.interstate import StateFusion
+from test_single_state import SDFGBackwardRunner, run_correctness
 
 
 @dace.program
@@ -22,13 +24,8 @@ def middle_sqrt(Y: dace.float32[3, 3]):
     return Z
 
 
-@test_correctness
+@run_correctness
 def test_nested():
-    def torch_func(*, X):
-        Y = torch.sqrt(X)
-        Z = torch.sqrt(Y)
-        W = torch.sqrt(Z)
-
     sdfg = middle_sqrt.to_sdfg(strict=False)
 
     sdfg.apply_transformations_repeated([StateFusion])
@@ -36,8 +33,9 @@ def test_nested():
     def torch_func(*, Y):
         inter = torch.sqrt(Y)
         W = torch.log(inter)
-        Z = np.sum(W)
+        Z = torch.sum(W)
+        Z.backward()
         return dict(Y_grad=Y.grad)
 
     return (SDFGBackwardRunner(sdfg, "__return", strict=False), torch_func,
-            dict(X=np.random.rand(3, 3).astype(np.float32)))
+            dict(Y=np.random.rand(3, 3).astype(np.float32)))

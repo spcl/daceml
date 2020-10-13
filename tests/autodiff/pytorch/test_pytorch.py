@@ -38,7 +38,6 @@ def run_pytorch_module(module, shape=None):
         dace_outputs.append(inp.grad.clone().detach())
         print(dace_outputs[-1])
 
-    dace_module.dace_model._backward_sdfg.view()
     assert len(pytorch_outputs) == len(dace_outputs) == len(input_values)
     assert all(
         np.allclose(a, b) for a, b in zip(pytorch_outputs, dace_outputs))
