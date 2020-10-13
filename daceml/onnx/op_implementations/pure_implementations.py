@@ -181,6 +181,52 @@ class PureAdd(ONNXForward):
 
             sdfg_exp.fill_scope_connectors()
             return sdfg_exp
+        elif input0_dim == 4 and input1_dim == 1:
+            mm = in_edges[0].data.subset.size()[0]
+            nn = in_edges[0].data.subset.size()[1]
+            gg = in_edges[0].data.subset.size()[2]
+            hh = in_edges[0].data.subset.size()[3]
+
+            M = str(mm)
+            N = str(nn)
+            G = str(gg)
+            H = str(hh)
+
+            sdfg_exp = dace.SDFG('addExpansion')
+            sdfg_exp.add_array('A', (mm, nn, gg, hh), dace.float32)
+            sdfg_exp.add_array('B', (1, ), dace.float32)
+            sdfg_exp.add_array('C', (mm, nn, gg, hh), dace.float32)
+            state_exp = sdfg_exp.add_state()
+
+            me, mx = state_exp.add_map(
+                'outer_map',
+                dict(i='0:' + M, j='0:' + N, k='0:' + G, l='0:' + H))
+
+            A = state_exp.add_read('A')
+            B = state_exp.add_read('B')
+            C = state_exp.add_access('C')
+            texp = state_exp.add_tasklet('tasklet', {'a', 'b'}, {'c'},
+                                         'c = a + b')
+
+            state_exp.add_edge(
+                A, None, me, None,
+                dace.Memlet.simple(
+                    A, '0:' + M + ', 0:' + N + ', 0:' + G + ', 0:' + H))
+            state_exp.add_edge(B, None, me, None,
+                               dace.Memlet.simple(B, '0'))
+            state_exp.add_edge(me, None, texp, "a",
+                               dace.Memlet.simple(A, 'i, j, k, l'))
+            state_exp.add_edge(me, None, texp, "b",
+                               dace.Memlet.simple(B, '0'))
+            state_exp.add_edge(texp, "c", mx, None,
+                               dace.Memlet.simple(C, 'i, j, k, l'))
+            state_exp.add_edge(
+                mx, None, C, None,
+                dace.Memlet.simple(
+                    C, '0:' + M + ', 0:' + N + ', 0:' + G + ', 0:' + H))
+
+            sdfg_exp.fill_scope_connectors()
+            return sdfg_exp
         else:
 
             def prog(A, B, C):
@@ -268,6 +314,52 @@ class PureSub(ONNXForward):
             state_exp.add_edge(me, None, texp, "a", dace.Memlet.simple(A, '0'))
             state_exp.add_edge(me, None, texp, "b",
                                dace.Memlet.simple(B, 'i, j, k, l'))
+            state_exp.add_edge(texp, "c", mx, None,
+                               dace.Memlet.simple(C, 'i, j, k, l'))
+            state_exp.add_edge(
+                mx, None, C, None,
+                dace.Memlet.simple(
+                    C, '0:' + M + ', 0:' + N + ', 0:' + G + ', 0:' + H))
+
+            sdfg_exp.fill_scope_connectors()
+            return sdfg_exp
+        elif input0_dim == 4 and input1_dim == 1:
+            mm = in_edges[0].data.subset.size()[0]
+            nn = in_edges[0].data.subset.size()[1]
+            gg = in_edges[0].data.subset.size()[2]
+            hh = in_edges[0].data.subset.size()[3]
+
+            M = str(mm)
+            N = str(nn)
+            G = str(gg)
+            H = str(hh)
+
+            sdfg_exp = dace.SDFG('subExpansion')
+            sdfg_exp.add_array('A', (mm, nn, gg, hh), dace.float32)
+            sdfg_exp.add_array('B', (1, ), dace.float32)
+            sdfg_exp.add_array('C', (mm, nn, gg, hh), dace.float32)
+            state_exp = sdfg_exp.add_state()
+
+            me, mx = state_exp.add_map(
+                'outer_map',
+                dict(i='0:' + M, j='0:' + N, k='0:' + G, l='0:' + H))
+
+            A = state_exp.add_read('A')
+            B = state_exp.add_read('B')
+            C = state_exp.add_access('C')
+            texp = state_exp.add_tasklet('tasklet', {'a', 'b'}, {'c'},
+                                         'c = a - b')
+
+            state_exp.add_edge(
+                A, None, me, None,
+                dace.Memlet.simple(
+                    A, '0:' + M + ', 0:' + N + ', 0:' + G + ', 0:' + H))
+            state_exp.add_edge(B, None, me, None,
+                               dace.Memlet.simple(B, '0'))
+            state_exp.add_edge(me, None, texp, "a",
+                               dace.Memlet.simple(A, 'i, j, k, l'))
+            state_exp.add_edge(me, None, texp, "b",
+                               dace.Memlet.simple(B, '0'))
             state_exp.add_edge(texp, "c", mx, None,
                                dace.Memlet.simple(C, 'i, j, k, l'))
             state_exp.add_edge(
@@ -374,6 +466,52 @@ class PureMul(ONNXForward):
 
             sdfg_exp.fill_scope_connectors()
             return sdfg_exp
+        elif input0_dim == 4 and input1_dim == 1:
+            mm = in_edges[0].data.subset.size()[0]
+            nn = in_edges[0].data.subset.size()[1]
+            gg = in_edges[0].data.subset.size()[2]
+            hh = in_edges[0].data.subset.size()[3]
+
+            M = str(mm)
+            N = str(nn)
+            G = str(gg)
+            H = str(hh)
+
+            sdfg_exp = dace.SDFG('mulExpansion')
+            sdfg_exp.add_array('A', (mm, nn, gg, hh), dace.float32)
+            sdfg_exp.add_array('B', (1, ), dace.float32)
+            sdfg_exp.add_array('C', (mm, nn, gg, hh), dace.float32)
+            state_exp = sdfg_exp.add_state()
+
+            me, mx = state_exp.add_map(
+                'outer_map',
+                dict(i='0:' + M, j='0:' + N, k='0:' + G, l='0:' + H))
+
+            A = state_exp.add_read('A')
+            B = state_exp.add_read('B')
+            C = state_exp.add_access('C')
+            texp = state_exp.add_tasklet('tasklet', {'a', 'b'}, {'c'},
+                                         'c = a * b')
+
+            state_exp.add_edge(
+                A, None, me, None,
+                dace.Memlet.simple(
+                    A, '0:' + M + ', 0:' + N + ', 0:' + G + ', 0:' + H))
+            state_exp.add_edge(B, None, me, None,
+                               dace.Memlet.simple(B, '0'))
+            state_exp.add_edge(me, None, texp, "a",
+                               dace.Memlet.simple(A, 'i, j, k, l'))
+            state_exp.add_edge(me, None, texp, "b",
+                               dace.Memlet.simple(B, '0'))
+            state_exp.add_edge(texp, "c", mx, None,
+                               dace.Memlet.simple(C, 'i, j, k, l'))
+            state_exp.add_edge(
+                mx, None, C, None,
+                dace.Memlet.simple(
+                    C, '0:' + M + ', 0:' + N + ', 0:' + G + ', 0:' + H))
+
+            sdfg_exp.fill_scope_connectors()
+            return sdfg_exp
         else:
 
             def prog(A, B, C):
@@ -462,6 +600,52 @@ class PureDiv(ONNXForward):
             state_exp.add_edge(me, None, texp, "a", dace.Memlet.simple(A, '0'))
             state_exp.add_edge(me, None, texp, "b",
                                dace.Memlet.simple(B, 'i, j, k, l'))
+            state_exp.add_edge(texp, "c", mx, None,
+                               dace.Memlet.simple(C, 'i, j, k, l'))
+            state_exp.add_edge(
+                mx, None, C, None,
+                dace.Memlet.simple(
+                    C, '0:' + M + ', 0:' + N + ', 0:' + G + ', 0:' + H))
+
+            sdfg_exp.fill_scope_connectors()
+            return sdfg_exp
+        elif input0_dim == 4 and input1_dim == 1:
+            mm = in_edges[0].data.subset.size()[0]
+            nn = in_edges[0].data.subset.size()[1]
+            gg = in_edges[0].data.subset.size()[2]
+            hh = in_edges[0].data.subset.size()[3]
+
+            M = str(mm)
+            N = str(nn)
+            G = str(gg)
+            H = str(hh)
+
+            sdfg_exp = dace.SDFG('divExpansion')
+            sdfg_exp.add_array('A', (mm, nn, gg, hh), dace.float32)
+            sdfg_exp.add_array('B', (1, ), dace.float32)
+            sdfg_exp.add_array('C', (mm, nn, gg, hh), dace.float32)
+            state_exp = sdfg_exp.add_state()
+
+            me, mx = state_exp.add_map(
+                'outer_map',
+                dict(i='0:' + M, j='0:' + N, k='0:' + G, l='0:' + H))
+
+            A = state_exp.add_read('A')
+            B = state_exp.add_read('B')
+            C = state_exp.add_access('C')
+            texp = state_exp.add_tasklet('tasklet', {'a', 'b'}, {'c'},
+                                         'c = a / b')
+
+            state_exp.add_edge(
+                A, None, me, None,
+                dace.Memlet.simple(
+                    A, '0:' + M + ', 0:' + N + ', 0:' + G + ', 0:' + H))
+            state_exp.add_edge(B, None, me, None,
+                               dace.Memlet.simple(B, '0'))
+            state_exp.add_edge(me, None, texp, "a",
+                               dace.Memlet.simple(A, 'i, j, k, l'))
+            state_exp.add_edge(me, None, texp, "b",
+                               dace.Memlet.simple(B, '0'))
             state_exp.add_edge(texp, "c", mx, None,
                                dace.Memlet.simple(C, 'i, j, k, l'))
             state_exp.add_edge(
