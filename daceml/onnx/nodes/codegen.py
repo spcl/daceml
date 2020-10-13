@@ -478,7 +478,7 @@ def expand_node(node, state, sdfg):
     sdfg.append_init_code("}} // end setup for context_{}".format(unique_id))
 
     tasklet_code = tasklet_setup_code + tasklet_code + tasklet_cleanup_code
-    tasklet = nd.Tasklet('onnx_code',
+    tasklet = nd.Tasklet(unique_id + '_onnx_code',
                          in_connectors,
                          out_connectors,
                          tasklet_code,
