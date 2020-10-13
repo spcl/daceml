@@ -53,6 +53,7 @@ def make_backward_function(model: ONNXModel) -> Type[torch.autograd.Function]:
     class DaceFunction(torch.autograd.Function):
         _backward_sdfg = backward_sdfg
         _forward_model = model
+        _forward_array_to_backward_array_map = gen.array_grad_map
 
         @staticmethod
         def forward(ctx, *inputs):
@@ -109,7 +110,7 @@ def make_backward_function(model: ONNXModel) -> Type[torch.autograd.Function]:
                     len(model.outputs), len(grads)))
 
             given_grads = dict(
-                zip((clean_onnx_name(outp) + "_grad"
+                zip((DaceFunction._forward_array_to_backward_array_map[clean_onnx_name(outp)]
                      for outp in model.outputs), grads))
             for name, value in given_grads.items():
                 if type(value) is not torch.Tensor:
@@ -122,7 +123,7 @@ def make_backward_function(model: ONNXModel) -> Type[torch.autograd.Function]:
 
             # these are the grads we will calculate
             input_grad_names = [
-                clean_onnx_name(inp) + "_grad" for inp in model.inputs
+                DaceFunction._forward_array_to_backward_array_map[clean_onnx_name(inp)] for inp in model.inputs
             ]
 
             # init the grads we will calculate with zeros

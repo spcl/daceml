@@ -35,7 +35,7 @@ def test_nested():
         W = torch.log(inter)
         Z = torch.sum(W)
         Z.backward()
-        return dict(Y_grad=Y.grad)
+        return dict(Y_gradient=Y.grad)
 
     return (SDFGBackwardRunner(sdfg, "__return", strict=False), torch_func,
             dict(Y=np.random.rand(3, 3).astype(np.float32)))

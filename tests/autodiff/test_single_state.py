@@ -56,7 +56,6 @@ class SDFGBackwardRunner:
 
         add_backward_pass(self.sdfg, state, [self.target], required_grads)
         self.sdfg.apply_strict_transformations()
-        self.sdfg.view()
 
     def run(self, **inputs):
 
@@ -64,11 +63,11 @@ class SDFGBackwardRunner:
         intermediate_arrs = {
             name: np.zeros(arr.shape, dtype=getattr(np, arr.dtype.to_string()))
             for name, arr in self.sdfg.arrays.items()
-            if name != self.target + "_grad" if not name.startswith("__")
+            if name != self.target + "_gradient" if not name.startswith("__")
             if name not in inputs if not arr.transient
         }
         inputs.update(intermediate_arrs)
-        inputs[self.target + "_grad"] = np.ones(
+        inputs[self.target + "_gradient"] = np.ones(
             (1, ),
             dtype=getattr(np, self.sdfg.arrays[self.target].dtype.to_string()))
 
@@ -93,7 +92,6 @@ class SDFGBackwardRunner:
         results = {
             name: arr
             for name, arr in inputs.items()
-            # if name.endswith("_grad") and name != self.target + "_grad"
         }
         return results
 
@@ -108,7 +106,7 @@ def test_gemm():
         Z = X @ Y
         S = Z.sum()
         S.backward()
-        return dict(X_grad=X.grad, Y_grad=Y.grad)
+        return dict(X_gradient=X.grad, Y_gradient=Y.grad)
 
     @dace.program
     def dace_gemm(
@@ -145,7 +143,7 @@ def test_sum():
         Z = Z * Z
         S = Z.sum()
         S.backward()
-        return dict(X_grad=X.grad, Y_grad=Y.grad)
+        return dict(X_gradient=X.grad, Y_gradient=Y.grad)
 
     @dace.program
     def dace_sum(
@@ -183,7 +181,7 @@ def test_complex_tasklet():
         Z = Z * Z
         S = Z.sum()
         S.backward()
-        return dict(X_grad=X.grad, Y_grad=Y.grad)
+        return dict(X_gradient=X.grad, Y_gradient=Y.grad)
 
     @dace.program
     def dace_sum(
@@ -318,7 +316,7 @@ def test_tasklets_direct_scalar_edges():
         tmp_c = torch.sin(tmp_b)
 
         tmp_c.backward()
-        return dict(A_grad=A.grad)
+        return dict(A_gradient=A.grad)
 
     sdfg = dace.SDFG("dace_func")
     state = sdfg.add_state()
@@ -369,7 +367,7 @@ def test_tasklets_only_reuse():
         C = tmp_a * tmp_b
 
         C.backward()
-        return dict(A_grad=A.grad)
+        return dict(A_gradient=A.grad)
 
     @dace.program
     def dace_func(A: dace.float32[1], C: dace.float32[1]):
@@ -412,7 +410,7 @@ def test_tasklets_multioutput():
         C = tmp_a * tmp_b * B
 
         C.backward()
-        return dict(A_grad=A.grad, B_grad=B.grad)
+        return dict(A_gradient=A.grad, B_gradient=B.grad)
 
     @dace.program
     def dace_func(A: dace.float32[1], B: dace.float32[1], C: dace.float32[1]):
@@ -462,7 +460,7 @@ def test_tasklets_only():
         C = tmp_a * tmp_b
 
         C.backward()
-        return dict(A_grad=A.grad, B_grad=B.grad)
+        return dict(A_gradient=A.grad, B_gradient=B.grad)
 
     @dace.program
     def dace_func(A: dace.float32[1], B: dace.float32[1], C: dace.float32[1]):
@@ -510,7 +508,7 @@ def test_add_mmul_transpose_log():
 
         S = Zl.sum()
         S.backward()
-        return dict(X_grad=X.grad, Y_grad=Y.grad, W_grad=W.grad)
+        return dict(X_gradient=X.grad, Y_gradient=Y.grad, W_gradient=W.grad)
 
     @dace.program
     def dace_func(
@@ -555,7 +553,7 @@ def test_reduce_node_1_axis_and_none_axis():
 
         S = Zl.sum()
         S.backward()
-        return dict(X_grad=X.grad, Y_grad=Y.grad, W_grad=W.grad)
+        return dict(X_gradient=X.grad, Y_gradient=Y.grad, W_gradient=W.grad)
 
     @dace.program
     def dace_func(X: dace.float32[4, 5], Y: dace.float32[4, 3],
@@ -590,7 +588,7 @@ def test_reduce_max_simple():
         Z = torch.max(W, dim=1)
         S = Z.values.sum()
         S.backward()
-        return dict(W_grad=W.grad)
+        return dict(W_gradient=W.grad)
 
     @dace.program
     def dace_func(W: dace.float32[4, 5]):
@@ -620,7 +618,7 @@ def test_reduce_max_node_1_axis():
 
         S = Zl.sum()
         S.backward()
-        return dict(X_grad=X.grad, Y_grad=Y.grad, W_grad=W.grad)
+        return dict(X_gradient=X.grad, Y_gradient=Y.grad, W_gradient=W.grad)
 
     @dace.program
     def dace_func(X: dace.float64[4, 5], Y: dace.float64[4, 3],
@@ -654,7 +652,7 @@ def test_softmax():
         Y = F.softmax(X, 1)
         Z = Y.sum()
         Z.backward()
-        return dict(X_grad=X.grad)
+        return dict(X_gradient=X.grad)
 
     @dace.program
     def dace_func(X: dace.float64[4, 5]):

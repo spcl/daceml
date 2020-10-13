@@ -4,7 +4,7 @@
 """
 from collections import defaultdict
 from copy import deepcopy as dc
-from typing import Tuple, Dict, Set, List, Union, cast
+from typing import Tuple, Dict, Set, List, Union, cast, Optional
 
 import dace
 import dace.sdfg.nodes as nd
@@ -20,6 +20,24 @@ from dace.transformation.transformation import ExpandTransformation
 
 from daceml.onnx.implementation_abc import ONNXForward
 from daceml.onnx.nodes.onnx_op import ONNXOp
+
+
+def find_str_not_in_set(existing: Set[str], target_str: Optional[str]) -> str:
+    """ Try to find a new str that is not in the set.
+
+        :param existing: the existing strs.
+        :param target_str: (optional) a target_str that should be used as a base for the new str.
+        :return: a new str that is not in `existing`.
+    """
+    base_name = target_str or "temp"
+
+    if base_name not in existing:
+        return base_name
+
+    i = 0
+    while (base_name + "_" + str(i)) in existing:
+        i += 1
+    return base_name + "_" + str(i)
 
 
 class AutoDiffException(Exception):
@@ -293,16 +311,12 @@ class BackwardPassGenerator(object):
         # arrays descs for inputs that are required from the forward pass
         self.backward_input_arrays: Dict[str, dt.Array] = {}
 
-        # if we have nested sdfgs, arrays must be added to the forward pass
-        self.nested_sdfg_forwarded_arrays: Dict[str, dt.Array] = {}
-
-        # hooks that are executed after the backward pass is complete
-        self._post_grad_hooks = []
         # this is a mapping from forward node -> backward node, and forward map -> backward map
         self.reverse_map = {}
-
-        # grad name -> all memlets that write to this grad
-        self.grad_memlets: Dict[str, List[Memlet]] = defaultdict(list)
+        # mapping from forward name to gradient name for arrays
+        self.array_grad_map: Dict[str, str] = {}
+        # mapping from forward name to gradient name for connectors of nodes
+        self.connector_grad_map: Dict[nd.Node, Dict[str, str]] = defaultdict(dict)
 
         # checks if backward has already been applied
         self._applied = False
@@ -428,9 +442,6 @@ class BackwardPassGenerator(object):
         # recursively reverse the subgraph
         self._reverse_subgraph(forward_subgraph)
 
-        # execute any hooks that were added during the call
-        for hook in self._post_grad_hooks:
-            hook()
         self._applied = True
         return self.backward_grad_arrays, self.backward_input_arrays
 
@@ -454,18 +465,28 @@ class BackwardPassGenerator(object):
             list(forward_nodes.intersection(backward_nodes)))
         return forward_subgraph
 
-    def get_grad_name(self, conn: str, node: nd.Node):
+
+    def connector_grad_name(self, conn: str, node: nd.Node):
+        if node in self.connector_grad_map and conn in self.connector_grad_map[node]:
+            return self.connector_grad_map[node][conn]
+
         if type(node) in [nd.MapExit, nd.MapEntry]:
-            return _invert_map_connector(conn)
-
-        if type(node) is Reduce:
-            # in this case the reverse node will be a NSDFG, which can't have None as connectors
-            return self.sdfg.temp_data_name()
-
-        if conn is None:
-            return None
+            result = _invert_map_connector(conn)
+        elif conn is None:
+            result = None
         else:
-            return conn + "_grad"
+            result = find_str_not_in_set(set(node.in_connectors).union(node.out_connectors), conn + "_gradient")
+
+        self.connector_grad_map[node][conn] = result
+        return result
+
+    def array_grad_name(self, forward_name: str):
+        """ Return the gradient name of a name from the forward pass """
+        if forward_name not in self.array_grad_map:
+            self.array_grad_map[forward_name] = \
+                find_str_not_in_set(set(self.backward_sdfg.arrays), forward_name + "_gradient")
+
+        return self.array_grad_map[forward_name]
 
     def _init_grad(self, data: str):
         """Add a state where `data` is initialized with zero.
@@ -562,7 +583,7 @@ class BackwardPassGenerator(object):
             # remove the WCR since these are now read edges
             memlet.wcr = None
 
-            if memlet.data not in self.grad_memlets:
+            if self.array_grad_name(memlet.data) not in self.backward_sdfg.arrays:
                 # this grad hasn't been written before: initialize it
                 array = self.sdfg.arrays[memlet.data]
 
@@ -576,29 +597,19 @@ class BackwardPassGenerator(object):
                 # only the grads of the inputs and the outputs are not transient
                 cloned_datadesc.transient = memlet.data not in self.input_names and memlet.data not in self.output_names
 
-                # TODO test with identical nodes after one another; should fail (come up with better solution)
-                # this can clearly fail if someone chooses annoying array names; ignore this for now
-                if memlet.data + "_grad" in self.backward_grad_arrays:
-                    AutoDiffException(
-                        "Unable to create array with name '{}'; it already exists"
-                        .format(memlet.data + "_grad"))
-
-                self.backward_grad_arrays[memlet.data +
-                                          "_grad"] = cloned_datadesc
-                self.backward_sdfg.arrays[memlet.data +
-                                          "_grad"] = dc(cloned_datadesc)
+                self.backward_grad_arrays[self.array_grad_name(memlet.data)] = cloned_datadesc
+                self.backward_sdfg.arrays[self.array_grad_name(memlet.data)] = dc(cloned_datadesc)
 
                 if cloned_datadesc.transient:
-                    self._init_grad(memlet.data + "_grad")
+                    self._init_grad(self.array_grad_name(memlet.data))
 
-            self.grad_memlets[memlet.data].append(memlet)
-            memlet.data = memlet.data + "_grad"
+            memlet.data = self.array_grad_name(memlet.data)
 
             self.backward_state.add_edge(
                 self.reverse_map[dest_node],
-                self.get_grad_name(input_conn, dest_node),
+                self.connector_grad_name(input_conn, dest_node),
                 self.reverse_map[forward_node],
-                self.get_grad_name(output_conn, forward_node),
+                self.connector_grad_name(output_conn, forward_node),
                 memlet,
             )
 
@@ -623,7 +634,7 @@ class BackwardPassGenerator(object):
         # these are the in_connectors on the reverse node, minus the gradients.
         # (these are connected in _connect_input_gradients)
         required_inputs = set(rev.in_connectors).difference(
-            self.get_grad_name(edge.src_conn, forward_node)
+            self.connector_grad_name(edge.src_conn, forward_node)
             for edge in subgraph.out_edges(forward_node))
 
         edges_to_connect = (edge for edge in subgraph.in_edges(forward_node)
@@ -856,11 +867,8 @@ class BackwardPassGenerator(object):
                 # (3)
                 # TODO write test that needs this, then write this
 
-        inputs = set(
-            self.get_grad_name(name, node)
-            for name in output_grad_connectors).union(backward_input_arrays)
-        outputs = set(
-            self.get_grad_name(name, node) for name in input_grad_connectors)
+        inputs = set(self.connector_grad_name(name, node) for name in output_grad_connectors).union(backward_input_arrays)
+        outputs = set(self.connector_grad_name(name, node) for name in input_grad_connectors)
 
         for inp in inputs:
             reverse_sdfg.arrays[inp].transient = False
@@ -886,7 +894,7 @@ class BackwardPassGenerator(object):
         output_grad_connectors: List[str],
         input_grad_connectors: List[str],
     ):
-        rev = nd.AccessNode(node.data + "_grad",
+        rev = nd.AccessNode(self.array_grad_name(node.data),
                             access=_invert_access(node.access))
         self.backward_state.add_node(rev)
         return rev
@@ -953,10 +961,10 @@ class BackwardPassGenerator(object):
                         "_")
             state = sdfg.add_state()
 
-            rev_input_conn_name = self.get_grad_name(output_grad_connectors[0],
-                                                     node)
-            rev_output_conn_name = self.get_grad_name(input_grad_connectors[0],
-                                                      node)
+            rev_input_conn_name = self.grad_name(output_grad_connectors[0],
+                                                 node)
+            rev_output_conn_name = self.grad_name(input_grad_connectors[0],
+                                                  node)
 
             _, rev_input_arr = sdfg.add_array(rev_input_conn_name,
                                               shape=output_array.shape,
@@ -1056,7 +1064,7 @@ class BackwardPassGenerator(object):
             # for each output_conn...
             for inp in input_grad_connectors:
                 # ...add the code to generate {inp}_grad
-                rev_output_grad_name = self.get_grad_name(inp, tasklet)
+                rev_output_grad_name = self.connector_grad_name(inp, tasklet)
                 rev_outputs.add(rev_output_grad_name)
 
                 output_expr = output_exprs[output_conn]
@@ -1070,7 +1078,7 @@ class BackwardPassGenerator(object):
                         "Unable to symbolically differentiate expression: {}".
                         format(diff_expr.expr))
 
-                rev_input_grad_name = self.get_grad_name(output_conn, tasklet)
+                rev_input_grad_name = self.connector_grad_name(output_conn, tasklet)
                 rev_inputs |= _symbols_to_strings(
                     diff_expr.free_symbols) | {rev_input_grad_name}
 
