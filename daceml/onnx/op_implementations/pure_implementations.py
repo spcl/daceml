@@ -12,6 +12,7 @@ from dace.sdfg.nodes import Node
 from dace.symbolic import symstr
 
 from daceml.onnx.nodes.onnx_op import ONNXOp
+import daceml.onnx.converters as converters
 from daceml.onnx.implementation_abc import ONNXForward
 import numpy as np
 
@@ -47,7 +48,22 @@ def program_for_node(program, sdfg: SDFG, state: SDFGState,
 
     program.__annotations__ = annotations
 
-    return dace.parser.DaceProgram(program, (), {})
+    ####################################
+    # get the locals and globals of the upper frame and overwrite what was set in the SDFG
+    frame = inspect.currentframe()
+    outer_frame = frame.f_back
+    globals = {}
+    # Update globals, then locals
+    globals.update(outer_frame.f_globals)
+    globals.update(outer_frame.f_locals)
+
+    result = DaceProgram(program, (), {})
+    result.global_vars = {
+        k: v
+        for k, v in globals.items() if dtypes.isallowed(v)
+    }
+
+    return result
 
 
 @autoregister_params(op="Sqrt")
@@ -104,6 +120,7 @@ class PureAdd(ONNXForward):
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         node.validate(sdfg, state)
+
         def prog(A, B, C):
             C[:] = A + B
 
@@ -347,8 +364,8 @@ class PureReshape(ONNXForward):
                     reshaped,
                     'int((i*{0}*{1}*{2}+j*{1}*{2}+k*{2}+l)/({3}*{4})), \
                      int((i*{0}*{1}*{2}+j*{1}*{2}+k*{2}+l)%({3}*{4})/{4}), \
-                     (i*{0}*{1}*{2}+j*{1}*{2}+k*{2}+l)%({3}*{4})%{4}'
-                    .format(J, K, L, N, P)))
+                     (i*{0}*{1}*{2}+j*{1}*{2}+k*{2}+l)%({3}*{4})%{4}'.format(
+                        J, K, L, N, P)))
 
             state_exp.add_edge(
                 mx1, None, reshaped, None,
@@ -408,12 +425,11 @@ class PureReshape(ONNXForward):
             state_exp.add_edge(
                 task1, '_b', mx1, None,
                 dace.Memlet.simple(
-                    reshaped,
-                    'int((i*{0}*{1}+j*{1}+k)/({2}*{3}*{4})), \
+                    reshaped, 'int((i*{0}*{1}+j*{1}+k)/({2}*{3}*{4})), \
                      int(((i*{0}*{1}+j*{1}+k)%({2}*{3}*{4}))/({3}*{4})), \
                      int(((i*{0}*{1}+j*{1}+k)%({2}*{3}*{4})%({3}*{4}))/{4}), \
-                     (i*{0}*{1}+j*{1}+k)%({2}*{3}*{4})%({3}*{4})%{4}'
-                    .format(J, K, N, P, Q)))
+                     (i*{0}*{1}+j*{1}+k)%({2}*{3}*{4})%({3}*{4})%{4}'.format(
+                        J, K, N, P, Q)))
 
             state_exp.add_edge(
                 mx1, None, reshaped, None,
@@ -831,7 +847,7 @@ class PureTranspose(ONNXForward):
         perm = None
         if hasattr(node, "perm"):
             perm = node.perm
-        
+
         in_edges = state.in_edges(node)
         input_dim = len(in_edges[0].data.subset.size())
 
@@ -921,3 +937,26 @@ class PureTranspose(ONNXForward):
                     '0:' + I + ', 0:' + K + ', 0:' + L + ', 0:' + J))
             sdfg_exp.fill_scope_connectors()
         return sdfg_exp
+
+
+@autoregister_params(op="Cast")
+class PureCast(ONNXForward):
+    @staticmethod
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
+
+        target_type = node.to
+        try:
+            converters.onnx_tensor_type_to_typeclass(target_type)
+        except ValueError as v:
+            return False
+
+        return True
+
+    @staticmethod
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+        def prog(input, output):
+            output[:] = dace.elementwise(lambda x: x, input)
+
+        return program_for_node(prog, sdfg, state, node).to_sdfg()
