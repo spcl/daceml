@@ -1,7 +1,7 @@
 .. _mod_pytorch:
 
 Module Documentation - ``daceml.pytorch`` 
------------------------------------------
+=========================================
 
 .. py:module:: daceml.pytorch
 
