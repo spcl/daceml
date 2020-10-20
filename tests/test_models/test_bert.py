@@ -21,7 +21,7 @@ def test_bert_full(gpu):
 
     model = onnx.load(bert_path)
 
-    dace_model = ONNXModel("bert", model, cuda=gpu)
+    dace_model = ONNXModel("bert", model, cuda=gpu, infer_shapes=False)
     feed = {
         "input_ids:0": np.load(os.path.join(data_directory, "input_ids.npy")),
         "input_mask:0": np.load(os.path.join(data_directory,
