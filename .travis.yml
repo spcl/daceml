@@ -10,5 +10,6 @@ install:
 script:
   # test_bert takes quite long, so we wait for up to 30 minutes
   - travis_wait 30 make test
+  - make doctest
   - make codecov
   - make check-formatting
