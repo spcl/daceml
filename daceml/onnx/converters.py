@@ -205,4 +205,4 @@ def clean_onnx_name(name: str) -> str:
     """Modifies a onnx name that is potentially invalid in dace
        to make it valid"""
     return "ONNX_" + name.replace(".", "DOT").replace(":", "COLON").replace(
-        "/", "SLASH")
+        "/", "SLASH").replace("-", "DASH")

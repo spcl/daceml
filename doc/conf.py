@@ -54,6 +54,18 @@ html_static_path = ['_static']
 doctest_global_setup = '''
 import torch
 import torch.nn as nn
+
+# download efficientnet
+import os
+import subprocess
+model_path = os.path.join("..", "tests", "onnx_files", "efficientnet.onnx")
+# Download model
+if not os.path.exists(model_path):
+    subprocess.check_call([
+        "wget",
+        "https://github.com/onnx/models/raw/master/vision/classification/efficientnet-lite4/model/efficientnet-lite4-11.onnx",
+        "--output-document={}".format(model_path)
+    ])
 '''
 
 html_sidebars = {
@@ -63,5 +75,6 @@ html_sidebars = {
             'sourcelink.html',
             'searchbox.html']}
 
+typehints_fully_qualified = False
 add_module_names = False
 autoclass_content = 'both'

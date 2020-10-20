@@ -9,7 +9,10 @@ This project adds PyTorch and ONNX model loading support to DaCe, and supports O
    :maxdepth: 2
    :caption: User Guide
 
-   overviews/*
+   overviews/installation.rst
+   overviews/onnx.rst
+   overviews/pytorch.rst
+   overviews/development.rst
 
 .. toctree::
    :glob:

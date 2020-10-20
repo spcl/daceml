@@ -74,6 +74,7 @@ class DaceModule(nn.Module):
 
             dace_model = ONNXModel("dace_model",
                                    onnx_model,
+                                   infer_shapes=False,
                                    cuda=self.cuda,
                                    apply_strict=self.apply_strict)
             self.sdfg = dace_model.sdfg
