@@ -91,23 +91,30 @@ class ONNXOp(nd.LibraryNode):
                       desc="The operator's ONNX OpSchema",
                       allow_none=True)
 
-    def iter_outputs_in_onnx_order(self, state):
+    def iter_outputs_in_onnx_order(
+            self, state: SDFGState) -> List[MultiConnectorEdge]:
         """ Iterate through the input edges in the same order as they would appear in an ONNX node proto.
             This assumes that the node has been validated!
 
             :param state: the state containing this node.
+            :return: the out edges in the order as they would appear in the node proto.
         """
         return self._iter_params_in_onnx_order(state, inputs=False)
 
-    def iter_inputs_in_onnx_order(self, state):
+    def iter_inputs_in_onnx_order(
+            self, state: SDFGState) -> List[MultiConnectorEdge]:
         """ Iterate through the output edges in the same order as they would appear in an ONNX node proto.
             This assumes that the node has been validated!
 
             :param state: the state containing this node.
+            :return: the in edges in the order as they would appear in the node proto.
         """
         return self._iter_params_in_onnx_order(state, inputs=True)
 
-    def _iter_params_in_onnx_order(self, state, inputs=False):
+    def _iter_params_in_onnx_order(
+            self,
+            state: SDFGState,
+            inputs: bool = False) -> List[MultiConnectorEdge]:
         parameters = list(
             self.schema.inputs if inputs else self.schema.outputs)
         if parameters[-1].param_type == ONNXParameterType.Variadic:
@@ -482,8 +489,8 @@ for schema in onnx.defs.get_all_schemas():
 
     cls_name = "ONNX" + dace_schema.name
 
-    # the first line of the init docstring contains the signature of the method. This will be picked up by sphinx so
-    # and means that the generated sphinx docs don't have *args, **kwargs in them.
+    # the first line of the init docstring contains the signature of the method. This will be picked up by sphinx and
+    # means that the generated sphinx docs have a proper signature, and not just *args, **kwargs.
     init_docstring = "__init__(name, *, {})\n".format(
         ", ".join(attr.name if attr.required else attr.name + "=" +
                   repr(attr.default_value)
