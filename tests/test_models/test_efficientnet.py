@@ -24,4 +24,3 @@ def test_efficientnet(gpu):
     dace_model = ONNXModel("efficientnet", model, cuda=gpu)
     test_input = np.random.rand(1, 3, 224, 224).astype(np.float32)
     dace_model(test_input)
-

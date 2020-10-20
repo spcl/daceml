@@ -41,12 +41,12 @@ class DaceModule(nn.Module):
             array([0., 0.], dtype=float32)
     """
     def __init__(
-        self,
-        module: nn.Module,
-        dummy_inputs: typing.Optional[typing.Tuple[torch.Tensor]] = None,
-        cuda: bool = False,
-        train: bool = False,
-        apply_strict: bool=False):
+            self,
+            module: nn.Module,
+            dummy_inputs: typing.Optional[typing.Tuple[torch.Tensor]] = None,
+            cuda: bool = False,
+            train: bool = False,
+            apply_strict: bool = False):
         super(DaceModule, self).__init__()
 
         self.model = module
