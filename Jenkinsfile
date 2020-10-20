@@ -22,7 +22,7 @@ pipeline {
         sh '''
 	LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 	PATH=/usr/local/cuda/bin:$PATH
-        make test check-formatting
+        make test doctest check-formatting
         '''
       }
     }

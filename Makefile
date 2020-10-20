@@ -15,9 +15,6 @@ endif
 clean:
 	! test -d $(VENV_PATH) || rm -r $(VENV_PATH)
 
-reinstall: venv
-	$(ACTIVATE) $(PIP) install --upgrade --force-reinstall -e .[testing]
-
 venv: 
 ifneq ($(VENV_PATH),)
 	test -d $(VENV_PATH) || echo "Creating new venv" && $(PYTHON) -m venv ./$(VENV_PATH)
@@ -28,7 +25,10 @@ ifneq ($(VENV_PATH),)
 	$(ACTIVATE) pip install --upgrade pip
 endif
 	$(ACTIVATE) $(PIP) install $(TORCH_VERSION) 
-	$(ACTIVATE) $(PIP) install -e .[testing,debug]
+	$(ACTIVATE) $(PIP) install -e .[testing,debug,docs]
+
+doctest:
+	$(ACTIVATE) cd doc && make doctest
 
 test: 
 	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests
