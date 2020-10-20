@@ -31,6 +31,6 @@ setup(
     extras_require={
         'testing':
         ['coverage', 'pytest', 'yapf', 'pytest-cov', 'transformers'],
-        'docs': ['sphinx', 'sphinx_rtd_theme'],
+        'docs': ['sphinx==3.2.1', 'sphinx_rtd_theme==0.5.0', 'sphinx-autodoc-typehints==1.11.1'],
         'debug': ['onnxruntime']
     })
