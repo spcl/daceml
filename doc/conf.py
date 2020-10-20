@@ -62,3 +62,6 @@ html_sidebars = {
             'relations.html',
             'sourcelink.html',
             'searchbox.html']}
+
+add_module_names = False
+autoclass_content = 'both'
