@@ -92,8 +92,7 @@ class ONNXOp(nd.LibraryNode):
                       desc="The operator's ONNX OpSchema",
                       allow_none=True)
 
-    def iter_outputs_in_onnx_order(
-            self, state: SDFGState) -> List[MultiConnectorEdge]:
+    def iter_outputs_in_onnx_order(self, state) -> List[MultiConnectorEdge]:
         """ Iterate through the input edges in the same order as they would appear in an ONNX node proto.
             This assumes that the node has been validated!
 
@@ -578,7 +577,7 @@ for schema in onnx.defs.get_all_schemas():
     ##########################################
 
     # avoid import loop
-    from daceml.onnx.implementation_abc import ONNXForward
+    from daceml.onnx.forward_implementation_abc import ONNXForward
 
     registered = False
     for impl, args in ONNXForward.extensions().items():

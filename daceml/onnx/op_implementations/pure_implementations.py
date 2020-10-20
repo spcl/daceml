@@ -11,6 +11,7 @@ from dace.registry import autoregister_params
 from dace.sdfg.nodes import Node
 from dace.symbolic import symstr
 
+from daceml.autodiff.backward_implementation_abc import BackwardImplementation
 from daceml.onnx.nodes.onnx_op import ONNXOp
 from daceml.onnx import converters
 from daceml.onnx.implementation_abc import ONNXForward
@@ -485,3 +486,4 @@ class PureCast(ONNXForward):
             output[:] = dace.elementwise(lambda x: x, input)
 
         return program_for_node(prog, sdfg, state, node).to_sdfg()
+

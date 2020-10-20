@@ -18,7 +18,9 @@ from dace.sdfg.state import StateSubgraphView
 from dace.sdfg.utils import dfs_topological_sort
 from dace.transformation.transformation import ExpandTransformation
 
-from daceml.onnx.implementation_abc import ONNXForward
+from daceml.autodiff import AutoDiffException
+from daceml.autodiff.backward_implementation_abc import BackwardImplementation
+from daceml.onnx.forward_implementation_abc import ONNXForward
 from daceml.onnx.nodes.onnx_op import ONNXOp
 
 
@@ -38,11 +40,6 @@ def find_str_not_in_set(existing: Set[str], target_str: Optional[str]) -> str:
     while (base_name + "_" + str(i)) in existing:
         i += 1
     return base_name + "_" + str(i)
-
-
-class AutoDiffException(Exception):
-    """Base class for all exceptions related to automatic differentiation"""
-    pass
 
 
 def _strings_to_symbols(strings: Set[str]) -> Set[sp.Symbol]:
@@ -357,63 +354,72 @@ class BackwardPassGenerator(object):
         """ Expand all library nodes in the graph to pure implementations. Returns whether something was expanded
         """
 
-        # TODO only expand when node is not found in backward pass repository
-        # (this issue will be apparent when we add a softmax test)
         expanded_something = False
         for node in subgraph.nodes():
-            if isinstance(node, ONNXOp):
-                for impl in ONNXForward.registered_implementations(
-                        node.schema.name):
-                    if impl.forward_can_be_applied(node, self.forward_state,
-                                                   self.sdfg):
-                        # try to apply the expansion
-                        class Expansion(ExpandTransformation):
-                            environments = []
-                            _expansion_result = None
 
-                            @classmethod
-                            def expansion(cls, node, state, sdfg):
-                                return impl.forward(node, state, sdfg)
+            # check if the node exists in the backward implementation repository
+            impl: BackwardImplementation
+            for impl, args in BackwardImplementation.extensions().items():
+                if "node_type" in args and isinstance(node, args["node_type"]):
+                    if impl.backward_can_be_applied(node, self.forward_state,
+                                                    self.sdfg):
+                        # if yes, skip it
+                        break
+            else:
+                # only check others if we didn't break out of the above loop
+                if isinstance(node, ONNXOp):
+                    for impl in ONNXForward.registered_implementations(
+                            node.schema.name):
+                        if impl.forward_can_be_applied(node, self.forward_state,
+                                                       self.sdfg):
+                            # try to apply the expansion
+                            class Expansion(ExpandTransformation):
+                                environments = []
+                                _expansion_result = None
 
-                            @classmethod
-                            def postprocessing(cls, sdfg, state, expansion):
-                                cls._expansion_result = expansion
+                                @classmethod
+                                def expansion(cls, node, state, sdfg):
+                                    return impl.forward(node, state, sdfg)
 
-                        Expansion._match_node = type(node)
-                        Expansion.apply_to(self.sdfg,
-                                           verify=False,
-                                           match_node=node)
-                        expanded_something = True
-                        continue
+                                @classmethod
+                                def postprocessing(cls, sdfg, state, expansion):
+                                    cls._expansion_result = expansion
 
-            # This could later on be changed to check if the expansion is differentiable and if not, move
-            # on to the next expansion. For now we will just apply the first one that matches, prioritizing ones that have
-            # "pure" in the name
-            if isinstance(node,
-                          nd.LibraryNode) and not isinstance(node, ONNXOp):
-                # try to select an expansion
-                if hasattr(node, "implementations"):
-                    implementations = node.implementations
+                            Expansion._match_node = type(node)
+                            Expansion.apply_to(self.sdfg,
+                                               verify=False,
+                                               match_node=node)
+                            expanded_something = True
+                            continue
 
-                    def contains_pure(name, impl):
-                        return "pure" in name.lower(
-                        ) or "pure" in impl.__name__.lower()
+                # This could later on be changed to check if the expansion is differentiable and if not, move
+                # on to the next expansion. For now we will just apply the first one that matches, prioritizing ones that have
+                # "pure" in the name
+                if isinstance(node,
+                              nd.LibraryNode) and not isinstance(node, ONNXOp):
+                    # try to select an expansion
+                    if hasattr(node, "implementations"):
+                        implementations = node.implementations
 
-                    pure_candidates = [
-                        name for name, impl in implementations.items()
-                        if contains_pure(name, impl)
-                    ]
-                    if len(pure_candidates) > 0:
-                        expansion = pure_candidates[0]
+                        def contains_pure(name, impl):
+                            return "pure" in name.lower(
+                            ) or "pure" in impl.__name__.lower()
+
+                        pure_candidates = [
+                            name for name, impl in implementations.items()
+                            if contains_pure(name, impl)
+                        ]
+                        if len(pure_candidates) > 0:
+                            expansion = pure_candidates[0]
+                        else:
+                            expansion = node.implementation
                     else:
                         expansion = node.implementation
-                else:
-                    expansion = node.implementation
 
-                node.implementation = expansion
-                node.expand(self.sdfg, self.forward_state)
-                expanded_something = True
-                continue
+                    node.implementation = expansion
+                    node.expand(self.sdfg, self.forward_state)
+                    expanded_something = True
+                    continue
 
         return expanded_something
 
@@ -466,24 +472,24 @@ class BackwardPassGenerator(object):
             list(forward_nodes.intersection(backward_nodes)))
         return forward_subgraph
 
-    def connector_grad_name(self, conn: str, node: nd.Node):
+    def connector_grad_name(self, conn: str, node: nd.Node) -> Optional[str]:
         if node in self.connector_grad_map and conn in self.connector_grad_map[
                 node]:
             return self.connector_grad_map[node][conn]
 
+        # set of all used up connector names
+        existing_connectors = set(node.in_connectors).union(node.out_connectors).union(self.connector_grad_map[node])
         if type(node) in [nd.MapExit, nd.MapEntry]:
             result = _invert_map_connector(conn)
         elif conn is None:
-            result = None
+            result = find_str_not_in_set(existing_connectors, "None_gradient")
         else:
-            result = find_str_not_in_set(
-                set(node.in_connectors).union(node.out_connectors),
-                conn + "_gradient")
+            result = find_str_not_in_set(existing_connectors, conn + "_gradient")
 
         self.connector_grad_map[node][conn] = result
         return result
 
-    def array_grad_name(self, forward_name: str):
+    def array_grad_name(self, forward_name: str) -> str:
         """ Return the gradient name of a name from the forward pass """
         if forward_name not in self.array_grad_map:
             self.array_grad_map[forward_name] = \
@@ -769,7 +775,7 @@ class BackwardPassGenerator(object):
 
     def _get_reverse_node(
             self, node, output_grad_connectors,
-            input_grad_connectors) -> Union[nd.Node, Tuple[nd.Node, nd.Node]]:
+            input_grad_connectors) -> Union[nd.Node, SDFG]:
         """ Add the reverse node for a node from the forward pass to the backward pass, and return it.
 
             Resolution order:
@@ -782,16 +788,26 @@ class BackwardPassGenerator(object):
             :param input_grad_connectors: input name on the forward node that the gradient should be generated for
         """
 
-        if isinstance(node, dace.nodes.LibraryNode):
-            pass
-
         # (1)
         if hasattr(self, "_reverse_" + type(node).__name__):
             return getattr(self, "_reverse_" + type(node).__name__)(
                 node, output_grad_connectors, input_grad_connectors)
 
         # (2)
-        # TODO: will be needed for a good softmax diff
+        impl: BackwardImplementation
+        for impl, args in BackwardImplementation.extensions().items():
+            if "node_type" in args and isinstance(node, args["node_type"]):
+                if impl.backward_can_be_applied(node, self.forward_state,
+                                               self.sdfg):
+                    given_gradients = {outp: self.connector_grad_name(outp, node) for outp in output_grad_connectors}
+                    required_gradients = {inp: self.connector_grad_name(inp, node) for inp in input_grad_connectors}
+                    return impl.backward(forward_node=node,
+                                 forward_state=self.forward_state,
+                                 forward_sdfg=self.sdfg,
+                                 backward_state=self.backward_state,
+                                 backward_sdfg=self.backward_sdfg,
+                                 given_gradients=given_gradients,
+                                 required_gradients=required_gradients)
 
         raise AutoDiffException("Unable to differentiate node type {}".format(
             type(node)))
@@ -936,89 +952,6 @@ class BackwardPassGenerator(object):
 
         self.backward_state.add_node(rev)
         return rev
-
-    def _reverse_Reduce(self, node: Reduce, output_grad_connectors: List[str],
-                        input_grad_connectors: List[str]):
-
-        reduction_type = detect_reduction_type(node.wcr)
-
-        # NOTE: Reduce nodes should have exactly one input and one output edge
-        if len(output_grad_connectors) != 1:
-            raise AutoDiffException(
-                "recieved invalid SDFG: reduce node {} should have exactly one output edge"
-                .format(node))
-
-        if len(input_grad_connectors) != 1:
-            raise AutoDiffException(
-                "recieved invalid SDFG: reduce node {} should have exactly one input edge"
-                .format(node))
-
-        cands = [
-            edge for edge in self.forward_state.in_edges(node)
-            if edge.dst_conn == input_grad_connectors[0]
-        ]
-        if len(cands) != 1:
-            raise AutoDiffException("recieved invalid SDFG")
-        input_array = self.sdfg.arrays[cands[0].data.data]
-
-        cands = [
-            edge for edge in self.forward_state.out_edges(node)
-            if edge.src_conn == output_grad_connectors[0]
-        ]
-        if len(cands) != 1:
-            raise AutoDiffException("recieved invalid SDFG")
-        output_array = self.sdfg.arrays[cands[0].data.data]
-
-        all_axes: List[int] = list(range(len(input_array.shape)))
-        reduce_axes: List[int] = all_axes if node.axes is None else node.axes
-        non_reduce_axes: List[int] = [
-            i for i in all_axes if i not in reduce_axes
-        ]
-
-        if reduction_type is dtypes.ReductionType.Sum:
-            # in this case, we need to simply scatter the grad across the axes that were reduced
-
-            sdfg = SDFG("_reverse_" + str(reduction_type).replace(".", "_") +
-                        "_")
-            state = sdfg.add_state()
-
-            rev_input_conn_name = self.grad_name(output_grad_connectors[0],
-                                                 node)
-            rev_output_conn_name = self.grad_name(input_grad_connectors[0],
-                                                  node)
-
-            _, rev_input_arr = sdfg.add_array(rev_input_conn_name,
-                                              shape=output_array.shape,
-                                              dtype=output_array.dtype)
-            _, rev_output_arr = sdfg.add_array(rev_output_conn_name,
-                                               shape=input_array.shape,
-                                               dtype=input_array.dtype)
-
-            state.add_mapped_tasklet(
-                "_distribute_grad_" + str(reduction_type).replace(".", "_") +
-                "_", {
-                    "i" + str(i): "0:{}".format(shape)
-                    for i, shape in enumerate(input_array.shape)
-                }, {
-                    "__in":
-                    Memlet.simple(
-                        rev_input_conn_name,
-                        "0" if node.axes is None else ",".join(
-                            "i" + str(i) for i in non_reduce_axes))
-                },
-                "__out = __in", {
-                    "__out":
-                    Memlet.simple(rev_output_conn_name, ",".join(
-                        "i" + str(i) for i in all_axes))
-                },
-                external_edges=True)
-
-            return self.backward_state.add_nested_sdfg(sdfg, None,
-                                                       {"_reduce_in_grad"},
-                                                       {"_reduce_out_grad"})
-        else:
-            raise AutoDiffException(
-                "Unsupported reduction type '{}'".format(reduction_type))
 
     def _reverse_MapExit(
         self,

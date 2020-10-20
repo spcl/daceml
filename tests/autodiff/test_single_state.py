@@ -542,7 +542,6 @@ def test_add_mmul_transpose_log():
     )
 
 
-@pytest.mark.skip()
 @run_correctness
 def test_reduce_node_1_axis_and_none_axis():
     def torch_func(*, X, Y, W):
