@@ -1,20 +1,23 @@
+import typing
 from collections import OrderedDict
 from copy import deepcopy
 from itertools import chain, repeat
 
 import numpy as np
+
 import onnx
-import torch
 from onnx import numpy_helper
 
 import dace
 from dace.frontend.python.parser import infer_symbols_from_shapes
 from dace.sdfg import SDFG, SDFGState
-from daceml.onnx.converters import convert_attribute_proto, onnx_tensor_type_to_typeclass, clean_onnx_name
-from daceml.onnx import get_onnx_node, has_onnx_node, ONNXParameterType
 from dace.dtypes import AccessType, StorageType, AllocationLifetime
 import dace.sdfg.nodes as nd
 from dace.symbolic import pystr_to_symbolic
+
+from daceml.onnx.shape_inference import shape_inference
+from daceml.onnx.converters import convert_attribute_proto, onnx_tensor_type_to_typeclass, clean_onnx_name
+from daceml.onnx import get_onnx_node, has_onnx_node, ONNXParameterType
 
 
 def _nested_HasField(obj, full_attr):
@@ -29,36 +32,58 @@ def _nested_HasField(obj, full_attr):
 
 
 class ONNXModel:
-    """Loads an ONNX model into an SDFG."""
+    """ Loads an ONNX model into an SDFG.
+
+        :Example:
+            First download an ONNX model, such as
+            `efficientnet <https://github.com/onnx/models/raw/master/vision/classification/efficientnet-lite4/model/efficientnet-lite4-11.onnx>`_.
+
+            >>> import onnx
+            >>> import os
+            >>> import numpy as np
+            >>> from daceml.onnx import ONNXModel
+            >>> model_path = os.path.join("..", "tests", "onnx_files", "efficientnet.onnx")
+            >>> model = onnx.load(model_path)
+            >>> dace_model = ONNXModel("efficientnet", model)
+            >>> test_input = np.random.rand(1, 3, 224, 224).astype(np.float32)
+            >>> outputs = dace_model(test_input) # doctest: +ELLIPSIS
+            Automatically expanded ...
+    """
     def __init__(self,
-                 name,
+                 name: str,
                  model: onnx.ModelProto,
-                 cuda=False,
-                 apply_strict=False):
+                 infer_shapes: bool = True,
+                 cuda: bool = False,
+                 apply_strict: bool = False):
         """
-        Constructs a new ONNXImporter.
         :param name: the name for the SDFG.
         :param model: the model to import.
-        :param cuda: if `True`, weights will be passed as cuda arrays.
-        :param apply_strict: if `True`, apply strict transformations after all nodes have
+        :param infer_shapes: whether to infer shapes for the model. If this is ``False``, the model must have
+                             value infos (with shapes) for all arrays, including intermediate values.
+        :param cuda: if ``True``, the model will be executed on the GPU.
+        :param apply_strict: if ``True``, apply strict transformations after all nodes have
                              been expanded calling (warning: this can be very slow!)
         """
 
+        if infer_shapes:
+            model = shape_inference.infer_shapes(model)
+
         graph: onnx.GraphProto = model.graph
 
-        self.sdfg = SDFG(name)
+        self.sdfg: SDFG = SDFG(name)  #: the generated SDFG.
         self.sdfg._parent_onnx_model = self
         self.cuda = cuda
         self.apply_strict = apply_strict
-        self.state = self.sdfg.add_state()
+        self.state: SDFGState = self.sdfg.add_state(
+        )  #: the state containing the model computation.
 
         # Add all values to the SDFG, check for unsupported ops
         ##########################################
 
         self.value_infos = {}
 
-        self.inputs = []
-        self.outputs = []
+        self.inputs: typing.List[str] = []  #: the inputs to the model
+        self.outputs: typing.List[str] = []  #: the outputs of the model
 
         for value, is_input in chain(zip(graph.input, repeat(True)),
                                      zip(graph.output, repeat(False))):
@@ -79,7 +104,8 @@ class ONNXModel:
                 self.value_infos[value.name] = value
 
         # add weights
-        self.weights = {}
+        self.weights: typing.Dict[str, np.ndarray] = {
+        }  #: mapping from weight name to numpy array
         for init in graph.initializer:
             self._add_constant_tensor(init)
 
@@ -272,7 +298,16 @@ class ONNXModel:
     def clean_weights(self):
         return {clean_onnx_name(k): v for k, v in self.weights.items()}
 
-    def __call__(self, *args, **inputs):
+    def __call__(
+            self, *args,
+            **inputs) -> typing.Union[np.ndarray, typing.Tuple[np.ndarray]]:
+        """ Execute the model.
+
+            :param args: positional arguments to the model. The i-th argument will be passed as the i-th input of the
+                         model.
+            :param inputs: named arguments to the model. The passed names should match the names in the ONNX model.
+            :return: the output of the model (or a tuple of outputs if there are multiple).
+        """
         sdfg = deepcopy(self.sdfg)
 
         # convert the positional args to kwargs

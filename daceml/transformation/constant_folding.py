@@ -41,6 +41,8 @@ NONDETERMINISTIC_OPS = {'ONNXDropout',
 @registry.autoregister_params(singlestate=True)
 @make_properties
 class ConstantFolding(pattern_matching.Transformation):
+    """ Remove nodes where all inputs are known and replace them with constant nodes by precomputing the output.
+    """
     # pattern matching only checks that the type of the node matches,
     _onnx_node = ONNXOp("_")
 

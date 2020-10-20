@@ -12,6 +12,7 @@ else
 ACTIVATE = . $(VENV_PATH)/bin/activate &&
 endif
 
+.PHONY: clean doc doctest test test-gpu codecov check-formatting
 clean:
 	! test -d $(VENV_PATH) || rm -r $(VENV_PATH)
 
@@ -26,6 +27,9 @@ ifneq ($(VENV_PATH),)
 endif
 	$(ACTIVATE) $(PIP) install $(TORCH_VERSION) 
 	$(ACTIVATE) $(PIP) install -e .[testing,debug,docs]
+
+doc:
+	$(ACTIVATE) cd doc && make clean html
 
 doctest:
 	$(ACTIVATE) cd doc && make doctest

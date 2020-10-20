@@ -18,15 +18,18 @@ from daceml.onnx.nodes.codegen import expand_node
 
 log = logging.getLogger(__name__)
 
+
 def _get_typecons_docstring(cons: ONNXTypeConstraint) -> str:
     return "    * **{}** -- {}".format(
-        cons.type_str, ", ".join(":class:`{}`".format(t.to_string()) for t in cons.types)
-    )
+        cons.type_str,
+        ", ".join(":class:`{}`".format(t.to_string()) for t in cons.types))
+
 
 def _get_connector_docstring(param: ONNXParameter) -> str:
-    return "    * **{}** ({}, {}) -- {}".format(
-        param.name, param.type_str, param.param_type.name.lower(), param.description
-    )
+    return "    * **{}** ({}, {}) -- {}".format(param.name, param.type_str,
+                                                param.param_type.name.lower(),
+                                                param.description)
+
 
 def _get_attr_docstring(attr: ONNXAttribute) -> str:
     param_doc = ":param {}: {}".format(attr.name, attr.description)
@@ -48,7 +51,8 @@ def _get_attr_docstring(attr: ONNXAttribute) -> str:
         type_string = ":class:`List` [{}]".format(type_string)
 
     if not attr.required:
-        type_string = ":class:`Optional` [{}], default={}".format(type_string, repr(attr.default_value))
+        type_string = ":class:`Optional` [{}], default={}".format(
+            type_string, repr(attr.default_value))
 
     param_type = ":type {}: {}".format(attr.name, type_string)
 
@@ -90,12 +94,16 @@ class ONNXOp(nd.LibraryNode):
     def iter_outputs_in_onnx_order(self, state):
         """ Iterate through the input edges in the same order as they would appear in an ONNX node proto.
             This assumes that the node has been validated!
+
+            :param state: the state containing this node.
         """
         return self._iter_params_in_onnx_order(state, inputs=False)
 
     def iter_inputs_in_onnx_order(self, state):
         """ Iterate through the output edges in the same order as they would appear in an ONNX node proto.
             This assumes that the node has been validated!
+
+            :param state: the state containing this node.
         """
         return self._iter_params_in_onnx_order(state, inputs=True)
 
@@ -125,6 +133,8 @@ class ONNXOp(nd.LibraryNode):
         """ Returns an iterator over tuples of an edge and a boolean that indicates whether that edge is an input,
             ordered by the order required by the schema.
             This method assumes that this node has been validated.
+
+            :param state: the state containing this node.
         """
         in_edges: List[MultiConnectorEdge] = state.in_edges(self)
         out_edges: List[MultiConnectorEdge] = state.out_edges(self)
@@ -395,7 +405,6 @@ for schema in onnx.defs.get_all_schemas():
         log.debug("Import of {} failed: {}".format(schema.name, e))
         continue
 
-
     attrs = {}
     # add properties for each op attribute
     for name, attr in dace_schema.attributes.items():
@@ -466,27 +475,27 @@ for schema in onnx.defs.get_all_schemas():
         for name, attr in op_attributes.items():
             setattr(self, name, attr)
 
-
-
-    input_connector_docstrings = "\n".join(_get_connector_docstring(param) for param in dace_schema.inputs)
-    output_connector_docstrings = "\n".join(_get_connector_docstring(param) for param in dace_schema.outputs)
+    input_connector_docstrings = "\n".join(
+        _get_connector_docstring(param) for param in dace_schema.inputs)
+    output_connector_docstrings = "\n".join(
+        _get_connector_docstring(param) for param in dace_schema.outputs)
 
     cls_name = "ONNX" + dace_schema.name
 
     # the first line of the init docstring contains the signature of the method. This will be picked up by sphinx so
     # and means that the generated sphinx docs don't have *args, **kwargs in them.
-    init_docstring = "__init__(name, *, {})\n".format(", ".join(
-        attr.name if attr.required
-        else attr.name + "=" + repr(attr.default_value)
-        for _, attr in dace_schema.attributes.items()
-    ))
+    init_docstring = "__init__(name, *, {})\n".format(
+        ", ".join(attr.name if attr.required else attr.name + "=" +
+                  repr(attr.default_value)
+                  for _, attr in dace_schema.attributes.items()))
     init_docstring += ":param name: the name of the node.\n" + "\n".join(
         _get_attr_docstring(attr)
-        for _, attr in dace_schema.attributes.items()
-    )
+        for _, attr in dace_schema.attributes.items())
 
     docstring = "\n" + dace_schema.doc
-    type_docstrings = "\n".join(_get_typecons_docstring(cons) for _, cons in dace_schema.type_constraints.items())
+    type_docstrings = "\n".join(
+        _get_typecons_docstring(cons)
+        for _, cons in dace_schema.type_constraints.items())
     docstring += "\n\n"
     docstring += ":Node Inputs:" + input_connector_docstrings
     docstring += "\n\n"
