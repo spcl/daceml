@@ -33,4 +33,4 @@ def test_conv2d():
 
     torch_output = ptmodel(x)
 
-    assert np.allclose(torch_output.detach().numpy(), dace_output)
+    assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)

@@ -13,7 +13,6 @@ and FPGAs.**
 
 The white box approach allows us to see computation at all levels of granularity: from coarse operators, to kernel
 implementations, and even down to every scalar operation and memory access.
-![sdfg zoom](doc/sdfg_zoom.png)
 
 Converting PyTorch modules is as easy as adding a decorator...
 ```python
