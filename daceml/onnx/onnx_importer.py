@@ -38,16 +38,38 @@ class ONNXModel:
             First download an ONNX model, such as
             `efficientnet <https://github.com/onnx/models/raw/master/vision/classification/efficientnet-lite4/model/efficientnet-lite4-11.onnx>`_.
 
-            >>> import onnx
-            >>> import os
-            >>> import numpy as np
-            >>> from daceml.onnx import ONNXModel
-            >>> model_path = os.path.join("..", "tests", "onnx_files", "efficientnet.onnx")
-            >>> model = onnx.load(model_path)
-            >>> dace_model = ONNXModel("efficientnet", model)
-            >>> test_input = np.random.rand(1, 3, 224, 224).astype(np.float32)
-            >>> outputs = dace_model(test_input) # doctest: +ELLIPSIS
-            Automatically expanded ...
+            .. testsetup::
+
+                import subprocess
+                model_path = os.path.join("..", "tests", "onnx_files", "efficientnet.onnx")
+                # Download model
+                if not os.path.exists(model_path):
+                    subprocess.check_call([
+                        "wget",
+                        "https://github.com/onnx/models/raw/master/vision/classification/efficientnet-lite4/model/efficientnet-lite4-11.onnx",
+                        "--output-document={}".format(model_path)
+                    ])
+
+
+            .. testcode::
+
+                import onnx
+                import os
+                import numpy as np
+                from daceml.onnx import ONNXModel
+
+                model_path = os.path.join("..", "tests", "onnx_files", "efficientnet.onnx")
+                model = onnx.load(model_path)
+                dace_model = ONNXModel("efficientnet", model)
+
+                test_input = np.random.rand(1, 3, 224, 224).astype(np.float32)
+                dace_model(test_input)
+
+            .. testoutput::
+                :hide:
+                :options: +ELLIPSIS
+
+                ...
     """
     def __init__(self,
                  name: str,
