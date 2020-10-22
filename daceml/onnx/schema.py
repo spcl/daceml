@@ -19,21 +19,25 @@ def onnx_representation(represents, **mapping):
     """ Decorator for python representations of ONNX protobufs.
 
         The decorator will monkey patch in the following methods:
-        * `__init__` (a constructor based on the class properties)
-        * `construct_from_onnx_proto`
-        * `construct_from_json`
+
+        * ``__init__`` (a constructor based on the class properties)
+        * ``construct_from_onnx_proto``
+        * ``construct_from_json``
 
         :param represents: The onnx protobuf type that the decorated class represents
 
         :param mapping: a mapping from class property names to either:
 
-                        * a string `s`: In this case, `convert_onnx_attribute` will be applied on the protobuf attribute
-                                        with the name `s` to get the property value.
-                        * a function `f`: In this case, `f` will be called with the protobuf, and the property value
-                                          will be set to the return value of that call.
+                        a string ``s``
+                            In this case, ``convert_onnx_attribute`` will be applied on the protobuf
+                            attribute with the name ``s`` to get the property value.
 
-                        If a property name is not present in `mapping`, the property name itself will be used to access
-                         the protobuf attribute.
+                        a function ``f``
+                            In this case, ``f`` will be called with the protobuf, and the property value
+                            will be set to the return value of that call.
+
+                        If a property name is not present in ``mapping``, the property name itself will be used to access
+                        the protobuf attribute.
     """
     def decorator(cls):
 
@@ -60,6 +64,7 @@ def onnx_representation(represents, **mapping):
 
         @classmethod
         def from_onnx_proto(cls, onnx_proto):
+
             if type(onnx_proto) is not represents:
                 raise ValueError(
                     "Unexpected protobuf '{}' (type {}), expected protobuf of type {}"
@@ -90,9 +95,33 @@ def onnx_representation(represents, **mapping):
             return dace.serialize.all_properties_to_json(self)
 
         cls.__init__ = __init__
+
+        # the first line of the init docstring contains the signature of the method. This will be picked up by sphinx
+        # and means that the generated sphinx docs have a proper signature, and not just *args, **kwargs.
+        init_docstring = "__init__({})\n\n".format(", ".join(
+            name + "=" + repr(prop._default)
+            for name, prop in cls.__properties__.items()))
+
+        def get_prop_docstring(name, prop):
+            return ":param {}: {}\n:type {}: ``{}``, default ``{}``".format(
+                name, prop.__doc__, name, prop._dtype.__name__
+                if prop._dtype is not None else type(prop._default).__name__,
+                repr(prop._default))
+
+        init_docstring += "\n".join(
+            get_prop_docstring(name, prop)
+            for name, prop in cls.__properties__.items())
+
+        cls.__init__.__doc__ = init_docstring
+
         cls.from_onnx_proto = from_onnx_proto
         cls.from_json = from_json
         cls.to_json = to_json
+        from_onnx_proto.__func__.__doc__ = " Construct an object from an ONNX proto of type ``{}``. ".format(
+            represents)
+        from_json.__func__.__doc__ = " Construct an object json ".format(
+            represents)
+        to_json.__doc__ = " Serialize to json ".format(represents)
 
         # register so that we're able to load it
         _KNOWN_ONNX_PROTOS[represents] = cls
@@ -103,9 +132,9 @@ def onnx_representation(represents, **mapping):
 
 
 class ONNXParameterType(aenum.AutoNumberEnum):
-    Single = ()
-    Optional = ()
-    Variadic = ()
+    Single = ()  #: single/required parameters
+    Optional = ()  #: optional parameters
+    Variadic = ()  #: variadic parameters
 
 
 @onnx_representation(onnx.defs.OpSchema.FormalParameter,
@@ -129,14 +158,14 @@ class ONNXParameter:
 
 
 class ONNXAttributeType(aenum.AutoNumberEnum):
-    Int = ()
-    Float = ()
-    String = ()
-    Ints = ()
-    Floats = ()
-    Strings = ()
-    Tensor = ()
-    Unsupported = ()
+    Int = ()  #: Integer (python representation is ``int``)
+    Float = ()  #: Float (python representation is ``double``)
+    String = ()  #: String (python representation is ``str``)
+    Ints = ()  #: Ints (python representation is ``List`` [``int``])
+    Floats = ()  #: Floats (python representation is ``List`` [``double``])
+    Strings = ()  #: Strings (python representation is ``List`` [``str``])
+    Tensor = ()  #: Tensor (python representation is ``numpy.ndarray``)
+    Unsupported = ()  #: Any unsupported attribute type
 
 
 _ATTR_TYPE_TO_PYTHON_TYPE = {
@@ -217,17 +246,27 @@ class ONNXSchema:
     domain = Property(dtype=str, desc="The operator domain")
     doc = Property(dtype=str, desc="The operator's docstring")
     since_version = Property(dtype=int, desc="The version of the operator")
-    attributes = DictProperty(key_type=str,
-                              value_type=ONNXAttribute,
-                              desc="The operator attributes")
+    attributes = DictProperty(
+        key_type=str,
+        value_type=ONNXAttribute,
+        desc=
+        "The operator attributes. Keys should contain the name of the attribute, and values "
+        "should have type :class:`daceml.onnx.ONNXAttribute`.")
     type_constraints = DictProperty(
         key_type=str,
         value_type=ONNXTypeConstraint,
-        desc="The type constraints for inputs and outputs")
-    inputs = ListProperty(element_type=ONNXParameter,
-                          desc="The operator input parameter descriptors")
-    outputs = ListProperty(element_type=ONNXParameter,
-                           desc="The operator output parameter descriptors")
+        desc=
+        "The type constraints for inputs and outputs. Keys should contain the type string of the constraint, "
+        "values should have type :class:`daceml.onnx.ONNXTypeConstraint`.")
+    inputs = ListProperty(
+        element_type=ONNXParameter,
+        desc="The operator input parameter descriptors. Entries should have type"
+        " :class:`daceml.onnx.ONNXParameter`.")
+    outputs = ListProperty(
+        element_type=ONNXParameter,
+        desc=
+        "The operator output parameter descriptors. Entries should have type"
+        " :class:`daceml.onnx.ONNXParameter`.")
 
     def __repr__(self):
         return self.domain + "." + self.name

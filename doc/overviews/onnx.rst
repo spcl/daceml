@@ -100,3 +100,12 @@ ONNX models can be imported using the :class:`~daceml.onnx.ONNXModel` frontend.
     :options: +ELLIPSIS
 
     ...
+
+Schema Representation & Protobuf conversion
+-------------------------------------------
+ONNX protobufs are imported and converted to python property classes that can be serialized to and from json by
+dace (for example :class:`daceml.onnx.ONNXSchema`). ONNX protobuf instances can be converted to these classes using the
+``from_onnx_proto`` class method that is present on these objects.
+
+These objects are created using :func:`daceml.onnx.onnx_representation`. Other ONNX protobuf types can likely be
+supported in this manner as well. For examples, see the source file ``daceml/onnx/schema.py``.
