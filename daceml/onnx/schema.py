@@ -159,10 +159,10 @@ class ONNXParameter:
 
 class ONNXAttributeType(aenum.AutoNumberEnum):
     Int = ()  #: Integer (python representation is ``int``)
-    Float = ()  #: Float (python representation is ``double``)
+    Float = ()  #: Float (python representation is ``float``)
     String = ()  #: String (python representation is ``str``)
     Ints = ()  #: Ints (python representation is ``List`` [``int``])
-    Floats = ()  #: Floats (python representation is ``List`` [``double``])
+    Floats = ()  #: Floats (python representation is ``List`` [``float``])
     Strings = ()  #: Strings (python representation is ``List`` [``str``])
     Tensor = ()  #: Tensor (python representation is ``numpy.ndarray``)
     Unsupported = ()  #: Any unsupported attribute type

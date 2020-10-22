@@ -30,11 +30,11 @@ Attributes are set by passing them to the constructor (as python types). For exa
 The following attribute types are supported:
 
 * ``INT`` -- passed as ``int``.
-* ``INTS`` -- passed as ``List[int]``.
+* ``INTS`` -- passed as ``List`` [``int``].
 * ``STRING`` -- passed as ``str``.
-* ``STRINGS`` -- passed as ``List[str]``.
-* ``FLOAT`` -- passed as ``double``.
-* ``FLOATS`` -- passed as ``List[double]``.
+* ``STRINGS`` -- passed as ``List`` [``str``].
+* ``FLOAT`` -- passed as ``float``.
+* ``FLOATS`` -- passed as ``List`` [``float``].
 * ``TENSOR`` -- passed as ``numpy.ndarray``.
 
 Example
