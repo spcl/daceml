@@ -19,7 +19,8 @@ from dace.symbolic import pystr_to_symbolic
 
 from daceml.onnx.shape_inference import shape_inference
 from daceml.onnx.converters import convert_attribute_proto, onnx_tensor_type_to_typeclass, clean_onnx_name
-from daceml.onnx import get_onnx_node, has_onnx_node, ONNXParameterType
+from daceml.onnx.schema import ONNXParameterType
+from daceml.onnx.nodes.onnx_op import get_onnx_node, has_onnx_node
 
 numpy_to_torch_dtype_dict = {
     np.bool: torch.bool,

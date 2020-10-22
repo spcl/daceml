@@ -12,6 +12,7 @@ This project adds PyTorch and ONNX model loading support to DaCe, and supports O
    overviews/installation.rst
    overviews/onnx.rst
    overviews/pytorch.rst
+   overviews/autodiff.rst
    overviews/development.rst
 
 .. toctree::

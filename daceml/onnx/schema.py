@@ -251,22 +251,22 @@ class ONNXSchema:
         value_type=ONNXAttribute,
         desc=
         "The operator attributes. Keys should contain the name of the attribute, and values "
-        "should have type :class:`daceml.onnx.ONNXAttribute`.")
+        "should have type :class:`~daceml.onnx.ONNXAttribute`.")
     type_constraints = DictProperty(
         key_type=str,
         value_type=ONNXTypeConstraint,
         desc=
         "The type constraints for inputs and outputs. Keys should contain the type string of the constraint, "
-        "values should have type :class:`daceml.onnx.ONNXTypeConstraint`.")
+        "values should have type :class:`~daceml.onnx.ONNXTypeConstraint`.")
     inputs = ListProperty(
         element_type=ONNXParameter,
         desc="The operator input parameter descriptors. Entries should have type"
-        " :class:`daceml.onnx.ONNXParameter`.")
+        " :class:`~daceml.onnx.ONNXParameter`.")
     outputs = ListProperty(
         element_type=ONNXParameter,
         desc=
         "The operator output parameter descriptors. Entries should have type"
-        " :class:`daceml.onnx.ONNXParameter`.")
+        " :class:`~daceml.onnx.ONNXParameter`.")
 
     def __repr__(self):
         return self.domain + "." + self.name

@@ -2,24 +2,22 @@ import logging
 from typing import Type
 from collections import OrderedDict
 
-import numpy as np
 import torch
 
 import dace
-import dace.data as dt
 
 from daceml.autodiff.backward_pass_generator import BackwardPassGenerator, AutoDiffException
-from daceml.onnx import ONNXModel
 from daceml.onnx.converters import clean_onnx_name
-from daceml.onnx.onnx_importer import create_output_array
+from daceml.onnx.onnx_importer import create_output_array, ONNXModel
 
 log = logging.getLogger(__name__)
 
 
 def make_backward_function(model: ONNXModel) -> Type[torch.autograd.Function]:
-    """ Convert an ONNXModel to a PyTorch differentiable function. The backward pass is automatically added.
+    """ Convert an ONNXModel to a PyTorch differentiable function.
 
-        :param model: the model to convert
+        :param model: the model to convert.
+        :return: the PyTorch compatible :class:`torch.autograd.Function`.
     """
 
     if len(model.sdfg.nodes()) != 1:
