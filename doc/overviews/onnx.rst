@@ -79,6 +79,18 @@ Importing ONNX models
 ---------------------
 ONNX models can be imported using the :class:`~daceml.onnx.ONNXModel` frontend.
 
+.. testsetup::
+
+    import subprocess
+    model_path = os.path.join("..", "tests", "onnx_files", "efficientnet.onnx")
+    # Download model
+    if not os.path.exists(model_path):
+        subprocess.check_call([
+            "wget",
+            "https://github.com/onnx/models/raw/master/vision/classification/efficientnet-lite4/model/efficientnet-lite4-11.onnx",
+            "--output-document={}".format(model_path)
+        ])
+
 .. testcode::
 
     import onnx
