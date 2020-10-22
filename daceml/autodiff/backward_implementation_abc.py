@@ -19,9 +19,17 @@ class BackwardContext(typing.NamedTuple):
 
 
 class BackwardResult(typing.NamedTuple):
-    """ A tuple holding the graph context required to construct reverse nodes """
-    node: Node  #: the created and added backward node
-    grad_names: typing.List[typing.Optional[str]]  #: the names of gradients
+    """ The return type of reversing a node. It the names of the gradients the node calculates and requires. """
+
+    #: mapping from names of output connectors to the connector name of the gradient for that connector.
+    required_grad_names: typing.Dict[typing.Optional[str], typing.Optional[str]]
+
+    #: mapping from names of input connectors to the connector name of the gradient for that connector.
+    given_grad_names: typing.Dict[typing.Optional[str], typing.Optional[str]]
+
+    @staticmethod
+    def empty():
+        return BackwardResult(given_grad_names={}, required_grad_names={})
 
 
 @make_registry
@@ -32,6 +40,7 @@ class BackwardImplementation(abc.ABC):
         The register function expects an argument `node_type=TYPE` where `TYPE` is the type of node that this backward
         implementation supports.
     """
+
     @staticmethod
     @abc.abstractmethod
     def backward_can_be_applied(node: Node, state: SDFGState,
@@ -47,34 +56,26 @@ class BackwardImplementation(abc.ABC):
     @staticmethod
     @abc.abstractmethod
     def backward(
-        forward_node: Node, forward_state: SDFGState, forward_sdfg: SDFG,
-        backward_state: SDFGState, backward_sdfg: SDFG,
-        given_gradients: typing.Dict[typing.Optional[str],
-                                     typing.Optional[str]],
-        required_gradients: typing.Dict[typing.Optional[str],
-                                        typing.Optional[str]]
-    ) -> typing.Union[Node, SDFG]:
+        forward_node: Node,
+        context: BackwardContext,
+        given_gradients: typing.List[typing.Optional[str]],
+        required_gradients: typing.List[typing.Optional[str]]
+    ) -> typing.Tuple[Node, BackwardResult]:
         """ Add the reverse node for a node from the forward pass to the backward pass, and return it.
 
-            For each input connector with name `n` of the forward in required_grads, the returned backward node must add
-            an output connector with name `required_grads[n]` that will output the gradient for that input.
+            For each input connector with name ``n`` of the forward in required_grads, the returned backward node must add
+            an output connector with name ``required_grads[n]`` that will output the gradient for that input.
 
             If any input from the forward pass is required, simply add a connector with the same name as the connector
             on the forward node. The input will later be connected as required.
 
-
-            :param forward_node: the candidate node (on the forward pass).
-            :param forward_state: the candidate state (on the forward pass).
-            :param forward_sdfg: the candidate forward sdfg.
-            :param backward_state: the state (on the backward pass) that the backward node should be added to.
-            :param backward_sdfg: the backward sdfg.
-            :param given_gradients: mapping from forward node output connector name to the name of the gradient for that
-                                    connector. These gradients will be connected as inputs to the returned backward
-                                    node.
-            :param required_gradients: The gradients that the reversed node is required to generate, in the form of a
-                                       mapping from input connector name on the forward node to the gradient name for
-                                       that input.
-            :return: the reverse node.
+            :param forward_node: the node for which the backward pass should be generated for.
+            :param context: the context for this node (see
+                            :class:`~daceml.autodiff.backward_implementation.BackwardContext`).
+            :param given_gradients: The names of outputs of the node that gradients will be connected for.
+            :param required_gradients: The names of connectors that gradients should be generated for.
+            :return: the reverse node and gradient names
+                     (see :class:`~daceml.autodiff.backward_implementation.BackwardResult`).
         """
         ...
 

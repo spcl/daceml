@@ -8,8 +8,9 @@ from dace.sdfg.nodes import Node
 import dace.libraries.standard.nodes
 
 from daceml.autodiff.backward_pass_generator import AutoDiffException
-from daceml.autodiff.backward_implementation_abc import BackwardImplementation
-from daceml.util.utils import in_edge_with_name, in_desc_with_name, out_desc_with_name, out_edge_with_name
+from daceml.autodiff.backward_implementation_abc import BackwardImplementation, BackwardContext, BackwardResult
+from daceml.util.utils import in_edge_with_name, in_desc_with_name, out_desc_with_name, out_edge_with_name, \
+    find_str_not_in_set
 
 
 @autoregister_params(node_type=dace.libraries.standard.nodes.Reduce)
@@ -23,16 +24,11 @@ class ReverseReduce(BackwardImplementation):
 
         return True
 
-    @staticmethod
     def backward(
-        forward_node: Node, forward_state: SDFGState, forward_sdfg: SDFG,
-        backward_state: SDFGState, backward_sdfg: SDFG,
-        given_gradients: typing.Dict[typing.Optional[str],
-                                     typing.Optional[str]],
-        required_gradients: typing.Dict[typing.Optional[str],
-                                        typing.Optional[str]]
-    ) -> typing.Union[Node, SDFG]:
-
+        forward_node: Node, context: BackwardContext,
+        given_gradients: typing.List[typing.Optional[str]],
+        required_gradients: typing.List[typing.Optional[str]]
+    ) -> typing.Tuple[Node, BackwardResult]:
         reduction_type = detect_reduction_type(forward_node.wcr)
 
         if len(given_gradients) != 1:
@@ -46,14 +42,16 @@ class ReverseReduce(BackwardImplementation):
                 .format(forward_node))
 
         input_name = next(iter(required_gradients))
-        in_edge = in_edge_with_name(forward_node, forward_state, input_name)
-        in_desc = in_desc_with_name(forward_node, forward_state, forward_sdfg,
+        in_edge = in_edge_with_name(forward_node, context.forward_state,
                                     input_name)
+        in_desc = in_desc_with_name(forward_node, context.forward_state,
+                                    context.forward_sdfg, input_name)
 
         output_name = next(iter(given_gradients))
-        out_edge = out_edge_with_name(forward_node, forward_state, output_name)
-        out_desc = out_desc_with_name(forward_node, forward_state,
-                                      forward_sdfg, output_name)
+        out_edge = out_edge_with_name(forward_node, context.forward_state,
+                                      output_name)
+        out_desc = out_desc_with_name(forward_node, context.forward_state,
+                                      context.forward_sdfg, output_name)
 
         all_axes: typing.List[int] = list(range(len(in_desc.shape)))
         reduce_axes: typing.List[
@@ -62,6 +60,8 @@ class ReverseReduce(BackwardImplementation):
             i for i in all_axes if i not in reduce_axes
         ]
 
+        result = BackwardResult.empty()
+
         if reduction_type is dtypes.ReductionType.Sum:
             # in this case, we need to simply scatter the grad across the axes that were reduced
 
@@ -69,8 +69,10 @@ class ReverseReduce(BackwardImplementation):
                         "_")
             state = sdfg.add_state()
 
-            rev_input_conn_name = given_gradients[output_name]
-            rev_output_conn_name = required_gradients[input_name]
+            rev_input_conn_name = "input_gradient"
+            rev_output_conn_name = "output_gradient"
+            result.required_grad_names[output_name] = rev_output_conn_name
+            result.given_grad_names[input_name] = rev_input_conn_name
 
             _, rev_input_arr = sdfg.add_array(rev_input_conn_name,
                                               shape=out_desc.shape,
@@ -98,9 +100,9 @@ class ReverseReduce(BackwardImplementation):
                 },
                 external_edges=True)
 
-            return backward_state.add_nested_sdfg(sdfg, None,
-                                                  {rev_input_conn_name},
-                                                  {rev_output_conn_name})
+            return context.backward_state.add_nested_sdfg(
+                sdfg, None, {rev_input_conn_name},
+                {rev_output_conn_name}), result
         else:
             raise AutoDiffException(
                 "Unsupported reduction type '{}'".format(reduction_type))

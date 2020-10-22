@@ -35,12 +35,12 @@ def make_backward_function(model: ONNXModel) -> Type[torch.autograd.Function]:
     gen = BackwardPassGenerator(
         sdfg=forward_sdfg,
         state=model.sdfg.nodes()[0],
-        outputs=[clean_onnx_name(name) for name in model.outputs],
-        inputs=[clean_onnx_name(name) for name in model.inputs],
+        given_gradients=[clean_onnx_name(name) for name in model.outputs],
+        required_gradients=[clean_onnx_name(name) for name in model.inputs],
         backward_sdfg=backward_sdfg,
         backward_state=backward_state)
 
-    backward_grad_arrays, backward_input_arrays = gen.backward()
+    backward_result, backward_grad_arrays, backward_input_arrays = gen.backward()
 
     for name, desc in backward_input_arrays.items():
         if name not in forward_sdfg.arrays:
@@ -53,7 +53,7 @@ def make_backward_function(model: ONNXModel) -> Type[torch.autograd.Function]:
     class DaceFunction(torch.autograd.Function):
         _backward_sdfg = backward_sdfg
         _forward_model = model
-        _forward_array_to_backward_array_map = gen.array_grad_map
+        _backward_result = backward_result
 
         @staticmethod
         def forward(ctx, *inputs):
@@ -110,7 +110,7 @@ def make_backward_function(model: ONNXModel) -> Type[torch.autograd.Function]:
                     len(model.outputs), len(grads)))
 
             given_grads = dict(
-                zip((DaceFunction._forward_array_to_backward_array_map[clean_onnx_name(outp)]
+                zip((DaceFunction._backward_result.given_grad_names[clean_onnx_name(outp)]
                      for outp in model.outputs), grads))
             for name, value in given_grads.items():
                 if type(value) is not torch.Tensor:
@@ -123,7 +123,7 @@ def make_backward_function(model: ONNXModel) -> Type[torch.autograd.Function]:
 
             # these are the grads we will calculate
             input_grad_names = [
-                DaceFunction._forward_array_to_backward_array_map[clean_onnx_name(inp)] for inp in model.inputs
+                DaceFunction._backward_result.required_grad_names[clean_onnx_name(inp)] for inp in model.inputs
             ]
 
             # init the grads we will calculate with zeros

@@ -45,8 +45,8 @@ def add_backward_pass(
     backward_state = sdfg.add_state_after(state)
     gen = BackwardPassGenerator(sdfg=sdfg,
                                 state=state,
-                                outputs=outputs,
-                                inputs=inputs,
+                                given_gradients=outputs,
+                                required_gradients=inputs,
                                 backward_sdfg=sdfg,
                                 backward_state=backward_state)
     gen.backward()

@@ -74,3 +74,23 @@ def out_edge_with_name(node: Node, state: SDFGState,
             "Expected to find exactly one edge with name '{}', found {}".
             format(name, len(cands)))
     return cands[0]
+
+
+def find_str_not_in_set(existing: typing.Set[str], target_str: typing.Optional[str]) -> str:
+    """ Try to find a new str that is not in the set.
+
+        :param existing: the existing strs.
+        :param target_str: (optional) a target_str that should be used as a base for the new str.
+        :return: a new str that is not in `existing`.
+    """
+    base_name = target_str or "temp"
+
+    if base_name not in existing:
+        return base_name
+
+    i = 0
+    while (base_name + "_" + str(i)) in existing:
+        i += 1
+    return base_name + "_" + str(i)
+
+
