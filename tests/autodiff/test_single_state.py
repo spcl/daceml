@@ -643,27 +643,3 @@ def test_reduce_max_node_1_axis():
             Y=np.random.rand(4, 3).astype(np.float64),
         ),
     )
-
-
-@pytest.mark.skip()
-@run_correctness
-def test_softmax():
-    def torch_func(*, X):
-        Y = F.softmax(X, 1)
-        Z = Y.sum()
-        Z.backward()
-        return dict(X_gradient=X.grad)
-
-    @dace.program
-    def dace_func(X: dace.float64[4, 5]):
-        Y = F.softmax(X, 1)
-        Z = np.sum(Y)
-        return Z
-
-    sdfg = dace_func.to_sdfg()
-
-    return (
-        SDFGBackwardRunner(sdfg, "__return"),
-        torch_func,
-        dict(X=np.random.rand(4, 5).astype(np.float64)),
-    )

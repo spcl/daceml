@@ -1,8 +1,10 @@
 import numpy as np
+import pytest
+
 import torch
+import torch.nn.functional as F
 
 from daceml.pytorch import DaceModule
-from daceml.util.utils import paramdec
 
 
 def run_pytorch_module(module, shape=None):
@@ -61,6 +63,20 @@ def test_repeated():
             return x
 
     run_pytorch_module(Module())
+
+
+def test_softmax():
+    class Module(torch.nn.Module):
+        def forward(self, x):
+            x = F.softmax(x, dim=1)
+            return x
+
+    run_pytorch_module(Module())
+
+
+@pytest.mark.skip(reason="check later")
+def test_weights():
+    pass
 
 
 if __name__ == "__main__":
