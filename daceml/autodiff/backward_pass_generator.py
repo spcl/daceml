@@ -364,7 +364,9 @@ class BackwardPassGenerator(object):
         """
 
         expanded_something = False
-        for node in subgraph.nodes():
+        for node, state in subgraph.all_nodes_recursive():
+            if isinstance(state, StateSubgraphView):
+                state = state.graph
 
             # check if the node exists in the backward implementation repository
             for impl, args in BackwardImplementation.extensions().items():
@@ -379,7 +381,7 @@ class BackwardPassGenerator(object):
                     for impl in ONNXForward.registered_implementations(
                             node.schema.name):
                         if impl.forward_can_be_applied(node,
-                                                       self.forward_state,
+                                                       state,
                                                        self.sdfg):
                             # try to apply the expansion
                             class Expansion(ExpandTransformation):
@@ -396,7 +398,7 @@ class BackwardPassGenerator(object):
                                     cls._expansion_result = expansion
 
                             Expansion._match_node = type(node)
-                            Expansion.apply_to(self.sdfg,
+                            Expansion.apply_to(state.parent,
                                                verify=False,
                                                match_node=node)
                             expanded_something = True
@@ -427,7 +429,7 @@ class BackwardPassGenerator(object):
                         expansion = node.implementation
 
                     node.implementation = expansion
-                    node.expand(self.sdfg, self.forward_state)
+                    node.expand(state.parent, state)
                     expanded_something = True
                     continue
 
@@ -456,6 +458,7 @@ class BackwardPassGenerator(object):
         while self._expand_nodes(forward_subgraph):
             # Nodes have been expanded again on the expanded graph; recalculate the forward graph
             forward_subgraph = self._find_subgraph_to_differentiate()
+        self.sdfg.view()
 
         # recursively reverse the subgraph
         self._reverse_subgraph(forward_subgraph)
@@ -808,6 +811,7 @@ class BackwardPassGenerator(object):
             :param required_gradients: input name on the forward node that the gradient should be generated for
             :return: the reversed node and gradient names for the connectors
         """
+        print("Reversing {}".format(node))
 
         # (1)
         if hasattr(self, "_reverse_" + type(node).__name__):
