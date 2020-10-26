@@ -23,7 +23,7 @@ setup(
     packages=['daceml'],
     package_data={'': ['*.cpp']},
     install_requires=[
-        'dace@git+https://github.com/spcl/dace.git@7d30f71', 'onnx == 1.7.0',
+        'dace@git+https://github.com/spcl/dace.git@09b712e', 'onnx == 1.7.0',
         'torch'
     ],
     # install with pip and --find-links (see Makefile)
