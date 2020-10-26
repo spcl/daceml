@@ -97,142 +97,17 @@ class PureAdd(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
-        istype = node.in_desc_with_name(sdfg, state, 'A').dtype in [
-            dace.float16, dace.float32, dace.float64
-        ]
-
-        in_edges = state.in_edges(node)
-        input0_dim = len(in_edges[0].data.subset.size())
-        input1_dim = len(in_edges[1].data.subset.size())
-
-        if istype and ((input0_dim == 1 and input1_dim == 4) or
-                       (input0_dim == 4 and input1_dim == 1) or
-                       (input0_dim == 1 and input1_dim <= 3) or
-                       (input0_dim <= 3 and input1_dim == 1) or
-                       (input0_dim == 3 and input1_dim == 3) or
-                       (input0_dim == 2 and input1_dim == 2)):
-            return True
-
-        return False
+        return True
 
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         node.validate(sdfg, state)
-        in_edges = state.in_edges(node)
-        out_edges = state.out_edges(node)
+        def prog(A, B, C):
+            C[:] = A + B
 
-        atype = None
-        btype = None
-        if in_edges[0].dst_conn == "A" and in_edges[1].dst_conn == "B":
-            atype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
-            btype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
-        if in_edges[0].dst_conn == "B" and in_edges[1].dst_conn == "A":
-            atype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
-            btype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
-
-        ctype = copy.deepcopy(sdfg.arrays[out_edges[0].data.data])
-
-        input0_dim = len(in_edges[0].data.subset.size())
-        input1_dim = len(in_edges[1].data.subset.size())
-
-        if input0_dim == 1 and input1_dim == 4:
-            mm = in_edges[1].data.subset.size()[0]
-            nn = in_edges[1].data.subset.size()[1]
-            gg = in_edges[1].data.subset.size()[2]
-            hh = in_edges[1].data.subset.size()[3]
-
-            M = str(mm)
-            N = str(nn)
-            G = str(gg)
-            H = str(hh)
-
-            sdfg_exp = dace.SDFG('addExpansion')
-            sdfg_exp.add_array('A', (1, ), dace.float32)
-            sdfg_exp.add_array('B', (mm, nn, gg, hh), dace.float32)
-            sdfg_exp.add_array('C', (mm, nn, gg, hh), dace.float32)
-            state_exp = sdfg_exp.add_state()
-
-            me, mx = state_exp.add_map(
-                'outer_map',
-                dict(i='0:' + M, j='0:' + N, k='0:' + G, l='0:' + H))
-
-            A = state_exp.add_read('A')
-            B = state_exp.add_read('B')
-            C = state_exp.add_access('C')
-            texp = state_exp.add_tasklet('tasklet', {'a', 'b'}, {'c'},
-                                         'c = a + b')
-
-            state_exp.add_edge(A, None, me, None, dace.Memlet.simple(A, '0'))
-            state_exp.add_edge(
-                B, None, me, None,
-                dace.Memlet.simple(
-                    B, '0:' + M + ', 0:' + N + ', 0:' + G + ', 0:' + H))
-            state_exp.add_edge(me, None, texp, "a", dace.Memlet.simple(A, '0'))
-            state_exp.add_edge(me, None, texp, "b",
-                               dace.Memlet.simple(B, 'i, j, k, l'))
-            state_exp.add_edge(texp, "c", mx, None,
-                               dace.Memlet.simple(C, 'i, j, k, l'))
-            state_exp.add_edge(
-                mx, None, C, None,
-                dace.Memlet.simple(
-                    C, '0:' + M + ', 0:' + N + ', 0:' + G + ', 0:' + H))
-
-            sdfg_exp.fill_scope_connectors()
-            return sdfg_exp
-        elif input0_dim == 4 and input1_dim == 1:
-            mm = in_edges[0].data.subset.size()[0]
-            nn = in_edges[0].data.subset.size()[1]
-            gg = in_edges[0].data.subset.size()[2]
-            hh = in_edges[0].data.subset.size()[3]
-
-            M = str(mm)
-            N = str(nn)
-            G = str(gg)
-            H = str(hh)
-
-            sdfg_exp = dace.SDFG('addExpansion')
-            sdfg_exp.add_array('A', (mm, nn, gg, hh), dace.float32)
-            sdfg_exp.add_array('B', (1, ), dace.float32)
-            sdfg_exp.add_array('C', (mm, nn, gg, hh), dace.float32)
-            state_exp = sdfg_exp.add_state()
-
-            me, mx = state_exp.add_map(
-                'outer_map',
-                dict(i='0:' + M, j='0:' + N, k='0:' + G, l='0:' + H))
-
-            A = state_exp.add_read('A')
-            B = state_exp.add_read('B')
-            C = state_exp.add_access('C')
-            texp = state_exp.add_tasklet('tasklet', {'a', 'b'}, {'c'},
-                                         'c = a + b')
-
-            state_exp.add_edge(
-                A, None, me, None,
-                dace.Memlet.simple(
-                    A, '0:' + M + ', 0:' + N + ', 0:' + G + ', 0:' + H))
-            state_exp.add_edge(B, None, me, None,
-                               dace.Memlet.simple(B, '0'))
-            state_exp.add_edge(me, None, texp, "a",
-                               dace.Memlet.simple(A, 'i, j, k, l'))
-            state_exp.add_edge(me, None, texp, "b",
-                               dace.Memlet.simple(B, '0'))
-            state_exp.add_edge(texp, "c", mx, None,
-                               dace.Memlet.simple(C, 'i, j, k, l'))
-            state_exp.add_edge(
-                mx, None, C, None,
-                dace.Memlet.simple(
-                    C, '0:' + M + ', 0:' + N + ', 0:' + G + ', 0:' + H))
-
-            sdfg_exp.fill_scope_connectors()
-            return sdfg_exp
-        else:
-
-            def prog(A, B, C):
-                C[:] = A + B
-
-            return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node).to_sdfg()
 
 
 @autoregister_params(op="Sub")
@@ -240,141 +115,18 @@ class PureSub(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
-        istype = node.in_desc_with_name(sdfg, state, 'A').dtype in [
-            dace.float16, dace.float32, dace.float64
-        ]
-
-        in_edges = state.in_edges(node)
-        input0_dim = len(in_edges[0].data.subset.size())
-        input1_dim = len(in_edges[1].data.subset.size())
-
-        if istype and ((input0_dim == 1 and input1_dim == 4) or
-                       (input0_dim == 4 and input1_dim == 1) or
-                       (input0_dim == 1 and input1_dim <= 3) or
-                       (input0_dim <= 3 and input1_dim == 1) or
-                       (input0_dim == 3 and input1_dim == 3) or
-                       (input0_dim == 2 and input1_dim == 2)):
-            return True
-
-        return False
+        return True
 
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         node.validate(sdfg, state)
-        in_edges = state.in_edges(node)
-        out_edges = state.out_edges(node)
 
-        atype = None
-        btype = None
-        if in_edges[0].dst_conn == "A" and in_edges[1].dst_conn == "B":
-            atype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
-            btype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
-        if in_edges[0].dst_conn == "B" and in_edges[1].dst_conn == "A":
-            atype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
-            btype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
+        def prog(A, B, C):
+            C[:] = A - B
 
-        ctype = copy.deepcopy(sdfg.arrays[out_edges[0].data.data])
-
-        input0_dim = len(in_edges[0].data.subset.size())
-        input1_dim = len(in_edges[1].data.subset.size())
-        if input0_dim == 1 and input1_dim == 4:
-            mm = in_edges[1].data.subset.size()[0]
-            nn = in_edges[1].data.subset.size()[1]
-            gg = in_edges[1].data.subset.size()[2]
-            hh = in_edges[1].data.subset.size()[3]
-
-            M = str(mm)
-            N = str(nn)
-            G = str(gg)
-            H = str(hh)
-
-            sdfg_exp = dace.SDFG('subExpansion')
-            sdfg_exp.add_array('A', (1, ), dace.float32)
-            sdfg_exp.add_array('B', (mm, nn, gg, hh), dace.float32)
-            sdfg_exp.add_array('C', (mm, nn, gg, hh), dace.float32)
-            state_exp = sdfg_exp.add_state()
-
-            me, mx = state_exp.add_map(
-                'outer_map',
-                dict(i='0:' + M, j='0:' + N, k='0:' + G, l='0:' + H))
-
-            A = state_exp.add_read('A')
-            B = state_exp.add_read('B')
-            C = state_exp.add_access('C')
-            texp = state_exp.add_tasklet('tasklet', {'a', 'b'}, {'c'},
-                                         'c = a - b')
-
-            state_exp.add_edge(A, None, me, None, dace.Memlet.simple(A, '0'))
-            state_exp.add_edge(
-                B, None, me, None,
-                dace.Memlet.simple(
-                    B, '0:' + M + ', 0:' + N + ', 0:' + G + ', 0:' + H))
-            state_exp.add_edge(me, None, texp, "a", dace.Memlet.simple(A, '0'))
-            state_exp.add_edge(me, None, texp, "b",
-                               dace.Memlet.simple(B, 'i, j, k, l'))
-            state_exp.add_edge(texp, "c", mx, None,
-                               dace.Memlet.simple(C, 'i, j, k, l'))
-            state_exp.add_edge(
-                mx, None, C, None,
-                dace.Memlet.simple(
-                    C, '0:' + M + ', 0:' + N + ', 0:' + G + ', 0:' + H))
-
-            sdfg_exp.fill_scope_connectors()
-            return sdfg_exp
-        elif input0_dim == 4 and input1_dim == 1:
-            mm = in_edges[0].data.subset.size()[0]
-            nn = in_edges[0].data.subset.size()[1]
-            gg = in_edges[0].data.subset.size()[2]
-            hh = in_edges[0].data.subset.size()[3]
-
-            M = str(mm)
-            N = str(nn)
-            G = str(gg)
-            H = str(hh)
-
-            sdfg_exp = dace.SDFG('subExpansion')
-            sdfg_exp.add_array('A', (mm, nn, gg, hh), dace.float32)
-            sdfg_exp.add_array('B', (1, ), dace.float32)
-            sdfg_exp.add_array('C', (mm, nn, gg, hh), dace.float32)
-            state_exp = sdfg_exp.add_state()
-
-            me, mx = state_exp.add_map(
-                'outer_map',
-                dict(i='0:' + M, j='0:' + N, k='0:' + G, l='0:' + H))
-
-            A = state_exp.add_read('A')
-            B = state_exp.add_read('B')
-            C = state_exp.add_access('C')
-            texp = state_exp.add_tasklet('tasklet', {'a', 'b'}, {'c'},
-                                         'c = a - b')
-
-            state_exp.add_edge(
-                A, None, me, None,
-                dace.Memlet.simple(
-                    A, '0:' + M + ', 0:' + N + ', 0:' + G + ', 0:' + H))
-            state_exp.add_edge(B, None, me, None,
-                               dace.Memlet.simple(B, '0'))
-            state_exp.add_edge(me, None, texp, "a",
-                               dace.Memlet.simple(A, 'i, j, k, l'))
-            state_exp.add_edge(me, None, texp, "b",
-                               dace.Memlet.simple(B, '0'))
-            state_exp.add_edge(texp, "c", mx, None,
-                               dace.Memlet.simple(C, 'i, j, k, l'))
-            state_exp.add_edge(
-                mx, None, C, None,
-                dace.Memlet.simple(
-                    C, '0:' + M + ', 0:' + N + ', 0:' + G + ', 0:' + H))
-
-            sdfg_exp.fill_scope_connectors()
-            return sdfg_exp
-        else:
-
-            def prog(A, B, C):
-                C[:] = A - B
-
-            return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node).to_sdfg()
 
 
 @autoregister_params(op="Mul")
