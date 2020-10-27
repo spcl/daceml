@@ -30,6 +30,7 @@ def test_bert_full(gpu):
         np.load(os.path.join(data_directory, "segment_ids.npy")),
         "ONNX_OneHot216_o0__d0": 2
     }
+    # todo ONNX_OneHot can be removed once shape infer is bumped
     outputs = dace_model(**feed)
     unstack_0 = np.load(os.path.join(data_directory, "unstack_0.npy"))
     unstack_1 = np.load(os.path.join(data_directory, "unstack_1.npy"))
