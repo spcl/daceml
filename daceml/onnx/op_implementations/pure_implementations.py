@@ -14,6 +14,8 @@ import daceml.onnx.converters as converters
 from daceml.onnx.implementation_abc import ONNXForward
 import numpy as np
 
+from daceml.util.utils import in_desc_with_name, out_desc_with_name
+
 
 def program_for_node(program, sdfg: SDFG, state: SDFGState,
                      node: ONNXOp) -> DaceProgram:
@@ -36,9 +38,9 @@ def program_for_node(program, sdfg: SDFG, state: SDFGState,
     annotations = {}
     for name, param in params.items():
         if name in input_names:
-            annotations[name] = node.in_desc_with_name(sdfg, state, name)
+            annotations[name] = in_desc_with_name(node, state, sdfg, name)
         elif name in output_names:
-            annotations[name] = node.out_desc_with_name(sdfg, state, name)
+            annotations[name] = out_desc_with_name(node, state, sdfg, name)
         else:
             raise ValueError(
                 "'{}' was not found as an input or output for {}".format(
@@ -56,7 +58,7 @@ class PureSqrt(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
-        return node.in_desc_with_name(sdfg, state, 'X').dtype in [
+        return in_desc_with_name(node, state, sdfg, 'X').dtype in [
             dace.float16, dace.float32, dace.float64
         ]
 
@@ -77,7 +79,7 @@ class PurePow(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
-        return node.in_desc_with_name(sdfg, state, 'X').dtype in [
+        return in_desc_with_name(node, state, sdfg, 'X').dtype in [
             dace.float16, dace.float32, dace.float64
         ]
 
@@ -172,7 +174,7 @@ class PureErf(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
-        return node.in_desc_with_name(sdfg, state, 'input').dtype in [
+        return in_desc_with_name(node, state, sdfg, 'input').dtype in [
             dace.float16, dace.float32, dace.float64
         ]
 
@@ -195,8 +197,8 @@ class PureReshape(ONNXForward):
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         node.validate(sdfg, state)
-        if (node.in_desc_with_name(sdfg, state, "data").dtype !=
-                node.out_desc_with_name(sdfg, state, "reshaped")):
+        if (in_desc_with_name(node, state, sdfg, "data").dtype !=
+                out_desc_with_name(node, state, sdfg, "reshaped")):
             raise ValueError(
                 "Expected input and output to have the same dtype.")
 
@@ -335,7 +337,7 @@ class PureReciprocal(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
-        return node.in_desc_with_name(sdfg, state, 'X').dtype in [
+        return in_desc_with_name(node, state, sdfg, 'X').dtype in [
             dace.float16, dace.float32, dace.float64
         ]
 
@@ -486,7 +488,7 @@ class PureSoftmax(ONNXForward):
         # result = exp / sum
 
         node.validate(sdfg, state)
-        inparr = node.in_desc_with_name(sdfg, state, "input")
+        inparr = in_desc_with_name(node, state, sdfg, "input")
 
         axis = node.axis
         if type(axis) is not int or not (-len(inparr.shape) <= axis < len(
