@@ -48,20 +48,7 @@ def program_for_node(program, sdfg: SDFG, state: SDFGState,
 
     program.__annotations__ = annotations
 
-    ####################################
-    # get the locals and globals of the upper frame and overwrite what was set in the SDFG
-    frame = inspect.currentframe()
-    outer_frame = frame.f_back
-    globals = {}
-    # Update globals, then locals
-    globals.update(outer_frame.f_globals)
-    globals.update(outer_frame.f_locals)
-
     result = DaceProgram(program, (), {})
-    result.global_vars = {
-        k: v
-        for k, v in globals.items() if dtypes.isallowed(v)
-    }
 
     return result
 
@@ -111,11 +98,6 @@ class PurePow(ONNXForward):
 @autoregister_params(op="Add")
 class PureAdd(ONNXForward):
     @staticmethod
-    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
-                               sdfg: SDFG) -> bool:
-        return True
-
-    @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
@@ -129,11 +111,6 @@ class PureAdd(ONNXForward):
 
 @autoregister_params(op="Sub")
 class PureSub(ONNXForward):
-    @staticmethod
-    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
-                               sdfg: SDFG) -> bool:
-        return True
-
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
@@ -149,11 +126,6 @@ class PureSub(ONNXForward):
 @autoregister_params(op="Mul")
 class PureMul(ONNXForward):
     @staticmethod
-    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
-                               sdfg: SDFG) -> bool:
-        return True
-
-    @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
@@ -167,11 +139,6 @@ class PureMul(ONNXForward):
 
 @autoregister_params(op="Div")
 class PureDiv(ONNXForward):
-    @staticmethod
-    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
-                               sdfg: SDFG) -> bool:
-        return True
-
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
@@ -656,71 +623,61 @@ class PureTanh(ONNXForward):
 @autoregister_params(op="ReduceSum")
 class PureReduceSum(ONNXForward):
     @staticmethod
-    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
-                               sdfg: SDFG) -> bool:
-        axes = None
-        keepdims = None
-        if hasattr(node, "axes"):
-            axes = node.axes
-        if hasattr(node, "keepdims"):
-            keepdims = node.keepdims
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
-        in_edges = state.in_edges(node)
-        input_dim = len(in_edges[0].data.subset.size())
+        in_shape = node.in_desc_with_name(sdfg, state, "data").shape
+        axes = node.axes
+        # dace doesn't support negative axes at the moment
+        positive_axes = [ax if ax >= 0 else len(in_shape) + ax
+                         for ax in axes]
 
-        if input_dim == 4 and axes == [1] and keepdims == 0:
-            return True
+        # when keepdims is true, this works but there is a useless copy. We just leave this for now; this can be fixed
+        # with a reshape node when those exist.
+        def prog(data, reduced):
+            reduced[:] = np.sum(data, axis=positive_axes)
 
-        return False
+        return program_for_node(prog, sdfg, state, node).to_sdfg()
 
+
+@autoregister_params(op="ReduceMax")
+class PureReduceMax(ONNXForward):
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
-        node.validate(sdfg, state)
-        in_edges = state.in_edges(node)
-        mm = in_edges[0].data.subset.size()[0]
-        nn = in_edges[0].data.subset.size()[1]
-        gg = in_edges[0].data.subset.size()[2]
-        hh = in_edges[0].data.subset.size()[3]
+        in_shape = node.in_desc_with_name(sdfg, state, "data").shape
+        axes = node.axes
+        # dace doesn't support negative axes at the moment
+        positive_axes = [ax if ax >= 0 else len(in_shape) + ax
+                         for ax in axes]
 
-        M = str(mm)
-        N = str(nn)
-        G = str(gg)
-        H = str(hh)
+        # when keepdims is true, this works but there is a useless copy. We just leave this for now; this can be fixed
+        # with a reshape node when those exist.
+        def prog(data, reduced):
+            reduced[:] = np.max(data, axis=positive_axes)
 
-        sdfg_exp = dace.SDFG('reducesumExpansion')
-        sdfg_exp.add_array('data', (mm, nn, gg, hh), dace.float32)
-        sdfg_exp.add_array('reduced', (mm, gg, hh), dace.float32)
-        state_exp = sdfg_exp.add_state()
+        return program_for_node(prog, sdfg, state, node).to_sdfg()
 
-        me, mx = state_exp.add_map('outer_map',
-                                   dict(i='0:' + M, k='0:' + G, l='0:' + H))
 
-        data = state_exp.add_read('data')
-        reduced = state_exp.add_access('reduced')
+@autoregister_params(op="ReduceMin")
+class PureReduceMin(ONNXForward):
+    @staticmethod
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
-        redsum = state_exp.add_reduce('lambda a1, b1: a1 + b1', None, 0)
-        tmp_sum = state_exp.add_transient('tmp_sum', (1, ), dace.float32)
+        in_shape = node.in_desc_with_name(sdfg, state, "data").shape
+        axes = node.axes
+        # dace doesn't support negative axes at the moment
+        positive_axes = [ax if ax >= 0 else len(in_shape) + ax
+                         for ax in axes]
 
-        state_exp.add_edge(
-            data, None, me, None,
-            dace.Memlet.simple(data, '0:' + M + ', 0:' + N + ', 0:' + G +
-                               ', 0:' + H))
-        state_exp.add_edge(me, None, redsum, None,
-                           dace.Memlet.simple(data, 'i, 0:' + N + ', k, l'))
-        state_exp.add_edge(redsum, None, tmp_sum, None,
-                           dace.Memlet.simple(tmp_sum, '0'))
-        state_exp.add_edge(tmp_sum, None, mx, None,
-                           dace.Memlet.simple(reduced, 'i, k, l'))
-        state_exp.add_edge(
-            mx, None, reduced, None,
-            dace.Memlet.simple(reduced, '0:' + M + ', 0:' + G + ', 0:' + H))
+        # when keepdims is true, this works but there is a useless copy. We just leave this for now; this can be fixed
+        # with a reshape node when those exist.
+        def prog(data, reduced):
+            reduced[:] = np.min(data, axis=positive_axes)
 
-        sdfg_exp.fill_scope_connectors()
-
-        return sdfg_exp
-
+        return program_for_node(prog, sdfg, state, node).to_sdfg()
 
 @autoregister_params(op="Softmax")
 class PureSoftmax(ONNXForward):

@@ -15,11 +15,9 @@ class ONNXForward(abc.ABC):
         The register function expects an argument `op` containing the ONNX op name (string).
     """
     @staticmethod
-    @abc.abstractmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
-        # TODO docstring
-        ...
+        return True
 
     @staticmethod
     @abc.abstractmethod

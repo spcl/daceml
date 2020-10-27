@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 import dace
 import daceml.onnx as donnx
@@ -133,3 +134,90 @@ def test_cast_float_to_long():
     result = sdfg(X=X)
 
     assert np.allclose(X.astype(np.int64), result)
+
+
+@pytest.mark.parametrize("reduce_type", ["Sum", "Max", "Mean"])
+@pytest.mark.parametrize("keepdims", [True, False])
+@pytest.mark.parametrize("axes", [[0], [-1], [0, -1]])
+def test_reduce_nokeepdims(keepdims, reduce_type, axes):
+
+    X = np.random.normal(scale=10, size=(2, 4, 10)).astype(np.float32)
+
+    sdfg = dace.SDFG("test_reduce")
+
+    sdfg.add_array("X", [2, 4, 10], dace.float32)
+
+    numpy_func = getattr(np, reduce_type.lower())
+    numpy_result = numpy_func(X.copy(), axis=tuple(axes), keepdims=keepdims)
+
+    resulting_shape = numpy_result.shape
+
+    sdfg.add_array("__return", resulting_shape, dace.float32)
+
+    state = sdfg.add_state()
+    access_X = state.add_access("X")
+    access_result = state.add_access("__return")
+
+    op_node = getattr(donnx, "ONNXReduce" + reduce_type)("reduce")
+    op_node.axes = axes
+    op_node.keepdims = 1 if keepdims else 0
+
+    state.add_node(op_node)
+    state.add_edge(access_X, None, op_node, "data", sdfg.make_array_memlet("X"))
+
+    state.add_edge(op_node, "reduced", access_result, None,
+                   sdfg.make_array_memlet("__return"))
+
+
+    sdfg.expand_library_nodes()
+    # check that the expansion worked. The default ORT expansion wouldn't produce a map
+    assert any(
+        isinstance(n, dace.nodes.MapEntry)
+        for n, _ in sdfg.all_nodes_recursive())
+
+    result = sdfg(X=X)
+
+    assert np.allclose(numpy_result, result)
+
+def test_reduce_scalar():
+    X = np.random.normal(scale=10, size=(2, 4, 10)).astype(np.float32)
+
+    sdfg = dace.SDFG("test_reduce")
+
+    numpy_result = np.mean(X)
+
+    sdfg.add_array("X", [2, 4, 10], dace.float32)
+    sdfg.add_scalar("Y", dace.float32, transient=True)
+    sdfg.add_array("__return", [1], dace.float32)
+
+
+    state = sdfg.add_state()
+    access_X = state.add_access("X")
+    access_Y = state.add_access("Y")
+    access_result = state.add_access("__return")
+
+    op_node = donnx.ONNXReduceMean("mean")
+    op_node.keepdims = 0
+
+    state.add_node(op_node)
+    state.add_edge(access_X, None, op_node, "data", sdfg.make_array_memlet("X"))
+
+    state.add_edge(op_node, "reduced", access_Y, None,
+                   sdfg.make_array_memlet("Y"))
+
+    state.add_edge(access_Y, None, access_result, None,
+                   sdfg.make_array_memlet("__return"))
+
+
+    sdfg.expand_library_nodes()
+    # check that the expansion worked. The default ORT expansion wouldn't produce a map
+    assert any(
+        isinstance(n, dace.nodes.MapEntry)
+        for n, _ in sdfg.all_nodes_recursive())
+
+    result = sdfg(X=X)
+
+    assert np.allclose(numpy_result, result)
+
+if __name__ == "__main__":
+    test_reduce_nokeepdims(reduce_type="Sum", axes=[-1], keepdims=False)
