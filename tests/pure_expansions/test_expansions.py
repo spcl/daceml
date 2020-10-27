@@ -40,6 +40,7 @@ def test_matmul_expansion():
 
     assert np.allclose(X @ Z, result)
 
+
 def test_cast_int_to_float():
     sdfg = dace.SDFG("test_cast")
 
@@ -54,7 +55,8 @@ def test_cast_int_to_float():
     op_node.to = converters.typeclass_to_onnx_tensor_type_int(dace.float32)
 
     state.add_node(op_node)
-    state.add_edge(access_X, None, op_node, "input", sdfg.make_array_memlet("X"))
+    state.add_edge(access_X, None, op_node, "input",
+                   sdfg.make_array_memlet("X"))
 
     state.add_edge(op_node, "output", access_result, None,
                    sdfg.make_array_memlet("__return"))
@@ -86,7 +88,8 @@ def test_cast_float_to_int():
     op_node.to = converters.typeclass_to_onnx_tensor_type_int(dace.int32)
 
     state.add_node(op_node)
-    state.add_edge(access_X, None, op_node, "input", sdfg.make_array_memlet("X"))
+    state.add_edge(access_X, None, op_node, "input",
+                   sdfg.make_array_memlet("X"))
 
     state.add_edge(op_node, "output", access_result, None,
                    sdfg.make_array_memlet("__return"))
@@ -118,7 +121,8 @@ def test_cast_float_to_long():
     op_node.to = converters.typeclass_to_onnx_tensor_type_int(dace.int64)
 
     state.add_node(op_node)
-    state.add_edge(access_X, None, op_node, "input", sdfg.make_array_memlet("X"))
+    state.add_edge(access_X, None, op_node, "input",
+                   sdfg.make_array_memlet("X"))
 
     state.add_edge(op_node, "output", access_result, None,
                    sdfg.make_array_memlet("__return"))
@@ -163,11 +167,11 @@ def test_reduce_nokeepdims(keepdims, reduce_type, axes):
     op_node.keepdims = 1 if keepdims else 0
 
     state.add_node(op_node)
-    state.add_edge(access_X, None, op_node, "data", sdfg.make_array_memlet("X"))
+    state.add_edge(access_X, None, op_node, "data",
+                   sdfg.make_array_memlet("X"))
 
     state.add_edge(op_node, "reduced", access_result, None,
                    sdfg.make_array_memlet("__return"))
-
 
     sdfg.expand_library_nodes()
     # check that the expansion worked. The default ORT expansion wouldn't produce a map
@@ -178,6 +182,7 @@ def test_reduce_nokeepdims(keepdims, reduce_type, axes):
     result = sdfg(X=X)
 
     assert np.allclose(numpy_result, result)
+
 
 def test_reduce_scalar():
     X = np.random.normal(scale=10, size=(2, 4, 10)).astype(np.float32)
@@ -190,7 +195,6 @@ def test_reduce_scalar():
     sdfg.add_scalar("Y", dace.float32, transient=True)
     sdfg.add_array("__return", [1], dace.float32)
 
-
     state = sdfg.add_state()
     access_X = state.add_access("X")
     access_Y = state.add_access("Y")
@@ -200,14 +204,14 @@ def test_reduce_scalar():
     op_node.keepdims = 0
 
     state.add_node(op_node)
-    state.add_edge(access_X, None, op_node, "data", sdfg.make_array_memlet("X"))
+    state.add_edge(access_X, None, op_node, "data",
+                   sdfg.make_array_memlet("X"))
 
     state.add_edge(op_node, "reduced", access_Y, None,
                    sdfg.make_array_memlet("Y"))
 
     state.add_edge(access_Y, None, access_result, None,
                    sdfg.make_array_memlet("__return"))
-
 
     sdfg.expand_library_nodes()
     # check that the expansion worked. The default ORT expansion wouldn't produce a map
@@ -218,6 +222,3 @@ def test_reduce_scalar():
     result = sdfg(X=X)
 
     assert np.allclose(numpy_result, result)
-
-if __name__ == "__main__":
-    test_reduce_nokeepdims(reduce_type="Sum", axes=[-1], keepdims=False)

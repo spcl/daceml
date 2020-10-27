@@ -629,8 +629,7 @@ class PureReduceSum(ONNXForward):
         in_shape = node.in_desc_with_name(sdfg, state, "data").shape
         axes = node.axes
         # dace doesn't support negative axes at the moment
-        positive_axes = [ax if ax >= 0 else len(in_shape) + ax
-                         for ax in axes]
+        positive_axes = [ax if ax >= 0 else len(in_shape) + ax for ax in axes]
 
         # when keepdims is true, this works but there is a useless copy. We just leave this for now; this can be fixed
         # with a reshape node when those exist.
@@ -649,8 +648,7 @@ class PureReduceMax(ONNXForward):
         in_shape = node.in_desc_with_name(sdfg, state, "data").shape
         axes = node.axes
         # dace doesn't support negative axes at the moment
-        positive_axes = [ax if ax >= 0 else len(in_shape) + ax
-                         for ax in axes]
+        positive_axes = [ax if ax >= 0 else len(in_shape) + ax for ax in axes]
 
         # when keepdims is true, this works but there is a useless copy. We just leave this for now; this can be fixed
         # with a reshape node when those exist.
@@ -669,8 +667,7 @@ class PureReduceMin(ONNXForward):
         in_shape = node.in_desc_with_name(sdfg, state, "data").shape
         axes = node.axes
         # dace doesn't support negative axes at the moment
-        positive_axes = [ax if ax >= 0 else len(in_shape) + ax
-                         for ax in axes]
+        positive_axes = [ax if ax >= 0 else len(in_shape) + ax for ax in axes]
 
         # when keepdims is true, this works but there is a useless copy. We just leave this for now; this can be fixed
         # with a reshape node when those exist.
@@ -678,6 +675,7 @@ class PureReduceMin(ONNXForward):
             reduced[:] = np.min(data, axis=positive_axes)
 
         return program_for_node(prog, sdfg, state, node).to_sdfg()
+
 
 @autoregister_params(op="Softmax")
 class PureSoftmax(ONNXForward):
