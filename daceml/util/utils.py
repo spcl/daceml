@@ -77,7 +77,7 @@ def in_edge_with_name(node: Node, state: SDFGState,
     if len(cands) != 1:
         raise ValueError(
             "Expected to find exactly one edge with name '{}', found {}".
-                format(name, len(cands)))
+            format(name, len(cands)))
     return cands[0]
 
 
@@ -94,5 +94,5 @@ def out_edge_with_name(node: Node, state: SDFGState,
     if len(cands) != 1:
         raise ValueError(
             "Expected to find exactly one edge with name '{}', found {}".
-                format(name, len(cands)))
+            format(name, len(cands)))
     return cands[0]
