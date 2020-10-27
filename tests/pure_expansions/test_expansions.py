@@ -141,9 +141,18 @@ def test_cast_float_to_long():
     assert np.allclose(X.astype(np.int64), result)
 
 
-@pytest.mark.parametrize("reduce_type", ["Sum", "Max", "Mean"])
-@pytest.mark.parametrize("keepdims", [True, False])
-@pytest.mark.parametrize("axes", [[0], [-1], [0, -1]])
+#+yapf: disable
+@pytest.mark.parametrize("reduce_type, keepdims, axes",
+                         [('Sum',  True,  [0]),
+                          ('Sum',  False, [-1]),
+                          ('Sum',  True,  [0, -1]),
+                          ('Max',  False, [0, -1]),
+                          ('Max',  True,  [0]),
+                          ('Max',  True,  [-1]),
+                          ('Mean', True,  [-1]),
+                          ('Mean', True,  [0, -1]),
+                          ('Mean', False, [0])])
+#+yapf: enable
 def test_reduce_nokeepdims(keepdims, reduce_type, axes):
 
     X = np.random.normal(scale=10, size=(2, 4, 10)).astype(np.float32)
