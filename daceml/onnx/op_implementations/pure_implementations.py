@@ -62,7 +62,7 @@ class PureLog(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
-        return node.in_desc_with_name(sdfg, state, 'input').dtype in [
+        return in_desc_with_name(node, state, sdfg, 'input').dtype in [
             dace.float16, dace.float32, dace.float64
         ]
 
