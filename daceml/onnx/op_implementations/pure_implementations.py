@@ -425,6 +425,8 @@ class PureTanh(ONNXForward):
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
+        # TODO can this be replaced with elementwise(tanh)?
+
         node.validate(sdfg, state)
         in_edges = state.in_edges(node)
 
@@ -653,101 +655,16 @@ class PureSoftmax(ONNXForward):
 @autoregister_params(op="Transpose")
 class PureTranspose(ONNXForward):
     @staticmethod
-    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
-                               sdfg: SDFG) -> bool:
-        perm = None
-        if hasattr(node, "perm"):
-            perm = node.perm
-
-        in_edges = state.in_edges(node)
-        input_dim = len(in_edges[0].data.subset.size())
-
-        if input_dim == 4 and perm == [0, 2, 1, 3]:
-            return True
-
-        if input_dim == 4 and perm == [0, 2, 3, 1]:
-            return True
-
-        return False
-
-    @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         node.validate(sdfg, state)
         perm = node.perm
 
-        in_edges = state.in_edges(node)
+        def prog(data, transposed):
+            transposed[:] = np.transpose(data, axes=perm)
 
-        sdfg_exp = dace.SDFG('TransposeExpansion')
-
-        ii = in_edges[0].data.subset.size()[0]
-        jj = in_edges[0].data.subset.size()[1]
-        kk = in_edges[0].data.subset.size()[2]
-        ll = in_edges[0].data.subset.size()[3]
-        I = str(ii)
-        J = str(jj)
-        K = str(kk)
-        L = str(ll)
-
-        if perm == [0, 2, 1, 3]:
-            sdfg_exp.add_array('data', (ii, jj, kk, ll), dace.float32)
-            sdfg_exp.add_array('transposed', (ii, kk, jj, ll), dace.float32)
-
-            state_exp = sdfg_exp.add_state()
-
-            task1 = state_exp.add_tasklet('transpose', {'_a'}, {'_b'},
-                                          '_b = _a')
-
-            data = state_exp.add_read('data')
-            transposed = state_exp.add_access('transposed')
-
-            me1, mx1 = state_exp.add_map(
-                'map1', dict(i='0:' + I, j='0:' + J, k='0:' + K, l='0:' + L))
-            state_exp.add_edge(
-                data, None, me1, None,
-                dace.Memlet.simple(
-                    data, '0:' + I + ', 0:' + J + ', 0:' + K + ', 0:' + L))
-            state_exp.add_edge(me1, None, task1, '_a',
-                               dace.Memlet.simple(data, 'i, j, k, l'))
-            state_exp.add_edge(task1, '_b', mx1, None,
-                               dace.Memlet.simple(transposed, 'i, k, j, l'))
-            state_exp.add_edge(
-                mx1, None, transposed, None,
-                dace.Memlet.simple(
-                    transposed,
-                    '0:' + I + ', 0:' + K + ', 0:' + J + ', 0:' + L))
-            sdfg_exp.fill_scope_connectors()
-
-        elif perm == [0, 2, 3, 1]:
-            sdfg_exp.add_array('data', (ii, jj, kk, ll), dace.float32)
-            sdfg_exp.add_array('transposed', (ii, kk, ll, jj), dace.float32)
-
-            state_exp = sdfg_exp.add_state()
-
-            task1 = state_exp.add_tasklet('transpose', {'_a'}, {'_b'},
-                                          '_b = _a')
-
-            data = state_exp.add_read('data')
-            transposed = state_exp.add_access('transposed')
-
-            me1, mx1 = state_exp.add_map(
-                'map1', dict(i='0:' + I, j='0:' + J, k='0:' + K, l='0:' + L))
-            state_exp.add_edge(
-                data, None, me1, None,
-                dace.Memlet.simple(
-                    data, '0:' + I + ', 0:' + J + ', 0:' + K + ', 0:' + L))
-            state_exp.add_edge(me1, None, task1, '_a',
-                               dace.Memlet.simple(data, 'i, j, k, l'))
-            state_exp.add_edge(task1, '_b', mx1, None,
-                               dace.Memlet.simple(transposed, 'i, k, l, j'))
-            state_exp.add_edge(
-                mx1, None, transposed, None,
-                dace.Memlet.simple(
-                    transposed,
-                    '0:' + I + ', 0:' + K + ', 0:' + L + ', 0:' + J))
-            sdfg_exp.fill_scope_connectors()
-        return sdfg_exp
+        return program_for_node(prog, sdfg, state, node).to_sdfg()
 
 
 @autoregister_params(op="Cast")
