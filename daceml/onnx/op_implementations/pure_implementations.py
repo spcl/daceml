@@ -247,164 +247,20 @@ class PureErf(ONNXForward):
 
 @autoregister_params(op="Reshape")
 class PureReshape(ONNXForward):
-    @staticmethod
-    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
-                               sdfg: SDFG) -> bool:
-
-        in_edges = state.in_edges(node)
-        out_edges = state.out_edges(node)
-        input_dim = len(in_edges[0].data.subset.size())
-        output_dim = len(out_edges[0].data.subset.size())
-
-        if input_dim == 4 and output_dim == 3:
-            return True
-        if input_dim == 3 and output_dim == 4:
-            return True
-
-        return False
 
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         node.validate(sdfg, state)
+        if (node.in_desc_with_name(sdfg, state, "data").dtype !=
+            node.out_desc_with_name(sdfg, state, "reshaped")):
+            raise ValueError("Expected input and output to have the same dtype.")
 
-        in_edges = state.in_edges(node)
-        out_edges = state.out_edges(node)
+        def prog(data, reshaped, shape):
+            reshaped[:] = data
 
-        input_dim = len(in_edges[0].data.subset.size())
-        output_dim = len(out_edges[0].data.subset.size())
-        sdfg_exp = dace.SDFG('ReshapeExpansion')
-
-        if input_dim == 4 and output_dim == 3:
-            ii = in_edges[0].data.subset.size()[0]
-            jj = in_edges[0].data.subset.size()[1]
-            kk = in_edges[0].data.subset.size()[2]
-            ll = in_edges[0].data.subset.size()[3]
-
-            rr = in_edges[1].data.subset.size()[0]
-
-            I = str(ii)
-            J = str(jj)
-            K = str(kk)
-            L = str(ll)
-
-            R = str(rr)
-
-            mm = out_edges[0].data.subset.size()[0]
-            nn = out_edges[0].data.subset.size()[1]
-            pp = out_edges[0].data.subset.size()[2]
-
-            M = str(mm)
-            N = str(nn)
-            P = str(pp)
-
-            sdfg_exp.add_array('data', (ii, jj, kk, ll), dace.float32)
-            sdfg_exp.add_array('shape', (rr, ), dace.float32)
-            sdfg_exp.add_array('reshaped', (mm, nn, pp), dace.float32)
-
-            state_exp = sdfg_exp.add_state()
-
-            task1 = state_exp.add_tasklet('reshape', {'_a', '_dummy'}, {'_b'},
-                                          '_b = _a')
-
-            data = state_exp.add_read('data')
-            shape = state_exp.add_read('shape')
-            reshaped = state_exp.add_access('reshaped')
-
-            me1, mx1 = state_exp.add_map(
-                'map1', dict(i='0:' + I, j='0:' + J, k='0:' + K, l='0:' + L))
-            state_exp.add_edge(
-                data, None, me1, None,
-                dace.Memlet.simple(
-                    data, '0:' + I + ', 0:' + J + ', 0:' + K + ', 0:' + L))
-            state_exp.add_edge(shape, None, me1, None,
-                               dace.Memlet.simple(shape, '0:' + R))
-            state_exp.add_edge(me1, None, task1, '_a',
-                               dace.Memlet.simple(data, 'i, j, k, l'))
-            state_exp.add_edge(me1, None, task1, '_dummy',
-                               dace.Memlet.simple(shape, '0'))
-
-            state_exp.add_edge(
-                task1, '_b', mx1, None,
-                dace.Memlet.simple(
-                    reshaped,
-                    'int((i*{0}*{1}*{2}+j*{1}*{2}+k*{2}+l)/({3}*{4})), \
-                     int((i*{0}*{1}*{2}+j*{1}*{2}+k*{2}+l)%({3}*{4})/{4}), \
-                     (i*{0}*{1}*{2}+j*{1}*{2}+k*{2}+l)%({3}*{4})%{4}'.format(
-                        J, K, L, N, P)))
-
-            state_exp.add_edge(
-                mx1, None, reshaped, None,
-                dace.Memlet.simple(reshaped,
-                                   '0:' + M + ', 0:' + N + ', 0:' + P))
-
-            sdfg_exp.fill_scope_connectors()
-
-        elif input_dim == 3 and output_dim == 4:
-            ii = in_edges[0].data.subset.size()[0]
-            jj = in_edges[0].data.subset.size()[1]
-            kk = in_edges[0].data.subset.size()[2]
-
-            rr = in_edges[1].data.subset.size()[0]
-
-            I = str(ii)
-            J = str(jj)
-            K = str(kk)
-
-            R = str(rr)
-
-            mm = out_edges[0].data.subset.size()[0]
-            nn = out_edges[0].data.subset.size()[1]
-            pp = out_edges[0].data.subset.size()[2]
-            qq = out_edges[0].data.subset.size()[3]
-
-            M = str(mm)
-            N = str(nn)
-            P = str(pp)
-            Q = str(qq)
-
-            sdfg_exp.add_array('data', (ii, jj, kk), dace.float32)
-            sdfg_exp.add_array('shape', (rr, ), dace.float32)
-            sdfg_exp.add_array('reshaped', (mm, nn, pp, qq), dace.float32)
-
-            state_exp = sdfg_exp.add_state()
-
-            task1 = state_exp.add_tasklet('reshape', {'_a', '_dummy'}, {'_b'},
-                                          '_b = _a')
-
-            data = state_exp.add_read('data')
-            shape = state_exp.add_read('shape')
-            reshaped = state_exp.add_access('reshaped')
-
-            me1, mx1 = state_exp.add_map(
-                'map1', dict(i='0:' + I, j='0:' + J, k='0:' + K))
-            state_exp.add_edge(
-                data, None, me1, None,
-                dace.Memlet.simple(data, '0:' + I + ', 0:' + J + ', 0:' + K))
-            state_exp.add_edge(shape, None, me1, None,
-                               dace.Memlet.simple(shape, '0:' + R))
-            state_exp.add_edge(me1, None, task1, '_a',
-                               dace.Memlet.simple(data, 'i, j, k'))
-            state_exp.add_edge(me1, None, task1, '_dummy',
-                               dace.Memlet.simple(shape, '0'))
-
-            state_exp.add_edge(
-                task1, '_b', mx1, None,
-                dace.Memlet.simple(
-                    reshaped, 'int((i*{0}*{1}+j*{1}+k)/({2}*{3}*{4})), \
-                     int(((i*{0}*{1}+j*{1}+k)%({2}*{3}*{4}))/({3}*{4})), \
-                     int(((i*{0}*{1}+j*{1}+k)%({2}*{3}*{4})%({3}*{4}))/{4}), \
-                     (i*{0}*{1}+j*{1}+k)%({2}*{3}*{4})%({3}*{4})%{4}'.format(
-                        J, K, N, P, Q)))
-
-            state_exp.add_edge(
-                mx1, None, reshaped, None,
-                dace.Memlet.simple(
-                    reshaped, '0:' + M + ', 0:' + N + ', 0:' + P + ', 0:' + Q))
-
-            sdfg_exp.fill_scope_connectors()
-        return sdfg_exp
+        return program_for_node(prog, sdfg, state, node).to_sdfg()
 
 
 @autoregister_params(op="MatMul")
