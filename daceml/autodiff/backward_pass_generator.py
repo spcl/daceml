@@ -57,61 +57,11 @@ def generate_grad_connector_names(
 
 
 def is_initialization_state(state: SDFGState) -> bool:
-    """Check if state is an initialization state, i.e. it initializes one or more arrays with zero values
-
-    This is an over- and underapproximation; e.g. it doesn't check that the whole array is initalized with zero, but
-    it also clearly doesn't detect all possible ways of filling an array with zero.
-
+    """ Check if state is an initialization state, i.e. it initializes one or more arrays with zero values
     """
-
-    # TODO rewrite this with source and sink like Tal suggested
-    for sink in state.sink_nodes():
-        # sink nodes should be AccessNodes
-        if type(sink) is not nd.AccessNode:
+    for n in state.data_nodes():
+        if len(state.out_edges(n)) > 0:
             return False
-
-        edges = list(state.bfs_edges(sink, reverse=True))
-
-        # we expect at least one in edge
-        if len(edges) == 0:
-            return False
-
-        def tasklet_writes_zero(tasklet: nd.Tasklet) -> bool:
-            if type(tasklet) is not nd.Tasklet:
-                return False
-
-            # there shouldn't be any in_connectors
-            if tasklet.in_connectors:
-                return False
-
-            # every output connector should be set to zero in the tasklet
-            output_exprs = code_to_exprs(tasklet.code.as_string,
-                                         tasklet.in_connectors,
-                                         tasklet.out_connectors)
-            for expr in output_exprs.values():
-                if not _is_int_value(expr, 0):
-                    return False
-            return True
-
-        if type(edges[0].src) is nd.MapExit:
-            # we have a map exit, the next nodes should be tasklets writing 0 and finally an exit node
-            for edge in edges[1:-1]:
-                if not tasklet_writes_zero(edge.src):
-                    return False
-
-            if type(edges[-1].src) is not nd.MapEntry:
-                return False
-
-        elif type(edges[0].src) is nd.Tasklet:
-            # there should be no other nodes in this component
-            if len(edges) != 1:
-                return False
-
-            if not tasklet_writes_zero(edges[0].src):
-                return False
-        else:
-            return False
-
     return True
 
 
