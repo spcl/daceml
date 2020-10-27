@@ -257,3 +257,42 @@ def test_reshape(new_shape):
     result = sdfg(X=X, shape=np.array(new_shape))
 
     assert np.allclose(numpy_result, result)
+
+
+#def test_symbolic_reshape():
+#    # in some cases we learn the values of symbols from a reshape
+#    N = dace.symbol("N")
+#    M = dace.symbol("M")
+#
+#    new_shape = [M, 10]
+#    X = np.random.normal(scale=10, size=(2, 1, 10)).astype(np.float32)
+#
+#    sdfg = dace.SDFG("test_reduce")
+#
+#    numpy_result = X.reshape(2, 10)
+#
+#    sdfg.add_array("X", [N, 1, 10], dace.float32)
+#    sdfg.add_array("shape", [len(new_shape)], dace.int64)
+#    sdfg.add_array("__return", new_shape, dace.float32)
+#
+#    state = sdfg.add_state()
+#    access_X = state.add_access("X")
+#    access_shape = state.add_access("shape")
+#    access_result = state.add_access("__return")
+#
+#    op_node = donnx.ONNXReshape("reshape")
+#
+#    state.add_node(op_node)
+#    state.add_edge(access_X, None, op_node, "data",
+#                   sdfg.make_array_memlet("X"))
+#    state.add_edge(access_shape, None, op_node, "shape",
+#                   sdfg.make_array_memlet("shape"))
+#
+#    state.add_edge(op_node, "reshaped", access_result, None,
+#                   sdfg.make_array_memlet("__return"))
+#
+#    sdfg.expand_library_nodes()
+#
+#    result = sdfg(X=X, shape=np.array(new_shape))
+#
+#    assert np.allclose(numpy_result, result)
