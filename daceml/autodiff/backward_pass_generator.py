@@ -16,7 +16,7 @@ from dace.libraries.standard import Reduce
 from dace.sdfg.graph import MultiConnectorEdge
 from dace.sdfg.state import StateSubgraphView
 from dace.sdfg.utils import dfs_topological_sort
-from dace.transformation.transformation import ExpandTransformation
+import dace.transformation.transformation as xf
 
 from daceml.autodiff import AutoDiffException
 from daceml.autodiff.backward_implementation_abc import BackwardImplementation, BackwardContext, BackwardResult
@@ -384,7 +384,7 @@ class BackwardPassGenerator(object):
                                                        state,
                                                        self.sdfg):
                             # try to apply the expansion
-                            class Expansion(ExpandTransformation):
+                            class Expansion(xf.ExpandTransformation):
                                 environments = []
                                 _expansion_result = None
 
@@ -392,15 +392,10 @@ class BackwardPassGenerator(object):
                                 def expansion(cls, node, state, sdfg):
                                     return impl.forward(node, state, sdfg)
 
-                                @classmethod
-                                def postprocessing(cls, sdfg, state,
-                                                   expansion):
-                                    cls._expansion_result = expansion
-
-                            Expansion._match_node = type(node)
+                            Expansion._match_node = xf.PatternNode(type(node))
                             Expansion.apply_to(state.parent,
                                                verify=False,
-                                               match_node=node)
+                                               _match_node=node)
                             expanded_something = True
                             continue
 
