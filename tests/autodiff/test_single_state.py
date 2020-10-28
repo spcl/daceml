@@ -357,7 +357,6 @@ def test_tasklets_direct_scalar_edges():
     )
 
 
-@pytest.mark.skip(reason="broken due to scalar promotion")
 @run_correctness
 def test_tasklets_only_reuse():
     def torch_func(*, A):
@@ -392,7 +391,8 @@ def test_tasklets_only_reuse():
             c >> C[0]
             c = a * b
 
-    sdfg = dace_func.to_sdfg()
+    sdfg = dace_func.to_sdfg(strict=False)
+    sdfg.apply_strict_transformations()
 
     return (
         SDFGBackwardRunner(sdfg, "C"),
@@ -401,7 +401,6 @@ def test_tasklets_only_reuse():
     )
 
 
-@pytest.mark.skip(reason="broken due to scalar promotion")
 @run_correctness
 def test_tasklets_multioutput():
     def torch_func(*, A, B):
@@ -440,7 +439,8 @@ def test_tasklets_multioutput():
             c >> C[0]
             c = a * b * d
 
-    sdfg = dace_func.to_sdfg()
+    sdfg = dace_func.to_sdfg(strict=False)
+    sdfg.apply_strict_transformations()
 
     return (
         SDFGBackwardRunner(sdfg, "C"),
@@ -452,7 +452,6 @@ def test_tasklets_multioutput():
     )
 
 
-@pytest.mark.skip(reason="broken due to scalar promotion")
 @run_correctness
 def test_tasklets_only():
     def torch_func(*, A, B):
@@ -487,7 +486,8 @@ def test_tasklets_only():
             c >> C[0]
             c = a * b
 
-    sdfg = dace_func.to_sdfg()
+    sdfg = dace_func.to_sdfg(strict=False)
+    sdfg.apply_strict_transformations()
 
     return (
         SDFGBackwardRunner(sdfg, "C"),
