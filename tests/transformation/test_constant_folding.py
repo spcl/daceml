@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import onnx
 
@@ -8,9 +10,11 @@ import daceml.onnx as donnx
 from daceml.transformation import ConstantFolding
 
 
+data_directory = os.path.join(os.path.dirname(__file__), "..", "onnx_files")
+
 def test_bert_subgraph():
 
-    model = onnx.load("tests/onnx_files/reshape.onnx")
+    model = onnx.load(os.path.join(data_directory, "reshape.onnx"))
     dace_model = donnx.ONNXModel("reshape", model)
 
     out_before = dace_model()

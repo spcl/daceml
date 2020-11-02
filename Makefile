@@ -40,6 +40,9 @@ doctest:
 test: 
 	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests
 
+test-parallel: 
+	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests -n auto --dist loadfile
+
 test-gpu: 
 	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests --gpu
 
