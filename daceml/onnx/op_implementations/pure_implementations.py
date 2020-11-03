@@ -10,7 +10,7 @@ from dace.sdfg.nodes import Node
 from dace.symbolic import symstr
 
 from daceml.onnx.nodes.onnx_op import ONNXOp
-import daceml.onnx.converters as converters
+from daceml.onnx import converters
 from daceml.onnx.implementation_abc import ONNXForward
 import numpy as np
 
