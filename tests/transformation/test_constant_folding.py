@@ -9,8 +9,8 @@ from dace.transformation.dataflow import RedundantSecondArray
 import daceml.onnx as donnx
 from daceml.transformation import ConstantFolding
 
-
 data_directory = os.path.join(os.path.dirname(__file__), "..", "onnx_files")
+
 
 def test_bert_subgraph():
 

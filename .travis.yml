@@ -2,7 +2,7 @@ language: python
 python:
   - "3.7"
 env:
-  - ORT_RELEASE=${TRAVIS_BUILD_DIR}/onnxruntime_dist_cpu VENV_PATH='' PYTEST_ARGS="--cov=daceml --cov-report=term --cov-report xml --cov-config=.coveragerc"
+  - ORT_RELEASE=${TRAVIS_BUILD_DIR}/onnxruntime_dist_cpu VENV_PATH='' PYTEST_ARGS="--cov=daceml --cov-report=term --cov-report xml --cov-config=.coveragerc -m 'not slow'"
 install:
   - wget https://github.com/orausch/onnxruntime/releases/download/build1/onnxruntime_dist_cpu.tar.gz
   - tar -xzf onnxruntime_dist_cpu.tar.gz

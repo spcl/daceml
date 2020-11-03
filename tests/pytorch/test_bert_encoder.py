@@ -8,6 +8,7 @@ from daceml.pytorch import DaceModule
 from daceml.transformation import ConstantFolding
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("apply_strict", [True, False])
 def test_bert_encoder(gpu, apply_strict):
     batch_size = 8

@@ -15,8 +15,7 @@ Makefile Targets
 The CI runs several tests using the ``Makefile``:
 
 ``make test``, ``make test-parallel`` & ``make test-gpu``
-    Run pytest on the ``tests/`` directory. The pytest runner takes a custom argument ``--gpu`` to run GPU tests.
-    CPU tests can be run in parallel using the ``test-parallel`` target.
+    Run pytest on the ``tests/`` directory. CPU tests can be run in parallel using the ``test-parallel`` target.
 
 ``make doctest``
     Run doctests; this executes the code samples in the documentation and docstrings.
@@ -26,3 +25,10 @@ The CI runs several tests using the ``Makefile``:
 
 ``make check-formatting``
     This runs the formatting checks. The DaceML codebase is formatted using ``yapf``.
+
+Testing
+-------
+DaceML uses ``pytest`` to run tests. The pytest runner takes a custom argument ``--gpu`` to run GPU tests.
+Tests can be parallelized using ``xdist`` by passing the arguments ``-n auto --dist loadfile``.
+
+Some tests are marked with ``pytest.mark.slow``. Slow tests are skipped on Travis CI (see ``.travis.yml``).
