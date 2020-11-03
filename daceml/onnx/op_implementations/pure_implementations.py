@@ -202,10 +202,21 @@ class PureReshape(ONNXForward):
             raise ValueError(
                 "Expected input and output to have the same dtype.")
 
-        def prog(data, reshaped, shape):
-            reshaped[:] = data
+        expansion = dace.SDFG("_reshape_expansion_")
+        expansion.add_datadesc("shape", copy.deepcopy(in_desc_with_name(node, state, sdfg, "shape")))
+        expansion.add_datadesc("data", copy.deepcopy(in_desc_with_name(node, state, sdfg, "data")))
+        expansion.add_datadesc("reshaped", copy.deepcopy(out_desc_with_name(node, state, sdfg, "reshaped")))
+        expansion.arrays["shape"].transient = False
+        expansion.arrays["data"].transient = False
+        expansion.arrays["reshaped"].transient = False
 
-        return program_for_node(prog, sdfg, state, node).to_sdfg()
+        state = expansion.add_state()
+        data = state.add_read("data")
+        reshaped = state.add_read("reshaped")
+        memlet = expansion.make_array_memlet("data")
+        memlet.allow_oob = True
+        state.add_edge(data, None, reshaped, None, memlet)
+        return expansion
 
 
 @autoregister_params(op="MatMul")
