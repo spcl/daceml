@@ -30,5 +30,6 @@ def test_attn(gpu):
                        atol=1e-06)
     print("testing passed")
 
+
 if __name__ == "__main__":
     test_attn(False)

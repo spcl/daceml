@@ -203,9 +203,15 @@ class PureReshape(ONNXForward):
                 "Expected input and output to have the same dtype.")
 
         expansion = dace.SDFG("_reshape_expansion_")
-        expansion.add_datadesc("shape", copy.deepcopy(in_desc_with_name(node, state, sdfg, "shape")))
-        expansion.add_datadesc("data", copy.deepcopy(in_desc_with_name(node, state, sdfg, "data")))
-        expansion.add_datadesc("reshaped", copy.deepcopy(out_desc_with_name(node, state, sdfg, "reshaped")))
+        expansion.add_datadesc(
+            "shape",
+            copy.deepcopy(in_desc_with_name(node, state, sdfg, "shape")))
+        expansion.add_datadesc(
+            "data", copy.deepcopy(in_desc_with_name(node, state, sdfg,
+                                                    "data")))
+        expansion.add_datadesc(
+            "reshaped",
+            copy.deepcopy(out_desc_with_name(node, state, sdfg, "reshaped")))
         expansion.arrays["shape"].transient = False
         expansion.arrays["data"].transient = False
         expansion.arrays["reshaped"].transient = False
