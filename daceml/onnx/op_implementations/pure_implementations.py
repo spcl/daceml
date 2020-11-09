@@ -53,7 +53,7 @@ def program_for_node(program, sdfg: SDFG, state: SDFGState,
     return result
 
 
-@autoregister_params(op="Sqrt")
+@autoregister_params(op="Sqrt", name="pure")
 class PureSqrt(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
@@ -74,7 +74,7 @@ class PureSqrt(ONNXForward):
         return program_for_node(prog, sdfg, state, node).to_sdfg()
 
 
-@autoregister_params(op="Pow")
+@autoregister_params(op="Pow", name="pure")
 class PurePow(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
@@ -95,7 +95,7 @@ class PurePow(ONNXForward):
         return program_for_node(prog, sdfg, state, node).to_sdfg()
 
 
-@autoregister_params(op="Add")
+@autoregister_params(op="Add", name="pure")
 class PureAdd(ONNXForward):
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
@@ -109,7 +109,7 @@ class PureAdd(ONNXForward):
         return program_for_node(prog, sdfg, state, node).to_sdfg()
 
 
-@autoregister_params(op="Sub")
+@autoregister_params(op="Sub", name="pure")
 class PureSub(ONNXForward):
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
@@ -123,7 +123,7 @@ class PureSub(ONNXForward):
         return program_for_node(prog, sdfg, state, node).to_sdfg()
 
 
-@autoregister_params(op="Mul")
+@autoregister_params(op="Mul", name="pure")
 class PureMul(ONNXForward):
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
@@ -137,7 +137,7 @@ class PureMul(ONNXForward):
         return program_for_node(prog, sdfg, state, node).to_sdfg()
 
 
-@autoregister_params(op="Div")
+@autoregister_params(op="Div", name="pure")
 class PureDiv(ONNXForward):
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
@@ -151,7 +151,7 @@ class PureDiv(ONNXForward):
         return program_for_node(prog, sdfg, state, node).to_sdfg()
 
 
-@autoregister_params(op="ReduceMean")
+@autoregister_params(op="ReduceMean", name="pure")
 class PureReduceMean(ONNXForward):
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
@@ -169,7 +169,7 @@ class PureReduceMean(ONNXForward):
         return program_for_node(prog, sdfg, state, node).to_sdfg()
 
 
-@autoregister_params(op="Erf")
+@autoregister_params(op="Erf", name="pure")
 class PureErf(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
@@ -190,7 +190,7 @@ class PureErf(ONNXForward):
         return program_for_node(prog, sdfg, state, node).to_sdfg()
 
 
-@autoregister_params(op="Reshape")
+@autoregister_params(op="Reshape", name="pure")
 class PureReshape(ONNXForward):
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
@@ -225,14 +225,14 @@ class PureReshape(ONNXForward):
         return expansion
 
 
-@autoregister_params(op="MatMul")
+@autoregister_params(op="MatMul", name="pure")
 class PureMatMul(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
         in_edges = state.in_edges(node)
-        input0_dim = len(in_edges[0].data.subset.size())
-        input1_dim = len(in_edges[1].data.subset.size())
+        input0_dim = len(in_desc_with_name(node, state, sdfg, "A").shape)
+        input1_dim = len(in_desc_with_name(node, state, sdfg, "B").shape)
 
         if input0_dim == 4 and input1_dim == 4:
             return True
@@ -264,8 +264,9 @@ class PureMatMul(ONNXForward):
 
         ctype = copy.deepcopy(sdfg.arrays[out_edges[0].data.data])
 
-        input0_dim = len(in_edges[0].data.subset.size())
-        input1_dim = len(in_edges[1].data.subset.size())
+        input0_dim = len(in_desc_with_name(node, state, sdfg, "A").shape)
+        input1_dim = len(in_desc_with_name(node, state, sdfg, "B").shape)
+
         if input0_dim == 4 and input1_dim == 4:
 
             @dace.program
@@ -330,7 +331,7 @@ class PureMatMul(ONNXForward):
             return sdfg_exp
 
 
-@autoregister_params(op="Identity")
+@autoregister_params(op="Identity", name="pure")
 class PureIdentity(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
@@ -349,7 +350,7 @@ class PureIdentity(ONNXForward):
         return program_for_node(prog, sdfg, state, node).to_sdfg()
 
 
-@autoregister_params(op="Reciprocal")
+@autoregister_params(op="Reciprocal", name="pure")
 class PureReciprocal(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
@@ -370,7 +371,7 @@ class PureReciprocal(ONNXForward):
         return program_for_node(prog, sdfg, state, node).to_sdfg()
 
 
-@autoregister_params(op="Tanh")
+@autoregister_params(op="Tanh", name="pure")
 class PureTanh(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
@@ -440,7 +441,7 @@ class PureTanh(ONNXForward):
         return sdfg_exp
 
 
-@autoregister_params(op="ReduceSum")
+@autoregister_params(op="ReduceSum", name="pure")
 class PureReduceSum(ONNXForward):
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
@@ -457,7 +458,7 @@ class PureReduceSum(ONNXForward):
         return program_for_node(prog, sdfg, state, node).to_sdfg()
 
 
-@autoregister_params(op="ReduceMax")
+@autoregister_params(op="ReduceMax", name="pure")
 class PureReduceMax(ONNXForward):
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
@@ -474,7 +475,7 @@ class PureReduceMax(ONNXForward):
         return program_for_node(prog, sdfg, state, node).to_sdfg()
 
 
-@autoregister_params(op="ReduceMin")
+@autoregister_params(op="ReduceMin", name="pure")
 class PureReduceMin(ONNXForward):
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
@@ -491,7 +492,7 @@ class PureReduceMin(ONNXForward):
         return program_for_node(prog, sdfg, state, node).to_sdfg()
 
 
-@autoregister_params(op="Softmax")
+@autoregister_params(op="Softmax", name="pure")
 class PureSoftmax(ONNXForward):
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
@@ -606,7 +607,7 @@ class PureSoftmax(ONNXForward):
         return program_for_node(prog, sdfg, state, node).to_sdfg()
 
 
-@autoregister_params(op="Transpose")
+@autoregister_params(op="Transpose", name="pure")
 class PureTranspose(ONNXForward):
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
@@ -621,7 +622,7 @@ class PureTranspose(ONNXForward):
         return program_for_node(prog, sdfg, state, node).to_sdfg()
 
 
-@autoregister_params(op="Cast")
+@autoregister_params(op="Cast", name="pure")
 class PureCast(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,

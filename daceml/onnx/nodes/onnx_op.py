@@ -566,7 +566,6 @@ for schema in onnx.defs.get_all_schemas():
             return node.expansion(node, state, sdfg)
 
     cls.register_implementation('onnxruntime', Expansion)
-    cls.default_implementation = 'onnxruntime'
 
     # Register pure implementations
     ##########################################
@@ -574,10 +573,9 @@ for schema in onnx.defs.get_all_schemas():
     # avoid import loop
     from daceml.onnx.implementation_abc import ONNXForward
 
+    registered = False
     for impl, args in ONNXForward.extensions().items():
-
         if "op" in args and args["op"] == schema.name:
-
             class Expansion(ExpandTransformation):
                 environments = [ONNXRuntime]
                 forward_impl: ONNXForward = impl
@@ -591,9 +589,13 @@ for schema in onnx.defs.get_all_schemas():
                         # fall back to ORT
                         return node.expansion(node, state, sdfg)
 
-            implementation_name = impl.__name__
+            implementation_name = args["name"]
             cls.register_implementation(implementation_name, Expansion)
-            cls.default_implementation = implementation_name
+            registered = True
+
+    if not registered:
+        cls.default_implementation = "onnxruntime"
+
 
     # register python frontend replacement
     #######################################
