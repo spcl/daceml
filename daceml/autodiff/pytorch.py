@@ -76,7 +76,7 @@ def make_backward_function(model: ONNXModel) -> Type[torch.autograd.Function]:
             filtered_backward_input_arrays = {
                 inp: val
                 for inp, val in backward_input_arrays.items()
-                if inp not in inputs
+                if inp not in inputs and inp not in outputs
             }
             inputs.update({
                 name: create_output_array(symbols, desc, use_torch=True)
@@ -88,7 +88,7 @@ def make_backward_function(model: ONNXModel) -> Type[torch.autograd.Function]:
 
             # save the arrays we need for the backward pass
             backward_inputs = {
-                name: inputs[name]
+                name: inputs[name] if name in inputs else outputs[name]
                 for name in backward_input_arrays
             }
             ctx.dace_backward_inputs = backward_inputs

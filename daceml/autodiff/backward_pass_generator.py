@@ -200,7 +200,7 @@ def _get_matching_entry(state: SDFGState, map_exit: nd.MapExit) -> nd.MapEntry:
     return cands[0]
 
 
-class BackwardPassGenerator(object):
+class BackwardPassGenerator:
     """ Class that holds the state for one backward pass creation.
 
         See autodiff.py, _reverse_NestedSDFG and pytorch.py for examples of usage.
@@ -403,7 +403,6 @@ class BackwardPassGenerator(object):
         while self._expand_nodes(forward_subgraph):
             # Nodes have been expanded again on the expanded graph; recalculate the forward graph
             forward_subgraph = self._find_subgraph_to_differentiate()
-        self.sdfg.view()
 
         # recursively reverse the subgraph
         self._reverse_subgraph(forward_subgraph)
@@ -512,7 +511,7 @@ class BackwardPassGenerator(object):
                 # connect the required inputs of the reverse node:
                 # the gradients ...
                 self._connect_given_gradients(subgraph, node)
-                # ... and any required output values from the forward pass
+                # ... and any required input values from the forward pass
                 self._connect_forward_inputs(subgraph, node)
 
                 if isinstance(node, nd.AccessNode):
@@ -776,7 +775,9 @@ class BackwardPassGenerator(object):
                             forward_state=self.forward_state,
                             forward_sdfg=self.sdfg,
                             backward_state=self.backward_state,
-                            backward_sdfg=self.backward_sdfg),
+                            backward_sdfg=self.backward_sdfg,
+                            backward_generator=self,
+                        ),
                         given_gradients=given_gradients,
                         required_gradients=required_gradients)
 

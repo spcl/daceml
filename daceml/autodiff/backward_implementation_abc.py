@@ -2,6 +2,7 @@ import abc
 from collections import namedtuple
 import typing
 
+import dace
 from dace import SDFG, SDFGState
 
 from dace.registry import make_registry
@@ -16,13 +17,15 @@ class BackwardContext(typing.NamedTuple):
     forward_state: SDFGState  #: the forward SDFG state
     backward_sdfg: SDFG  #: the backward SDFG
     backward_state: SDFGState  #: the backward SDFG state
+    backward_generator: 'daceml.autodiff.BackwardPassGenerator'  #: the backward pass generator
 
 
 class BackwardResult(typing.NamedTuple):
     """ The return type of reversing a node. It the names of the gradients the node calculates and requires. """
 
     #: mapping from names of output connectors to the connector name of the gradient for that connector.
-    required_grad_names: typing.Dict[typing.Optional[str], typing.Optional[str]]
+    required_grad_names: typing.Dict[typing.Optional[str],
+                                     typing.Optional[str]]
 
     #: mapping from names of input connectors to the connector name of the gradient for that connector.
     given_grad_names: typing.Dict[typing.Optional[str], typing.Optional[str]]
@@ -40,9 +43,7 @@ class BackwardImplementation(abc.ABC):
         The register function expects an argument `node_type=TYPE` where `TYPE` is the type of node that this backward
         implementation supports.
     """
-
     @staticmethod
-    @abc.abstractmethod
     def backward_can_be_applied(node: Node, state: SDFGState,
                                 sdfg: SDFG) -> bool:
         """ Return whether this expansion can be applied.
@@ -51,13 +52,12 @@ class BackwardImplementation(abc.ABC):
             :param state: the candidate state.
             :param sdfg: the candidate sdfg.
         """
-        ...
+        return True
 
     @staticmethod
     @abc.abstractmethod
     def backward(
-        forward_node: Node,
-        context: BackwardContext,
+        forward_node: Node, context: BackwardContext,
         given_gradients: typing.List[typing.Optional[str]],
         required_gradients: typing.List[typing.Optional[str]]
     ) -> typing.Tuple[Node, BackwardResult]:
@@ -82,6 +82,3 @@ class BackwardImplementation(abc.ABC):
 
 # register the implementations
 import daceml.autodiff.implementations
-
-# this file contains forward and backward implementations for ONNX op nodes.
-import daceml.onnx.op_implementations.pure_implementations

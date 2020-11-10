@@ -7,42 +7,41 @@ import torch.nn.functional as F
 from daceml.pytorch import DaceModule
 
 
-def run_pytorch_module(module, shape=None):
+def run_pytorch_module(module, shape=None, use_max=False):
     shape = shape or (3, 5)
 
-    input_values = [torch.rand(*shape, dtype=torch.float32) for _ in range(5)]
-    pytorch_inputs = [
-        torch.empty(*shape, dtype=torch.float32, requires_grad=False)
-        for _ in range(5)
-    ]
-    dace_inputs = [
-        torch.empty(*shape, dtype=torch.float32, requires_grad=False)
-        for _ in range(5)
-    ]
+    input_value = torch.rand(*shape, dtype=torch.float32)
 
-    pytorch_outputs = []
-    for inp, inp_src in zip(pytorch_inputs, input_values):
-        inp.copy_(inp_src)
-        inp.requires_grad = True
-        s = module(inp).sum()
-        s.backward()
-        pytorch_outputs.append(inp.grad)
-        print(pytorch_outputs[-1])
+    pytorch_input = torch.empty(*shape,
+                                dtype=torch.float32,
+                                requires_grad=False)
+    pytorch_input.copy_(input_value)
+    pytorch_input.requires_grad = True
+
+    dace_input = torch.empty(*shape, dtype=torch.float32, requires_grad=False)
+    dace_input.copy_(input_value)
+    dace_input.requires_grad = True
+
+    if use_max:
+        s = module(pytorch_input).max()
+    else:
+        s = module(pytorch_input).sum()
+    s.backward()
+
+    print("Pytorch output:")
+    print(pytorch_input.grad)
 
     dace_module = DaceModule(module, backward=True)
 
-    dace_outputs = []
-    for inp, inp_src in zip(dace_inputs, input_values):
-        inp.copy_(inp_src)
-        inp.requires_grad = True
-        s = dace_module(inp).sum()
-        s.backward()
-        dace_outputs.append(inp.grad.clone().detach())
-        print(dace_outputs[-1])
+    if use_max:
+        s = dace_module(dace_input).max()
+    else:
+        s = dace_module(dace_input).sum()
+    s.backward()
+    print("Dace output:")
+    print(dace_input.grad)
 
-    assert len(pytorch_outputs) == len(dace_outputs) == len(input_values)
-    assert all(
-        np.allclose(a, b) for a, b in zip(pytorch_outputs, dace_outputs))
+    assert np.allclose(pytorch_input.grad, dace_input.grad)
 
 
 def test_simple():
@@ -71,7 +70,7 @@ def test_softmax():
             x = F.softmax(x, dim=1)
             return x
 
-    run_pytorch_module(Module())
+    run_pytorch_module(Module(), use_max=True)
 
 
 @pytest.mark.skip(reason="check later")
