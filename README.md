@@ -21,6 +21,25 @@ DaceML extends the DaCe IR with machine learning operators. The added nodes perf
 ONNX specification. DaceML leverages high performance kernels from ONNXRuntime, as well as pure SDFG implementations
 that are introspectable and transformable with data centric transformations.
 
+The nodes can be used from the DaCe python frontend.
+```python
+import dace
+import daceml.onnx as donnx
+import numpy as np
+
+@dace.program
+def conv_program(X_arr: dace.float32[5, 3, 10, 10],
+                 W_arr: dace.float32[16, 3, 3, 3]):
+    output = dace.define_local([5, 16, 8, 8], dace.float32)
+    donnx.ONNXConv(X=X_arr, W=W_arr, Y=output)
+    return output
+
+X = np.random.rand(5, 3, 10, 10).astype(np.float32)
+W = np.random.rand(16, 3, 3, 3).astype(np.float32)
+
+result = conv_program(X_arr=X, W_arr=W)
+```
+
 *Read more: [Library Nodes](https://daceml.readthedocs.io/en/latest/overviews/onnx.html#library-nodes)*
 ## Integration
 Converting PyTorch modules is as easy as adding a decorator...

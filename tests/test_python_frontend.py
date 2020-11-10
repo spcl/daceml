@@ -8,6 +8,7 @@ import numpy as np
 import dace
 import daceml.onnx as donnx
 
+
 def test_matmul():
     @dace
     def matmul(inp1: dace.float32[5, 5], inp2: dace.float32[5, 3]):
@@ -19,4 +20,3 @@ def test_matmul():
     B = np.random.normal(size=(5, 3)).astype(np.float32)
     result = matmul(inp1=A.copy(), inp2=B.copy())
     assert np.allclose(A @ B, result)
-

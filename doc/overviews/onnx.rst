@@ -40,7 +40,33 @@ The following attribute types are supported:
 Example
 ~~~~~~~
 
-The following example sets up and runs an SDFG containing an ONNX Conv operator using :class:`~daceml.onnx.nodes.onnx_op.ONNXConv`.
+The following examples setup and run an SDFG containing an ONNX Conv operator using :class:`~daceml.onnx.nodes.onnx_op.ONNXConv`.
+
+This can be done using the python frontend:
+
+.. testcode::
+
+    import dace
+    import daceml.onnx as donnx
+    import numpy as np
+
+    @dace.program
+    def conv_program(X_arr: dace.float32[5, 3, 10, 10],
+                     W_arr: dace.float32[16, 3, 3, 3]):
+        output = dace.define_local([5, 16, 8, 8], dace.float32)
+        donnx.ONNXConv(X=X_arr, W=W_arr, Y=output)
+        return output
+
+    X = np.random.rand(5, 3, 10, 10).astype(np.float32)
+    W = np.random.rand(16, 3, 3, 3).astype(np.float32)
+
+    result = conv_program(X_arr=X, W_arr=W)
+
+.. testoutput::
+
+    Automatically expanded library node "ONNXConv" with implementation "onnxruntime".
+
+or the SDFG API:
 
 .. testcode::
 
@@ -73,7 +99,7 @@ The following example sets up and runs an SDFG containing an ONNX Conv operator 
 
 .. testoutput::
 
-    Automatically expanded library node "MyConvNode".
+    Automatically expanded library node "MyConvNode" with implementation "onnxruntime".
 
 Importing ONNX models
 ---------------------

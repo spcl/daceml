@@ -36,8 +36,8 @@ class DaceModule(nn.Module):
             tensor([0., 0.])
             >>> dace_module = DaceModule(module)
             >>> dace_module(torch.ones(2))
-            Automatically expanded library node "ONNX_Log_0".
-            Automatically expanded library node "ONNX_Sqrt_1".
+            Automatically expanded library node "ONNX_Log_0" with implementation "onnxruntime".
+            Automatically expanded library node "ONNX_Sqrt_1" with implementation "onnxruntime".
             array([0., 0.], dtype=float32)
     """
     def __init__(
@@ -105,8 +105,8 @@ def dace_module(moduleclass):
             ...        return x
             >>> module = MyModule()
             >>> module(torch.ones(2))
-            Automatically expanded library node "ONNX_Log_0".
-            Automatically expanded library node "ONNX_Sqrt_1".
+            Automatically expanded library node "ONNX_Log_0" with implementation "onnxruntime".
+            Automatically expanded library node "ONNX_Sqrt_1" with implementation "onnxruntime".
             array([0., 0.], dtype=float32)
     """
     @wraps(moduleclass)
