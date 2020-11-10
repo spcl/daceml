@@ -576,6 +576,7 @@ for schema in onnx.defs.get_all_schemas():
     registered = False
     for impl, args in ONNXForward.extensions().items():
         if "op" in args and args["op"] == schema.name:
+
             class Expansion(ExpandTransformation):
                 environments = [ONNXRuntime]
                 forward_impl: ONNXForward = impl
@@ -595,7 +596,6 @@ for schema in onnx.defs.get_all_schemas():
 
     if not registered:
         cls.default_implementation = "onnxruntime"
-
 
     # register python frontend replacement
     #######################################

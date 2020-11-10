@@ -7,7 +7,7 @@ import onnx
 from daceml.onnx import ONNXModel
 
 
-def test_bert_full(gpu):
+def test_bert_full(gpu, default_implementation):
     data_directory = os.path.join(os.path.dirname(__file__), "data")
 
     bert_path = os.path.join(data_directory, "bert_infer.onnx")

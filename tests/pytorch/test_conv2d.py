@@ -4,10 +4,11 @@ import torch.nn.functional as F
 
 import numpy as np
 
+import daceml.onnx as donnx
 from daceml.pytorch import DaceModule, dace_module
 
 
-def test_conv2d():
+def test_conv2d(default_implementation):
     class Model(nn.Module):
         def __init__(self):
             super(Model, self).__init__()

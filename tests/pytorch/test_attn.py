@@ -1,11 +1,14 @@
 import torch
 import numpy as np
+import pytest
 
 from daceml.pytorch import DaceModule
 
 from dace.transformation.dataflow import RedundantSecondArray
 from daceml.transformation import ConstantFolding
 
+
+@pytest.mark.ort
 def test_attn(gpu):
     B = 2
     H = 16

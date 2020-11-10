@@ -39,6 +39,7 @@ class BreakOpChecker:
 
 @pytest.mark.parametrize("break_opchecker", [True, False])
 @pytest.mark.parametrize("apply_strict", [True, False])
+@pytest.mark.ort
 def test_squeeze(gpu, apply_strict, break_opchecker):
 
     with BreakOpChecker() if break_opchecker else suppress():
@@ -88,6 +89,7 @@ def test_squeeze(gpu, apply_strict, break_opchecker):
 
 @pytest.mark.parametrize("apply_strict", [True, False])
 @pytest.mark.parametrize("break_opchecker", [True, False])
+@pytest.mark.ort
 def test_shape(gpu, apply_strict, break_opchecker):
     with BreakOpChecker() if break_opchecker else suppress():
         sdfg = dace.SDFG("test_expansion")
@@ -125,6 +127,7 @@ def test_shape(gpu, apply_strict, break_opchecker):
 
 @pytest.mark.parametrize("apply_strict", [True, False])
 @pytest.mark.parametrize("break_opchecker", [True, False])
+@pytest.mark.ort
 def test_unsqueeze(gpu, apply_strict, break_opchecker):
     with BreakOpChecker() if break_opchecker else suppress():
         sdfg = dace.SDFG("test_expansion")
@@ -164,6 +167,7 @@ def test_unsqueeze(gpu, apply_strict, break_opchecker):
 @pytest.mark.parametrize("scalars", [True, False])
 @pytest.mark.parametrize("apply_strict", [True, False])
 @pytest.mark.parametrize("break_opchecker", [True, False])
+@pytest.mark.ort
 def test_add(gpu, scalars, apply_strict, break_opchecker):
     with BreakOpChecker() if break_opchecker else suppress():
         sdfg = dace.SDFG("test_expansion")

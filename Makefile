@@ -56,3 +56,11 @@ check-formatting:
 		--recursive \
 		daceml tests setup.py \
 		--exclude daceml/onnx/shape_inference/symbolic_shape_infer.py
+
+check-formatting-names:
+	$(ACTIVATE) $(YAPF) \
+		--parallel \
+		--diff \
+		--recursive \
+		daceml tests setup.py \
+		--exclude daceml/onnx/shape_inference/symbolic_shape_infer.py |  grep "+++" || echo "All good!"

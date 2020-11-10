@@ -1,5 +1,6 @@
 import os
 
+import pytest
 import numpy as np
 import onnx
 
@@ -12,6 +13,7 @@ from daceml.transformation import ConstantFolding
 data_directory = os.path.join(os.path.dirname(__file__), "..", "onnx_files")
 
 
+@pytest.mark.ort
 def test_bert_subgraph():
 
     model = onnx.load(os.path.join(data_directory, "reshape.onnx"))

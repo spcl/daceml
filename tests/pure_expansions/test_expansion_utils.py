@@ -1,9 +1,11 @@
 import numpy as np
+import pytest
 
 import dace
 import daceml.onnx as donnx
 
 
+@pytest.mark.pure
 def test_sqrt_expansion():
     # sqrt expansion makes use of the program_for_node function
     sdfg = dace.SDFG("test_sqrt_expansion")

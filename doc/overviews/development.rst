@@ -24,7 +24,8 @@ The CI runs several tests using the ``Makefile``:
     Build the documentation.
 
 ``make check-formatting``
-    This runs the formatting checks. The DaceML codebase is formatted using ``yapf``.
+    This runs the formatting checks. The DaceML codebase is formatted using ``yapf``. Use ``check-formatting-names`` to
+    only print the names of the misformatted files.
 
 Testing
 -------
@@ -32,3 +33,20 @@ DaceML uses ``pytest`` to run tests. The pytest runner takes a custom argument `
 Tests can be parallelized using ``xdist`` by passing the arguments ``-n auto --dist loadfile``.
 
 Some tests are marked with ``pytest.mark.slow``. Slow tests are skipped on Travis CI (see ``.travis.yml``).
+
+If you provide the fixture (i.e. an argument to the test) with name ``gpu``, then the test will be parameterized to pass
+both ``True`` and ``False`` to that argument.
+
+Setting the default implementation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Nodes can be expanded to different implementations. To control the default implementation that is used, tests can be
+decorated with the following two markers.
+
+``pytest.mark.ort``
+    Use the ONNXRuntime expansion as default
+
+``pytest.mark.pure``
+    Use the pure expansion as default when possible (fallback is always ORT)
+
+If you provide the fixture (i.e. an argument to the test) with name ``default_implementation``, then the test will be
+parameterized to test both implementations.

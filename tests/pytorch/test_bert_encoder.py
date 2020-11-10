@@ -4,13 +4,13 @@ import torch
 from dace.transformation.dataflow import RedundantSecondArray
 from transformers import BertConfig, BertLayer
 
+import daceml.onnx as donnx
 from daceml.pytorch import DaceModule
 from daceml.transformation import ConstantFolding
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("apply_strict", [True, False])
-def test_bert_encoder(gpu, apply_strict):
+def test_bert_encoder(gpu, default_implementation):
     batch_size = 8
     seq_len = 512
     hidden_size = 768
@@ -22,11 +22,30 @@ def test_bert_encoder(gpu, apply_strict):
 
     dace_model = DaceModule(ptmodel, cuda=gpu, train=False)
     dace_outputs0 = dace_model(input.clone())
-    dace_model.dace_model.sdfg.save("before_cf.sdfg")
+
+    diff = np.abs(dace_outputs0 - pt_outputs[0].detach().numpy())
+
+    assert np.max(diff) < 1e-5
+    print("testing passed")
+
+
+@pytest.mark.parametrize("apply_strict", [True, False])
+@pytest.mark.ort
+def test_bert_cf(apply_strict):
+    batch_size = 8
+    seq_len = 512
+    hidden_size = 768
+
+    input = torch.randn([batch_size, seq_len, hidden_size])
+
+    ptmodel = BertLayer(BertConfig()).eval()
+    pt_outputs = ptmodel(input.clone())
+
+    dace_model = DaceModule(ptmodel, train=False)
+    dace_outputs0 = dace_model(input.clone())
 
     dace_model.dace_model.sdfg.apply_transformations_repeated(
         [ConstantFolding, RedundantSecondArray], validate_all=True)
-    dace_model.dace_model.sdfg.save("after_cf.sdfg")
 
     dace_outputs1 = dace_model(input.clone())
 

@@ -1,9 +1,11 @@
 import numpy as np
+import pytest
 
 import dace
 import daceml.onnx as donnx
 
 
+@pytest.mark.ort
 def test_sum(gpu):
     sdfg = dace.SDFG("test_variadic")
 

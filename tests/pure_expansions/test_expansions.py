@@ -7,6 +7,7 @@ import daceml.onnx as donnx
 import daceml.onnx.converters as converters
 
 
+@pytest.mark.pure
 def test_matmul_expansion():
     sdfg = dace.SDFG("test_matmul_expansion")
 
@@ -42,6 +43,7 @@ def test_matmul_expansion():
     assert np.allclose(X @ Z, result)
 
 
+@pytest.mark.pure
 def test_cast_int_to_float():
     sdfg = dace.SDFG("test_cast")
 
@@ -75,6 +77,7 @@ def test_cast_int_to_float():
     assert np.allclose(X.astype(np.float32), result)
 
 
+@pytest.mark.pure
 def test_cast_float_to_int():
     sdfg = dace.SDFG("test_cast")
 
@@ -108,6 +111,7 @@ def test_cast_float_to_int():
     assert np.allclose(X.astype(np.int32), result)
 
 
+@pytest.mark.pure
 def test_cast_float_to_long():
     sdfg = dace.SDFG("test_cast")
 
@@ -153,6 +157,7 @@ def test_cast_float_to_long():
                           ('Mean', True,  [0, -1]),
                           ('Mean', False, [0])])
 #+yapf: enable
+@pytest.mark.pure
 def test_reduce_nokeepdims(keepdims, reduce_type, axes):
 
     X = np.random.normal(scale=10, size=(2, 4, 10)).astype(np.float32)
@@ -194,6 +199,7 @@ def test_reduce_nokeepdims(keepdims, reduce_type, axes):
     assert np.allclose(numpy_result, result)
 
 
+@pytest.mark.pure
 def test_reduce_scalar():
     X = np.random.normal(scale=10, size=(2, 4, 10)).astype(np.float32)
 
@@ -234,6 +240,7 @@ def test_reduce_scalar():
     assert np.allclose(numpy_result, result)
 
 
+@pytest.mark.pure
 @pytest.mark.parametrize("new_shape", [[8, 10], [80], [2, 40]])
 def test_reshape(new_shape):
     X = np.random.normal(scale=10, size=(2, 4, 10)).astype(np.float32)
@@ -269,6 +276,7 @@ def test_reshape(new_shape):
     assert np.allclose(numpy_result, result)
 
 
+@pytest.mark.pure
 @pytest.mark.parametrize("axis", [0, -1])
 def test_softmax(axis):
 
