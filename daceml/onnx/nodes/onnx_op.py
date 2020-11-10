@@ -1,8 +1,9 @@
 import itertools
 import logging
-from typing import Iterator, Tuple, List
+from typing import Iterator, Tuple, List, Type
 
 import dace
+import dace.frontend.common.op_repository as dace_op_repo
 import dace.sdfg.nodes as nd
 import onnx
 from dace import SDFG, SDFGState
@@ -403,6 +404,40 @@ class ONNXOp(nd.LibraryNode):
         return expand_node(node, state, sdfg)
 
 
+def register_op_repo_replacement(cls: Type[ONNXOp], cls_name: str,
+                                 dace_schema: ONNXSchema):
+
+    @dace_op_repo.replaces("daceml.onnx.{}".format(cls_name))
+    def op_repo_replacement(sdfg: SDFG, state: SDFGState, **kwargs):
+        attrs = {
+            name: value
+            for name, value in kwargs.items() if name in dace_schema.attributes
+        }
+        onnx_node = cls(name=cls_name, **attrs)
+        state.add_node(onnx_node)
+
+        input_names = {p.name for p in dace_schema.inputs}
+        output_names = {p.name for p in dace_schema.outputs}
+        inputs = {
+            name: arr_name
+            for name, arr_name in kwargs.items() if name in input_names
+        }
+        outputs = {
+            name: arr_name
+            for name, arr_name in kwargs.items() if name in output_names
+        }
+
+        for inp, arr_name in inputs.items():
+            read = state.add_read(arr_name)
+            state.add_edge(read, None, onnx_node, inp,
+                           sdfg.make_array_memlet(arr_name))
+
+        for outp, arr_name in outputs.items():
+            write = state.add_read(arr_name)
+            state.add_edge(onnx_node, outp, write, None,
+                           sdfg.make_array_memlet(arr_name))
+        return []
+
 _ONNX_OPS_BY_NAME = {}
 # Generate all of the Op Nodes
 for schema in onnx.defs.get_all_schemas():
@@ -552,6 +587,10 @@ for schema in onnx.defs.get_all_schemas():
             implementation_name = 'pure_{}'.format(i)
             cls.register_implementation(implementation_name, Expansion)
             cls.default_implementation = implementation_name
+
+    # register python frontend replacement
+    #######################################
+    register_op_repo_replacement(cls, cls_name, dace_schema)
 
     globals()[cls_name] = cls
     _ONNX_OPS_BY_NAME[cls_name] = cls
