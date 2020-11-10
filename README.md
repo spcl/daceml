@@ -30,8 +30,8 @@ import numpy as np
 @dace.program
 def conv_program(X_arr: dace.float32[5, 3, 10, 10],
                  W_arr: dace.float32[16, 3, 3, 3]):
-    output = dace.define_local([5, 16, 8, 8], dace.float32)
-    donnx.ONNXConv(X=X_arr, W=W_arr, Y=output)
+    output = dace.define_local([5, 16, 4, 4], dace.float32)
+    donnx.ONNXConv(X=X_arr, W=W_arr, Y=output, strides=[2, 2])
     return output
 
 X = np.random.rand(5, 3, 10, 10).astype(np.float32)
