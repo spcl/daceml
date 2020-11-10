@@ -406,7 +406,6 @@ class ONNXOp(nd.LibraryNode):
 
 def register_op_repo_replacement(cls: Type[ONNXOp], cls_name: str,
                                  dace_schema: ONNXSchema):
-
     @dace_op_repo.replaces("daceml.onnx.{}".format(cls_name))
     def op_repo_replacement(sdfg: SDFG, state: SDFGState, **kwargs):
         attrs = {
@@ -437,6 +436,7 @@ def register_op_repo_replacement(cls: Type[ONNXOp], cls_name: str,
             state.add_edge(onnx_node, outp, write, None,
                            sdfg.make_array_memlet(arr_name))
         return []
+
 
 _ONNX_OPS_BY_NAME = {}
 # Generate all of the Op Nodes
