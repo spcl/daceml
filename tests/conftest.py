@@ -23,6 +23,8 @@ def pytest_generate_tests(metafunc):
 def setup_default_implementation(request):
     # this fixture is used for all tests (autouse)
 
+    old_default = donnx.default_implementation
+
     pure_marker = request.node.get_closest_marker("pure")
     ort_marker = request.node.get_closest_marker("ort")
 
@@ -37,4 +39,4 @@ def setup_default_implementation(request):
     if ort_marker is None and pure_marker is None:
         yield
 
-    donnx.default_implementation = None
+    donnx.default_implementation = old_default
