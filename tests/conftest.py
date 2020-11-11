@@ -4,12 +4,17 @@ import daceml.onnx as donnx
 
 def pytest_addoption(parser):
     parser.addoption("--gpu", action="store_true", help="Run tests using gpu")
+    parser.addoption("--gpu-only",
+                     action="store_true",
+                     help="Run tests using gpu, and skip CPU tests")
 
 
 def pytest_generate_tests(metafunc):
     if "gpu" in metafunc.fixturenames:
         if metafunc.config.getoption("--gpu"):
             metafunc.parametrize("gpu", [True, False])
+        elif metafunc.config.getoption("--gpu-only"):
+            metafunc.parametrize("gpu", [True])
         else:
             metafunc.parametrize("gpu", [False])
     if "default_implementation" in metafunc.fixturenames:
