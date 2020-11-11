@@ -1,16 +1,13 @@
 import typing
 
-from dace import SDFGState, SDFG, detect_reduction_type, Memlet
 import dace.dtypes as dtypes
-import dace.sdfg.nodes as nd
+import dace.libraries.standard.nodes
+from dace import SDFGState, SDFG, detect_reduction_type, Memlet
 from dace.registry import autoregister_params
 from dace.sdfg.nodes import Node
-import dace.libraries.standard.nodes
 
-from daceml.autodiff.backward_pass_generator import AutoDiffException
-from daceml.autodiff.backward_implementation_abc import BackwardImplementation, BackwardContext, BackwardResult
-from daceml.util.utils import in_edge_with_name, in_desc_with_name, out_desc_with_name, out_edge_with_name, \
-    find_str_not_in_set
+from daceml.autodiff.base_abc import BackwardImplementation, BackwardContext, BackwardResult, AutoDiffException
+from daceml.util.utils import in_edge_with_name, in_desc_with_name, out_desc_with_name, out_edge_with_name
 
 
 @autoregister_params(node_type=dace.libraries.standard.nodes.Reduce)

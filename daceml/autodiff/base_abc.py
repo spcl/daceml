@@ -1,14 +1,18 @@
+"""
+Abstract Base Classes for Autodiff
+"""
 import abc
-from collections import namedtuple
 import typing
 
-import dace
 from dace import SDFG, SDFGState
+import dace.registry
+import dace.sdfg.nodes as nd
 
-from dace.registry import make_registry
-from dace.sdfg.nodes import Node
 
-from daceml.onnx.nodes.onnx_op import ONNXOp
+class AutoDiffException(Exception):
+    """ Base class for all exceptions related to automatic differentiation failures. """
+    pass
+
 
 
 class BackwardContext(typing.NamedTuple):
@@ -35,7 +39,7 @@ class BackwardResult(typing.NamedTuple):
         return BackwardResult(given_grad_names={}, required_grad_names={})
 
 
-@make_registry
+@dace.registry.make_registry
 class BackwardImplementation(abc.ABC):
     """ ABC for ONNX op forward implementations.
 
@@ -44,7 +48,7 @@ class BackwardImplementation(abc.ABC):
         implementation supports.
     """
     @staticmethod
-    def backward_can_be_applied(node: Node, state: SDFGState,
+    def backward_can_be_applied(node: nd.Node, state: SDFGState,
                                 sdfg: SDFG) -> bool:
         """ Return whether this expansion can be applied.
 
@@ -57,10 +61,10 @@ class BackwardImplementation(abc.ABC):
     @staticmethod
     @abc.abstractmethod
     def backward(
-        forward_node: Node, context: BackwardContext,
+        forward_node: nd.Node, context: BackwardContext,
         given_gradients: typing.List[typing.Optional[str]],
         required_gradients: typing.List[typing.Optional[str]]
-    ) -> typing.Tuple[Node, BackwardResult]:
+    ) -> typing.Tuple[nd.Node, BackwardResult]:
         """ Add the reverse node for a node from the forward pass to the backward pass, and return it.
 
             For each input connector with name ``n`` of the forward in required_grads, the returned backward node must add

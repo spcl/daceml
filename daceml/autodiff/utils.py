@@ -6,7 +6,7 @@ import dace.sdfg.nodes as nd
 import dace.data as dt
 from dace.frontend.python.parser import DaceProgram
 
-from daceml.autodiff.backward_implementation_abc import BackwardContext, BackwardResult
+from daceml.autodiff.base_abc import BackwardContext, BackwardResult
 from daceml.util.utils import in_desc_with_name, out_desc_with_name
 
 

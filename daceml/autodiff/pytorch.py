@@ -6,7 +6,8 @@ import torch
 
 import dace
 
-from daceml.autodiff.backward_pass_generator import BackwardPassGenerator, AutoDiffException
+from daceml.autodiff.backward_pass_generator import BackwardPassGenerator
+from daceml.autodiff.base_abc import AutoDiffException
 from daceml.onnx.converters import clean_onnx_name
 from daceml.onnx.onnx_importer import create_output_array, ONNXModel
 

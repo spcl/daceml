@@ -1,7 +1,7 @@
-from typing import List, Union
+import typing
 
 from dace import SDFG, SDFGState
-from dace.sdfg.nodes import AccessNode
+import dace.sdfg.nodes as nd
 
 from daceml.autodiff.backward_pass_generator import BackwardPassGenerator
 
@@ -9,8 +9,8 @@ from daceml.autodiff.backward_pass_generator import BackwardPassGenerator
 def add_backward_pass(
     sdfg: SDFG,
     state: SDFGState,
-    outputs: List[Union[AccessNode, str]],
-    inputs: List[Union[AccessNode, str]],
+    outputs: typing.List[typing.Union[nd.AccessNode, str]],
+    inputs: typing.List[typing.Union[nd.AccessNode, str]],
 ):
     """ Experimental: Add a backward pass to `state` using reverse-mode automatic differentiation.
 
