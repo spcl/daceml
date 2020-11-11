@@ -15,10 +15,12 @@ from dace import dtypes, data as dt
 from dace.frontend.operations import detect_reduction_type
 from dace.sdfg import graph as dgraph, state as dstate, utils as dutils
 
-from daceml.autodiff.base_abc import BackwardImplementation, BackwardContext, BackwardResult, AutoDiffException
+from daceml.autodiff.base_abc import (BackwardContext,
+                                      BackwardResult, AutoDiffException,
+                                      find_backward_implementation)
 from daceml.onnx.forward_implementation_abc import ONNXForward
 from daceml.onnx.nodes.onnx_op import ONNXOp
-from daceml.util.utils import find_str_not_in_set
+from daceml.util.utils import find_str_not_in_set, in_edge_with_name
 
 ReverseNodeReturnType = typing.Tuple[nd.Node, BackwardResult]
 
@@ -138,8 +140,8 @@ def _add_through_connector(node: typing.Union[nd.MapEntry, nd.MapExit]):
     while ("IN_{}".format(i) in node.in_connectors
            or "OUT_{}".format(i) in node.out_connectors):
         i += 1
-    node.add_in_connector("IN_{}".format(i))
-    node.add_out_connector("OUT_{}".format(i))
+    assert node.add_in_connector("IN_{}".format(i))
+    assert node.add_out_connector("OUT_{}".format(i))
     return "IN_{}".format(i), "OUT_{}".format(i)
 
 
@@ -317,62 +319,57 @@ class BackwardPassGenerator:
                 state = state.graph
 
             # check if the node exists in the backward implementation repository
-            for impl, args in BackwardImplementation.extensions().items():
-                if "node_type" in args and isinstance(node, args["node_type"]):
-                    if impl.backward_can_be_applied(node, self.forward_state,
-                                                    self.sdfg):
-                        # if yes, skip it
-                        break
-            else:
-                # only check others if we didn't break out of the above loop
-                if isinstance(node, ONNXOp):
-                    for impl in ONNXForward.registered_implementations(
-                            node.schema.name):
-                        if impl.forward_can_be_applied(node, state, self.sdfg):
-                            # try to apply the expansion
-                            class Expansion(xf.ExpandTransformation):
-                                environments = []
-                                _expansion_result = None
+            if find_backward_implementation(state.parent, state, node) is not None:
+                continue
 
-                                @classmethod
-                                def expansion(cls, node, state, sdfg):
-                                    return impl.forward(node, state, sdfg)
+            # only check others if we didn't break out of the above loop
+            if isinstance(node, ONNXOp):
+                for impl in ONNXForward.registered_implementations(
+                        node.schema.name):
+                    if impl.forward_can_be_applied(node, state, self.sdfg):
+                        # try to apply the expansion
+                        class Expansion(xf.ExpandTransformation):
+                            environments = []
+                            _expansion_result = None
 
-                            Expansion._match_node = xf.PatternNode(type(node))
-                            Expansion.apply_to(state.parent,
-                                               verify=False,
-                                               _match_node=node)
-                            expanded_something = True
-                            continue
+                            @classmethod
+                            def expansion(cls, node, state, sdfg):
+                                return impl.forward(node, state, sdfg)
 
-                # This could later on be changed to check if the expansion is differentiable and if not, move
-                # on to the next expansion. For now we will just apply the first one that matches, prioritizing ones that have
-                # "pure" in the name
-                if isinstance(node,
-                              nd.LibraryNode) and not isinstance(node, ONNXOp):
-                    # try to select an expansion
-                    if hasattr(node, "implementations"):
-                        implementations = node.implementations
+                        Expansion._match_node = xf.PatternNode(type(node))
+                        Expansion.apply_to(state.parent,
+                                           verify=False,
+                                           _match_node=node)
+                        expanded_something = True
+                        continue
 
-                        def contains_pure(name, impl):
-                            return "pure" in name.lower(
-                            ) or "pure" in impl.__name__.lower()
+            # This could later on be changed to check if the expansion is differentiable and if not, move
+            # on to the next expansion. For now we will just apply the first one that matches, prioritizing ones that have
+            # "pure" in the name
+            if isinstance(node,
+                          nd.LibraryNode) and not isinstance(node, ONNXOp):
+                # try to select an expansion
+                if hasattr(node, "implementations"):
+                    implementations = node.implementations
 
-                        pure_candidates = [
-                            name for name, impl in implementations.items()
-                            if contains_pure(name, impl)
-                        ]
-                        if len(pure_candidates) > 0:
-                            expansion = pure_candidates[0]
-                        else:
-                            expansion = node.implementation
+                    def contains_pure(name, impl):
+                        return "pure" in name.lower(
+                        ) or "pure" in impl.__name__.lower()
+
+                    pure_candidates = [
+                        name for name, impl in implementations.items()
+                        if contains_pure(name, impl)
+                    ]
+                    if len(pure_candidates) > 0:
+                        expansion = pure_candidates[0]
                     else:
                         expansion = node.implementation
+                else:
+                    expansion = node.implementation
 
-                    node.implementation = expansion
-                    node.expand(state.parent, state)
-                    expanded_something = True
-                    continue
+                node.implementation = expansion
+                node.expand(state.parent, state)
+                expanded_something = True
 
         return expanded_something
 
@@ -610,8 +607,7 @@ class BackwardPassGenerator:
         # these are the in_connectors on the reverse node, minus the gradients.
         # (these are connected in _connect_input_gradients)
         required_inputs = set(rev.in_connectors).difference(
-            self.result_map[forward_node].given_grad_names.values()
-        )
+            self.result_map[forward_node].given_grad_names.values())
 
         # note we use forward state here: we might need to connect inputs that are not in the
         # forward pass
@@ -779,23 +775,19 @@ class BackwardPassGenerator:
                 node, given_gradients, required_gradients)
 
         # (2)
-        impl: BackwardImplementation
-        for impl, args in BackwardImplementation.extensions().items():
-            if "node_type" in args and isinstance(node, args["node_type"]):
-                if impl.backward_can_be_applied(node, self.forward_state,
-                                                self.sdfg):
-
-                    return impl.backward(
-                        forward_node=node,
-                        context=BackwardContext(
-                            forward_state=self.forward_state,
-                            forward_sdfg=self.sdfg,
-                            backward_state=self.backward_state,
-                            backward_sdfg=self.backward_sdfg,
-                            backward_generator=self,
-                        ),
-                        given_gradients=given_gradients,
-                        required_gradients=required_gradients)
+        impl = find_backward_implementation(self.sdfg, forward_state=self.forward_state, node=node)
+        if impl is not None:
+            return impl.backward(
+                forward_node=node,
+                context=BackwardContext(
+                    forward_state=self.forward_state,
+                    forward_sdfg=self.sdfg,
+                    backward_state=self.backward_state,
+                    backward_sdfg=self.backward_sdfg,
+                    backward_generator=self,
+                ),
+                given_gradients=given_gradients,
+                required_gradients=required_gradients)
 
         raise AutoDiffException("Unable to differentiate node type {}".format(
             type(node)))
@@ -839,7 +831,7 @@ class BackwardPassGenerator:
         # loop through the arrays that we need from the forward pass
         for name, desc in backward_input_arrays.items():
             # if the name is not already passed to the reverse SDFG node ...
-            if name not in required_gradients:
+            if name not in required_gradients and name not in node.in_connectors:
                 # ... this array needs to be forwarded out of the forward SDFG (i.e. it is an intermediate value)
                 # 1) add it to the current SDFG, and to self.backward_input_arrays
                 # 2) add an out connector to the forward nested SDFG, add a write node to the current state, and an edge
@@ -869,7 +861,7 @@ class BackwardPassGenerator:
 
                 # (2)
                 node.sdfg.arrays[name].transient = False
-                node.add_out_connector(name)
+                assert node.add_out_connector(name)
                 write = self.forward_state.add_write(new_name)
                 self.forward_state.add_edge(
                     node, name, write, None,
@@ -946,10 +938,10 @@ class BackwardPassGenerator:
         rev = nd.MapExit(self.reverse_map[node.map])
 
         for conn in given_grad_names.values():
-            rev.add_in_connector(conn)
+            assert rev.add_in_connector(conn)
 
         for conn in required_grad_names.values():
-            rev.add_out_connector(conn)
+            assert rev.add_out_connector(conn)
 
         self.backward_state.add_node(rev)
         return rev, result
@@ -964,10 +956,10 @@ class BackwardPassGenerator:
 
         rev = nd.MapEntry(self.reverse_map[node.map])
         for conn in node.in_connectors:
-            rev.add_in_connector(conn)
+            assert rev.add_in_connector(conn)
 
         for conn in node.out_connectors:
-            rev.add_out_connector(conn)
+            assert rev.add_out_connector(conn)
 
         self.backward_state.add_node(rev)
         return rev, BackwardResult(required_grad_names={

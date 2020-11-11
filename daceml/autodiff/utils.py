@@ -1,4 +1,5 @@
 import typing
+import copy
 import inspect
 
 import dace
@@ -7,8 +8,7 @@ import dace.data as dt
 from dace.frontend.python.parser import DaceProgram
 
 from daceml.autodiff.base_abc import BackwardContext, BackwardResult
-from daceml.util.utils import in_desc_with_name, out_desc_with_name
-
+from daceml.util.utils import in_desc_with_name, out_desc_with_name, find_str_not_in_set
 
 def forward_in_desc_with_name(forward_node: nd.Node, context: BackwardContext,
                               name) -> dt.Data:
@@ -34,6 +34,22 @@ def forward_out_desc_with_name(forward_node: nd.Node, context: BackwardContext,
      """
     return out_desc_with_name(forward_node, context.forward_state,
                               context.forward_sdfg, name)
+
+
+def add_backward_desc(backward_sdfg: dace.SDFG, forward_sdfg: dace.SDFG, forward_desc: dt.Data, forward_name: str) -> str:
+    """ Adds the backward array for the given descriptor.
+
+        :param backward_sdfg: the sdfg to add to.
+        :param forward_sdfg: the forward sdfg.
+        :param forward_desc: the data descriptor of the forward array from ``forward_sdfg``.
+        :param forward_name: a name for the forward array (does not have to match it's actual name).
+        :return: the name of the newly added array in ``backward_sdfg``.
+    """
+    backward_name = find_str_not_in_set(forward_sdfg.arrays, forward_name + "_grad")
+    new_desc = copy.deepcopy(forward_desc)
+    new_desc.transient = False
+    return backward_sdfg.add_datadesc(backward_name, new_desc)
+
 
 
 def backward_program_for_node(

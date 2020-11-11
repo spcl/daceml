@@ -49,6 +49,7 @@ def make_backward_function(model: ONNXModel) -> Type[torch.autograd.Function]:
         # we will save this output and pass it to the backward pass
         forward_sdfg.arrays[name].transient = False
 
+    forward_sdfg.view()
     backward_sdfg.view()
 
     class DaceFunction(torch.autograd.Function):

@@ -223,14 +223,14 @@ class ONNXModel:
                 # add the connector if required, and add an edge
                 if is_input:
                     if conn_name not in op_node.in_connectors:
-                        op_node.add_in_connector(conn_name)
+                        assert op_node.add_in_connector(conn_name)
                     self.state.add_edge(
                         access, None, op_node, conn_name,
                         dace.Memlet.from_array(clean_onnx_name(name),
                                                data_desc))
                 else:
                     if conn_name not in op_node.out_connectors:
-                        op_node.add_out_connector(conn_name)
+                        assert op_node.add_out_connector(conn_name)
 
                     self.state.add_edge(
                         op_node, conn_name, access, None,

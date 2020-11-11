@@ -26,10 +26,10 @@ class ReverseSoftmax(BackwardImplementation):
 
         dim = forward_node.axis
 
-        output_shape = butils.forward_out_desc_with_name(forward_node, context,
-                                                  "output").shape
-        output_dtype = butils.forward_out_desc_with_name(forward_node, context,
-                                                  "output").dtype
+        output_shape = butils.forward_out_desc_with_name(
+            forward_node, context, "output").shape
+        output_dtype = butils.forward_out_desc_with_name(
+            forward_node, context, "output").dtype
 
         sums_shape = list(copy.deepcopy(output_shape))
         sums_shape[dim] = 1
@@ -47,13 +47,13 @@ class ReverseSoftmax(BackwardImplementation):
             input_grad[:] = prod - input_grad
 
         result = butils.backward_program_for_node(softmax_backward, context,
-                                           forward_node)
+                                                  forward_node)
 
         # the backward node requires `output` as an input; connect it.
         # If more nodes need this it can be implemented more generally and added to _connect_forward_inputs
 
-        output_edge = utils.out_edge_with_name(forward_node, context.forward_state,
-                                               "output")
+        output_edge = utils.out_edge_with_name(forward_node,
+                                               context.forward_state, "output")
 
         # add the array so that it will be forwarded
         output_arr_name = output_edge.data.data
@@ -71,3 +71,56 @@ class ReverseSoftmax(BackwardImplementation):
                                         copy.deepcopy(output_edge.data))
 
         return result
+
+
+@autoregister_params(op="Relu", name="pure")
+class PureRelu(BackwardImplementation):
+    @staticmethod
+    def backward(
+        forward_node: Node, context: BackwardContext,
+        given_gradients: typing.List[typing.Optional[str]],
+        required_gradients: typing.List[typing.Optional[str]]
+    ) -> typing.Tuple[Node, BackwardResult]:
+        input_desc = butils.forward_in_desc_with_name(forward_node, context,
+                                                      "X")
+
+        new_sdfg = dace.SDFG("relu_backward")
+
+        # setup arrays
+        result = BackwardResult.empty()
+        result.required_grad_names["X"] = butils.add_backward_desc(
+            new_sdfg, context.forward_sdfg, input_desc, "X")
+        result.given_grad_names["Y"] = butils.add_backward_desc(
+            new_sdfg, context.forward_sdfg, input_desc, "Y")
+        new_X_desc = copy.deepcopy(input_desc)
+        new_X_desc.transient = False
+        new_sdfg.add_datadesc("X", new_X_desc)
+
+        # setup state
+        new_state = new_sdfg.add_state()
+
+        enum_shapes = list(enumerate(input_desc.shape))
+        all_indices = ", ".join("__i{}".format(i) for i, _ in enum_shapes)
+
+        # yapf: disable
+        new_state.add_mapped_tasklet(
+            "_relu_backward_",
+            {
+                "__i{}".format(i): "0:{}".format(s) for i, s in enum_shapes
+            },
+            {
+                "__y_grad": dace.Memlet("Y_grad[{}]".format(all_indices)),
+                "__x": dace.Memlet("X[{}]".format(all_indices))
+            },
+            "__x_grad = __y_grad if __x > dace.{0}(0) else dace.{0}(0)".format(
+                input_desc.dtype.to_string()),
+            {
+                "__x_grad": dace.Memlet("X_grad[{}]".format(all_indices))
+            },
+            external_edges=True)
+        # yapf: enable
+
+        node = context.backward_state.add_nested_sdfg(new_sdfg, None,
+                                                      {"Y_grad", "X"},
+                                                      {"X_grad"})
+        return node, result
