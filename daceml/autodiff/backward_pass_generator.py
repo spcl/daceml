@@ -8,15 +8,12 @@ import typing
 
 import dace
 import dace.sdfg.nodes as nd
+import dace.transformation.transformation as xf
 import sympy as sp
 from dace import Memlet, SDFG, SDFGState
 from dace import dtypes, data as dt
 from dace.frontend.operations import detect_reduction_type
-from dace.libraries.standard import Reduce
-from dace.sdfg.graph import MultiConnectorEdge
-from dace.sdfg.state import StateSubgraphView
-from dace.sdfg.utils import dfs_topological_sort
-import dace.transformation.transformation as xf
+from dace.sdfg import graph as dgraph, state as dstate, utils as dutils
 
 from daceml.autodiff.base_abc import BackwardImplementation, BackwardContext, BackwardResult, AutoDiffException
 from daceml.onnx.forward_implementation_abc import ONNXForward
@@ -310,13 +307,13 @@ class BackwardPassGenerator:
         else:
             self.separate_sdfgs = True
 
-    def _expand_nodes(self, subgraph: StateSubgraphView) -> bool:
+    def _expand_nodes(self, subgraph: dstate.StateSubgraphView) -> bool:
         """ Expand all library nodes in the graph to pure implementations. Returns whether something was expanded
         """
 
         expanded_something = False
         for node, state in subgraph.all_nodes_recursive():
-            if isinstance(state, StateSubgraphView):
+            if isinstance(state, dstate.StateSubgraphView):
                 state = state.graph
 
             # check if the node exists in the backward implementation repository
@@ -404,6 +401,7 @@ class BackwardPassGenerator:
             # Nodes have been expanded again on the expanded graph; recalculate the forward graph
             forward_subgraph = self._find_subgraph_to_differentiate()
 
+        self.sdfg.view()
         # recursively reverse the subgraph
         self._reverse_subgraph(forward_subgraph)
 
@@ -420,6 +418,7 @@ class BackwardPassGenerator:
         }
         result = BackwardResult(required_grad_names=required_grad_names,
                                 given_grad_names=given_grad_names)
+        self.backward_sdfg.view()
         return result, self.backward_grad_arrays, self.backward_input_arrays
 
     def _find_subgraph_to_differentiate(self):
@@ -438,7 +437,7 @@ class BackwardPassGenerator:
             for n in [e.src, e.dst]
         }
 
-        forward_subgraph = StateSubgraphView(
+        forward_subgraph = dstate.StateSubgraphView(
             self.forward_state,
             list(forward_nodes.intersection(backward_nodes)))
         return forward_subgraph
@@ -452,8 +451,8 @@ class BackwardPassGenerator:
         return self.array_grad_map[forward_name]
 
     def _init_grad(self, data: str):
-        """Add a state where `data` is initialized with zero.
-           self.sdfg.arrays[data] should have type Union[dt.Array, dt.Scalar]
+        """ Add a state where `data` is initialized with zero.
+            self.sdfg.arrays[data] should have type Union[dt.Array, dt.Scalar]
         """
         state = self.backward_sdfg.add_state_before(self.backward_state,
                                                     label="init_" + data)
@@ -483,23 +482,32 @@ class BackwardPassGenerator:
             raise AutoDiffException(
                 "Unsupported data descriptor {}".format(arr))
 
-    def _reverse_subgraph(self, subgraph: StateSubgraphView):
+    def _path_src_node_in_subgraph(self, edge: dgraph.MultiConnectorEdge,
+                                   subgraph: dstate.StateSubgraphView):
+        path_src = subgraph.memlet_path(edge)[0].src
+        return path_src in subgraph.nodes()
+
+    def _reverse_subgraph(self, subgraph: dstate.StateSubgraphView):
         """ Reverse a given subgraph. All nodes in the subgraph will be reversed. """
 
         # a reversed topological sort is a topological sort on the reverse graph
         for node in reversed(
-                list(dfs_topological_sort(subgraph, subgraph.source_nodes()))):
+                list(
+                    dutils.dfs_topological_sort(subgraph,
+                                                subgraph.source_nodes()))):
 
             try:
                 # output names on the forward node
                 # (for which the gradient will be connected as an input on the reverse node)
                 given_gradients = [
                     edge.src_conn for edge in subgraph.out_edges(node)
+                    if self._path_src_node_in_subgraph(edge, subgraph)
                 ]
 
                 # input names on the forward node that gradients should be generated for
                 required_gradients = [
                     edge.dst_conn for edge in subgraph.in_edges(node)
+                    if self._path_src_node_in_subgraph(edge, subgraph)
                 ]
 
                 reversed_node, backward_result = self._get_reverse_node(
@@ -526,12 +534,16 @@ class BackwardPassGenerator:
                 raise AutoDiffException(
                     "Failed at node {}".format(node)) from e
 
-    def _connect_given_gradients(self, subgraph: StateSubgraphView,
+    def _connect_given_gradients(self, subgraph: dstate.StateSubgraphView,
                                  forward_node):
         """ Connect the gradients of the outputs of forward_node as inputs to the corresponding reverse node. """
 
-        for _, output_conn, dest_node, input_conn, memlet in subgraph.out_edges(
-                forward_node):
+        for edge in subgraph.out_edges(forward_node):
+            if not self._path_src_node_in_subgraph(edge, subgraph):
+                # skip connecting edges for which we don't need to generate grads.
+                continue
+
+            _, output_conn, dest_node, input_conn, memlet = edge
             if detect_reduction_type(memlet.wcr) not in [
                     None,
                     dtypes.ReductionType.Sum,
@@ -578,7 +590,7 @@ class BackwardPassGenerator:
                 memlet,
             )
 
-    def _connect_forward_inputs(self, subgraph: StateSubgraphView,
+    def _connect_forward_inputs(self, subgraph: dstate.StateSubgraphView,
                                 forward_node):
         """ Connect the reversed node of `forward_node` to all required non-gradient inputs.
 
@@ -598,24 +610,24 @@ class BackwardPassGenerator:
         # these are the in_connectors on the reverse node, minus the gradients.
         # (these are connected in _connect_input_gradients)
         required_inputs = set(rev.in_connectors).difference(
-            self._lookup_given_grad_name(forward_node, edge.src_conn)
-            for edge in subgraph.out_edges(forward_node))
+            self.result_map[forward_node].given_grad_names.values()
+        )
 
         # note we use forward state here: we might need to connect inputs that are not in the
         # forward pass
-        input_edges_to_connect = (edge
-                                  for edge in subgraph.in_edges(forward_node)
-                                  if edge.dst_conn in required_inputs)
+        input_edges_to_connect = (
+            edge for edge in self.forward_state.in_edges(forward_node)
+            if edge.dst_conn in required_inputs)
 
         for edge in input_edges_to_connect:
-            path = subgraph.memlet_path(edge)
+            path = self.forward_state.memlet_path(edge)
 
             ####################################
             # we can only add this edge if the first node in the path not within a map scope. Otherwise the value read
             # in the backward pass might be different to the one read in the forward pass
 
-            if subgraph.scope_dict()[path[0].src] is not None:
-                parent = subgraph.scope_dict()[path[0].src]
+            if self.forward_state.scope_dict()[path[0].src] is not None:
+                parent = self.forward_state.scope_dict()[path[0].src]
                 raise AutoDiffException(
                     "Unexpected graph structure: unable to access value of {} in the"
                     " backward pass. This can be remedied by moving the node outside the scope it "
@@ -818,7 +830,7 @@ class BackwardPassGenerator:
                                     required_gradients=required_gradients,
                                     backward_sdfg=reverse_sdfg,
                                     backward_state=backward_state)
-        backward_result, backward_grad_arrays, backward_input_arrays = gen.backward()
+        backward_result, _, backward_input_arrays = gen.backward()
 
         # we need to defer add edges until after the arrays have been added because creation of the nested
         # sdfg fails otherwise
@@ -920,23 +932,27 @@ class BackwardPassGenerator:
             given_gradients: typing.List[str],
             required_gradients: typing.List[str],
     ) -> ReverseNodeReturnType:
+
+        required_grad_names = {
+            n: _invert_map_connector(n)
+            for n in required_gradients
+        }
+        given_grad_names = {
+            n: _invert_map_connector(n)
+            for n in given_gradients
+        }
+        result = BackwardResult(required_grad_names=required_grad_names,
+                                given_grad_names=given_grad_names)
         rev = nd.MapExit(self.reverse_map[node.map])
 
-        for conn in node.in_connectors:
+        for conn in given_grad_names.values():
             rev.add_in_connector(conn)
 
-        for conn in node.out_connectors:
+        for conn in required_grad_names.values():
             rev.add_out_connector(conn)
 
         self.backward_state.add_node(rev)
-        return rev, BackwardResult(required_grad_names={
-            n: _invert_map_connector(n)
-            for n in required_gradients
-        },
-                                   given_grad_names={
-                                       n: _invert_map_connector(n)
-                                       for n in given_gradients
-                                   })
+        return rev, result
 
     def _reverse_MapExit(
         self,

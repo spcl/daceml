@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
 from daceml.pytorch import DaceModule
@@ -73,9 +74,17 @@ def test_softmax():
     run_pytorch_module(Module(), use_max=True)
 
 
-@pytest.mark.skip(reason="check later")
 def test_weights():
-    pass
+    class Module(torch.nn.Module):
+        def __init__(self):
+            super(Module, self).__init__()
+            self.fc1 = nn.Linear(784, 120)
+
+        def forward(self, x):
+            x = F.relu(self.fc1(x))
+            return x
+
+    run_pytorch_module(Module(), shape=(4, 784), use_max=False)
 
 
 if __name__ == "__main__":
