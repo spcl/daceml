@@ -970,7 +970,7 @@ class PureSoftmax(ONNXForward):
         input = state_exp.add_read('input')
         output = state_exp.add_access('output')
 
-        red1 = state_exp.add_reduce('lambda a1, b1: max(a1, b1)', None, 0)
+        red1 = state_exp.add_reduce('lambda a1, b1: max(a1, b1)', None, -1e9)
         texp1 = state_exp.add_tasklet('tasklet1', {'a2', 'b2'}, {'c2'},
                                       'c2 = exp(a2-b2)')
 

@@ -8,7 +8,7 @@ import onnx
 from dace import SDFG, SDFGState
 from dace.properties import Property, ListProperty
 from dace.sdfg.graph import MultiConnectorEdge
-from dace.transformation.pattern_matching import ExpandTransformation
+from dace.transformation.transformation import ExpandTransformation
 
 from daceml.onnx.environments import ONNXRuntime
 from daceml.onnx.nodes.node_utils import parse_variadic_param
