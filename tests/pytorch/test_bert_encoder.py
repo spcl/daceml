@@ -63,6 +63,8 @@ def test_bert_encoder(gpu, apply_strict):
 
         SubgraphFusion.apply_to(softmax_state.parent, softmax_state.nodes())
 
+    softmax_sdfg: dace_sdfg.SDFG = softmax_state.parent
+
     dace_model.sdfg.save('attn3.sdfg')
 
     # # move everything on GPU
@@ -258,6 +260,59 @@ def test_bert_encoder(gpu, apply_strict):
                                    output_node=subgraph_view.nodes()[1])
 
     dace_model.sdfg.save('attn7.sdfg')
+
+    # nest map at the end into nested sdfg
+
+    pattern = sdutil.node_path_graph(dace.nodes.MapEntry(dace.nodes.Map('_', [], [])),
+                                     dace.nodes.Tasklet,
+                                     dace.nodes.MapExit(dace.nodes.Map('_', [], [])),
+                                     dace.nodes.MapExit(dace.nodes.Map('_', [], [])),
+                                     dace.nodes.AccessNode("_"))
+
+    for subgraph in enumerate_matches(softmax_state.parent, pattern):
+        entry = subgraph.nodes()[0]
+        tasklet = subgraph.nodes()[1]
+        exit = subgraph.nodes()[2]
+
+        from dace.transformation.helpers import nest_state_subgraph
+        from dace.sdfg.graph import SubgraphView
+
+        nested_sdfg1 = nest_state_subgraph(sdfg=softmax_state.parent, state=softmax_state,
+                                           subgraph=SubgraphView(softmax_state, [entry, tasklet, exit]))
+
+
+
+    dace_model.sdfg.save('attn7_1.sdfg')
+
+    # fuse nested sdfgs
+
+    pattern = sdutil.node_path_graph(dace.nodes.NestedSDFG('_', dace.sdfg.SDFG('_'), {}, {}),
+                                     dace.nodes.AccessNode("_"),
+                                     dace.nodes.NestedSDFG('_', dace.sdfg.SDFG('_'), {}, {}))
+
+    #softmax_sdfg.apply_transformations_repeated(NestedSDFGFusion) # doesn't work for some reason :(
+
+    while True:
+        all_matches = list(enumerate_matches(softmax_sdfg, pattern))
+        if not all_matches:
+            break
+
+        subgraph = all_matches[0]
+        NestedSDFGFusion.apply_to(sdfg=subgraph.graph.parent,
+                                nested_sdfg1=subgraph.nodes()[0],
+                                access_node=subgraph.nodes()[1],
+                                nested_sdfg2=subgraph.nodes()[2])
+
+    # for subgraph in enumerate_matches(softmax_sdfg, pattern):
+    #     NestedSDFGFusion.apply_to(sdfg=subgraph.graph.parent,
+    #                               nested_sdfg1=subgraph.nodes()[0],
+    #                               access_node=subgraph.nodes()[1],
+    #                               nested_sdfg2=subgraph.nodes()[2])
+
+    dace_model.sdfg.save('attn8.sdfg')
+
+    # dace_model.sdfg = dace.SDFG.from_file('attn8.sdfg')
+
 
     # from dace.transformation.dataflow.warp_all_reduce_detection import WarpAllReduceDetection
     #
