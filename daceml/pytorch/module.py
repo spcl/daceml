@@ -60,18 +60,25 @@ class DaceModule(nn.Module):
         if dummy_inputs is not None:
             self.dace_model = self._initialize_sdfg(dummy_inputs)
 
-    def _initialize_sdfg(self, dummy_inputs) -> ONNXModel:
+    def _initialize_sdfg(self, dummy_inputs):
         # TODO change to StringIO if not too big
         with tempfile.TemporaryDirectory() as dir_name:
             export_name = os.path.join(dir_name, "export.onnx")
 
-            torch.onnx.export(self.model,
-                              dummy_inputs,
-                              export_name,
-                              verbose=logging.root.level <= logging.DEBUG,
-                              training=(TrainingMode.TRAINING
-                                        if self.train else TrainingMode.EVAL),
-                              opset_version=12)
+            torch.onnx.export(
+                self.model,
+                dummy_inputs,
+                export_name,
+                verbose=logging.root.level <= logging.DEBUG,
+                training=(TrainingMode.TRAINING
+                          if self.train else TrainingMode.EVAL),
+                opset_version=12,
+                strip_doc_string=False,
+                export_params=not self.backward,
+                # pytorch constant folding will add new unnamed inputs to the graph and remove some of the
+                # named parameters of the model: this means that we can't match with the state dict
+                # anymore, so we disable this. Our CF is better anyway ;)
+                do_constant_folding=False)
 
             onnx_model = infer_shapes(onnx.load(export_name))
             self.onnx_model = onnx_model
@@ -85,8 +92,14 @@ class DaceModule(nn.Module):
             self.sdfg.validate()
 
             if self.backward:
-                function = make_backward_function(dace_model)
-                return lambda *args: function.apply(*args)
+                function = make_backward_function(self, dace_model)
+
+                def forward(*args):
+                    args_and_params = list(args)
+                    args_and_params.extend(self.parameters())
+                    return function.apply(*args_and_params)
+
+                return forward
             else:
                 return dace_model
 

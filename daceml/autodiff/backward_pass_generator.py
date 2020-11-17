@@ -213,14 +213,14 @@ class BackwardPassGenerator:
                                before calling this method).
     """
     def __init__(
-        self,
-        *,
-        sdfg: SDFG,
-        state: SDFGState,
-        given_gradients: typing.List[typing.Union[nd.AccessNode, str]],
-        required_gradients: typing.List[typing.Union[nd.AccessNode, str]],
-        backward_sdfg: SDFG,  # this can be the same as SDFG
-        backward_state: SDFGState):
+            self,
+            *,
+            sdfg: SDFG,
+            state: SDFGState,
+            given_gradients: typing.List[typing.Union[nd.AccessNode, str]],
+            required_gradients: typing.List[typing.Union[nd.AccessNode, str]],
+            backward_sdfg: SDFG,  # this can be the same as SDFG
+            backward_state: SDFGState):
 
         if backward_state not in backward_sdfg.nodes():
             raise AutoDiffException(
@@ -415,7 +415,6 @@ class BackwardPassGenerator:
         }
         result = BackwardResult(required_grad_names=required_grad_names,
                                 given_grad_names=given_grad_names)
-        self.backward_sdfg.view()
         return result, self.backward_grad_arrays, self.backward_input_arrays
 
     def _find_subgraph_to_differentiate(self):
@@ -808,10 +807,10 @@ class BackwardPassGenerator:
             type(node)))
 
     def _reverse_NestedSDFG(
-            self,
-            node: nd.NestedSDFG,
-            given_gradients: typing.List[str],
-            required_gradients: typing.List[str],
+        self,
+        node: nd.NestedSDFG,
+        given_gradients: typing.List[str],
+        required_gradients: typing.List[str],
     ) -> ReverseNodeReturnType:
         # check that the nested SDFG only has one state
         if len(node.sdfg.nodes()) != 1:
@@ -922,10 +921,10 @@ class BackwardPassGenerator:
             given_grad_names=backward_result.given_grad_names)
 
     def _reverse_AccessNode(
-            self,
-            node: nd.AccessNode,
-            given_gradients: typing.List[str],
-            required_gradients: typing.List[str],
+        self,
+        node: nd.AccessNode,
+        given_gradients: typing.List[str],
+        required_gradients: typing.List[str],
     ) -> ReverseNodeReturnType:
         rev = nd.AccessNode(self.array_grad_name(node.data),
                             access=_invert_access(node.access))
@@ -934,10 +933,10 @@ class BackwardPassGenerator:
                                    given_grad_names={None: None})
 
     def _reverse_MapEntry(
-            self,
-            node: nd.MapEntry,
-            given_gradients: typing.List[str],
-            required_gradients: typing.List[str],
+        self,
+        node: nd.MapEntry,
+        given_gradients: typing.List[str],
+        required_gradients: typing.List[str],
     ) -> ReverseNodeReturnType:
 
         required_grad_names = {
@@ -987,10 +986,10 @@ class BackwardPassGenerator:
                                    })
 
     def _reverse_Tasklet(
-            self,
-            tasklet: nd.Tasklet,
-            given_gradients: typing.List[str],
-            required_gradients: typing.List[str],
+        self,
+        tasklet: nd.Tasklet,
+        given_gradients: typing.List[str],
+        required_gradients: typing.List[str],
     ) -> ReverseNodeReturnType:
 
         if tasklet.language is not dtypes.Language.Python:

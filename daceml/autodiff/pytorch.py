@@ -1,11 +1,13 @@
 import logging
 from typing import Type
+import itertools
 from collections import OrderedDict
 
 import torch
 
 import dace
 
+import daceml.pytorch
 from daceml.autodiff.backward_pass_generator import BackwardPassGenerator
 from daceml.autodiff.base_abc import AutoDiffException
 from daceml.onnx.converters import clean_onnx_name
@@ -14,9 +16,11 @@ from daceml.onnx.onnx_importer import create_output_array, ONNXModel
 log = logging.getLogger(__name__)
 
 
-def make_backward_function(model: ONNXModel) -> Type[torch.autograd.Function]:
+def make_backward_function(module: 'daceml.pytorch.DaceModule',
+                           model: ONNXModel) -> Type[torch.autograd.Function]:
     """ Convert an ONNXModel to a PyTorch differentiable function.
 
+        :param module: the parent pytorch module.
         :param model: the model to convert.
         :return: the PyTorch compatible :class:`torch.autograd.Function`.
     """
@@ -35,11 +39,13 @@ def make_backward_function(model: ONNXModel) -> Type[torch.autograd.Function]:
         sdfg=forward_sdfg,
         state=model.sdfg.nodes()[0],
         given_gradients=[clean_onnx_name(name) for name in model.outputs],
+        # TODO filter inputs that don't require grad somehow...
         required_gradients=[clean_onnx_name(name) for name in model.inputs],
         backward_sdfg=backward_sdfg,
         backward_state=backward_state)
 
-    backward_result, backward_grad_arrays, backward_input_arrays = gen.backward()
+    backward_result, backward_grad_arrays, backward_input_arrays = gen.backward(
+    )
 
     for name, desc in backward_input_arrays.items():
         if name not in forward_sdfg.arrays:
@@ -48,6 +54,8 @@ def make_backward_function(model: ONNXModel) -> Type[torch.autograd.Function]:
 
         # we will save this output and pass it to the backward pass
         forward_sdfg.arrays[name].transient = False
+
+    backward_sdfg.validate()
 
     class DaceFunction(torch.autograd.Function):
         _backward_sdfg = backward_sdfg
@@ -60,9 +68,11 @@ def make_backward_function(model: ONNXModel) -> Type[torch.autograd.Function]:
 
             copied_inputs = []
             for inp in inputs:
-                if type(inp) is not torch.Tensor:
+                if not isinstance(inp, torch.Tensor):
                     raise ValueError(
-                        "Currently only tensor inputs are supported")
+                        "Unsupported input with type {};"
+                        " currently only tensor inputs are supported".format(
+                            type(inp)))
                 if not inp.is_contiguous():
                     log.warning(
                         "forced to copy input since it was not contiguous")
@@ -100,8 +110,8 @@ def make_backward_function(model: ONNXModel) -> Type[torch.autograd.Function]:
 
             return tuple(outputs.values())
 
-        @classmethod
-        def backward(cls, ctx, *grads):
+        @staticmethod
+        def backward(ctx, *grads):
             backward_inputs = ctx.dace_backward_inputs
 
             if len(grads) != len(model.outputs):
@@ -109,12 +119,14 @@ def make_backward_function(model: ONNXModel) -> Type[torch.autograd.Function]:
                     len(model.outputs), len(grads)))
 
             given_grads = dict(
-                zip((DaceFunction._backward_result.given_grad_names[clean_onnx_name(outp)]
-                     for outp in model.outputs), grads))
+                zip((DaceFunction._backward_result.given_grad_names[
+                    clean_onnx_name(outp)] for outp in model.outputs), grads))
             for name, value in given_grads.items():
-                if type(value) is not torch.Tensor:
+                if not isinstance(value, torch.Tensor):
                     raise ValueError(
-                        "Currently only tensor inputs are supported")
+                        "Unsupported input with type {};"
+                        " currently only tensor inputs are supported".format(
+                            type(value)))
                 if not value.is_contiguous():
                     log.warning(
                         "forced to copy input since it was not contiguous")
@@ -122,7 +134,9 @@ def make_backward_function(model: ONNXModel) -> Type[torch.autograd.Function]:
 
             # these are the grads we will calculate
             input_grad_names = [
-                DaceFunction._backward_result.required_grad_names[clean_onnx_name(inp)] for inp in model.inputs
+                DaceFunction._backward_result.required_grad_names[
+                    clean_onnx_name(inp)]
+                for inp in itertools.chain(model.inputs)
             ]
 
             # init the grads we will calculate with zeros

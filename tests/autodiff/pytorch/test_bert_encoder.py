@@ -27,4 +27,3 @@ def test_bert_encoder(gpu):
     ptmodel(ptinput).sum().backward()
 
     assert np.allclose(dace_input.grad, ptinput.grad)
-

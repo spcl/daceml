@@ -41,6 +41,7 @@ torch_to_numpy_dtype_dict = {
     for k, v in numpy_to_torch_dtype_dict.items()
 }
 
+
 def _nested_HasField(obj, full_attr):
     """Performs a nested hasattr check, separating attr on dots."""
     attrs = full_attr.split(".")
@@ -341,7 +342,9 @@ class ONNXModel:
     def clean_weights(self):
         return {clean_onnx_name(k): v for k, v in self.weights.items()}
 
-    def __call__(self, *args, **kwargs) -> typing.Union[np.ndarray, typing.Tuple[np.ndarray]]:
+    def __call__(
+            self, *args,
+            **kwargs) -> typing.Union[np.ndarray, typing.Tuple[np.ndarray]]:
         """ Execute the model.
 
             :param args: positional arguments to the model. The i-th argument will be passed as the i-th input of the
@@ -350,7 +353,8 @@ class ONNXModel:
             :return: the output of the model (or a tuple of outputs if there are multiple).
         """
 
-        inputs, params, symbols, outputs = self._call_args(args=args, kwargs=kwargs)
+        inputs, params, symbols, outputs = self._call_args(args=args,
+                                                           kwargs=kwargs)
 
         sdfg = deepcopy(self.sdfg)
         sdfg.expand_library_nodes()
@@ -365,11 +369,15 @@ class ONNXModel:
 
         return tuple(outputs.values())
 
-    def _call_args(self, *, args, kwargs, torch_outputs: bool=None) -> typing.Tuple[
-        typing.Dict[str, typing.Any],
-        typing.Dict[str, typing.Any],
-        typing.Dict[str, typing.Any],
-        typing.OrderedDict[str, typing.Any]]:
+    def _call_args(
+        self,
+        *,
+        args,
+        kwargs,
+        torch_outputs: bool = None
+    ) -> typing.Tuple[typing.Dict[str, typing.Any], typing.Dict[
+            str, typing.Any], typing.Dict[str, typing.Any], typing.OrderedDict[
+                str, typing.Any]]:
         """ Prepare the arguments for a call.
 
             This returns 4 dicts; one for each of the following:

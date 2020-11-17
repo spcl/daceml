@@ -8,7 +8,8 @@ import dace.data as dt
 from dace.frontend.python.parser import DaceProgram
 
 from daceml.autodiff.base_abc import BackwardContext, BackwardResult
-from daceml.util.utils import in_desc_with_name, out_desc_with_name, find_str_not_in_set
+import daceml.util.utils as utils
+
 
 def forward_in_desc_with_name(forward_node: nd.Node, context: BackwardContext,
                               name) -> dt.Data:
@@ -19,8 +20,8 @@ def forward_in_desc_with_name(forward_node: nd.Node, context: BackwardContext,
         :param name: the input connector name.
         :return: the descriptor of the data that connects to connector `name`.
      """
-    return in_desc_with_name(forward_node, context.forward_state,
-                             context.forward_sdfg, name)
+    return utils.in_desc_with_name(forward_node, context.forward_state,
+                                   context.forward_sdfg, name)
 
 
 def forward_out_desc_with_name(forward_node: nd.Node, context: BackwardContext,
@@ -32,11 +33,12 @@ def forward_out_desc_with_name(forward_node: nd.Node, context: BackwardContext,
         :param name: the output connector name.
         :return: the descriptor of the data that connects to connector `name`.
      """
-    return out_desc_with_name(forward_node, context.forward_state,
-                              context.forward_sdfg, name)
+    return utils.out_desc_with_name(forward_node, context.forward_state,
+                                    context.forward_sdfg, name)
 
 
-def add_backward_desc(backward_sdfg: dace.SDFG, forward_sdfg: dace.SDFG, forward_desc: dt.Data, forward_name: str) -> str:
+def add_backward_desc(backward_sdfg: dace.SDFG, forward_sdfg: dace.SDFG,
+                      forward_desc: dt.Data, forward_name: str) -> str:
     """ Adds the backward array for the given descriptor.
 
         :param backward_sdfg: the sdfg to add to.
@@ -45,11 +47,11 @@ def add_backward_desc(backward_sdfg: dace.SDFG, forward_sdfg: dace.SDFG, forward
         :param forward_name: a name for the forward array (does not have to match it's actual name).
         :return: the name of the newly added array in ``backward_sdfg``.
     """
-    backward_name = find_str_not_in_set(forward_sdfg.arrays, forward_name + "_grad")
+    backward_name = utils.find_str_not_in_set(forward_sdfg.arrays,
+                                              forward_name + "_grad")
     new_desc = copy.deepcopy(forward_desc)
     new_desc.transient = False
     return backward_sdfg.add_datadesc(backward_name, new_desc)
-
 
 
 def backward_program_for_node(
@@ -114,3 +116,37 @@ def backward_program_for_node(
         sdfg, None, set(inputs), set(outputs))
 
     return result_node, backward_result
+
+
+def connect_output_from_forward(forward_node: nd.Node, backward_node: nd.Node,
+                                context: BackwardContext,
+                                output_connector_name: str):
+    """ Connect an output of the forward node as an input to the backward node. This is done by forwarding the array
+        from the forward pass.
+
+        Conceptually, this is similar to pytorch's ctx.save_for_backward.
+
+        :param forward_node: the node in the forward pass.
+        :param backward_node: the node in the backward pass.
+        :param context: the backward context.
+        :param output_connector_name: the name of the connector on the backward pass. The output of that connector will
+                                      be forwarded to the connector of the same name on the backward node.
+    """
+    output_edge = utils.out_edge_with_name(forward_node, context.forward_state,
+                                           output_connector_name)
+
+    # add the array of the output to backward_input_arrays that it will be forwarded by the autodiff engine
+    output_arr_name = output_edge.data.data
+    assert output_arr_name not in context.backward_generator.backward_input_arrays
+    data_desc = context.forward_sdfg.arrays[output_arr_name]
+    context.backward_generator.backward_input_arrays[
+        output_arr_name] = copy.deepcopy(data_desc)
+
+    if context.backward_generator.separate_sdfgs:
+        data_desc.transient = False
+        context.backward_sdfg.add_datadesc(output_arr_name, data_desc)
+
+    read = context.backward_state.add_read(output_arr_name)
+    context.backward_state.add_edge(read, None, backward_node,
+                                    output_connector_name,
+                                    copy.deepcopy(output_edge.data))

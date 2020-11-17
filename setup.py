@@ -31,7 +31,7 @@ setup(
     extras_require={
         'testing': [
             'coverage', 'pytest', 'yapf', 'pytest-cov', 'transformers',
-            'pytest-xdist'
+            'pytest-xdist', 'torchvision'
         ],
         'docs': [
             'sphinx==3.2.1', 'sphinx_rtd_theme==0.5.0',

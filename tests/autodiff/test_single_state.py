@@ -88,10 +88,7 @@ class SDFGBackwardRunner:
             print("is_contiguous:", v.flags['C_CONTIGUOUS'])
             print(v)
 
-        results = {
-            name: arr
-            for name, arr in inputs.items()
-        }
+        results = {name: arr for name, arr in inputs.items()}
         return results
 
 
