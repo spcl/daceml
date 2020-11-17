@@ -7,7 +7,6 @@ import torch
 
 import dace
 
-import daceml.pytorch
 from daceml.autodiff.backward_pass_generator import BackwardPassGenerator
 from daceml.autodiff.base_abc import AutoDiffException
 from daceml.onnx.converters import clean_onnx_name
