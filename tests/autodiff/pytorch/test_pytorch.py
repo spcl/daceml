@@ -79,9 +79,13 @@ def test_weights():
         def __init__(self):
             super(Module, self).__init__()
             self.fc1 = nn.Linear(784, 120)
+            self.fc2 = nn.Linear(120, 32)
+            self.fc3 = nn.Linear(32, 10)
 
         def forward(self, x):
             x = F.relu(self.fc1(x))
+            x = F.relu(self.fc2(x))
+            x = self.fc3(x)
             return x
 
     run_pytorch_module(Module(), shape=(4, 784), use_max=False)

@@ -15,8 +15,8 @@ from dace import dtypes, data as dt
 from dace.frontend.operations import detect_reduction_type
 from dace.sdfg import graph as dgraph, state as dstate, utils as dutils
 
-from daceml.autodiff.base_abc import (BackwardContext,
-                                      BackwardResult, AutoDiffException,
+from daceml.autodiff.base_abc import (BackwardContext, BackwardResult,
+                                      AutoDiffException,
                                       find_backward_implementation)
 from daceml.onnx.forward_implementation_abc import ONNXForward
 from daceml.onnx.nodes.onnx_op import ONNXOp
@@ -319,7 +319,8 @@ class BackwardPassGenerator:
                 state = state.graph
 
             # check if the node exists in the backward implementation repository
-            if find_backward_implementation(state.parent, state, node) is not None:
+            if find_backward_implementation(state.parent, state,
+                                            node) is not None:
                 continue
 
             # only check others if we didn't break out of the above loop
@@ -398,7 +399,6 @@ class BackwardPassGenerator:
             # Nodes have been expanded again on the expanded graph; recalculate the forward graph
             forward_subgraph = self._find_subgraph_to_differentiate()
 
-        self.sdfg.view()
         # recursively reverse the subgraph
         self._reverse_subgraph(forward_subgraph)
 
@@ -521,11 +521,25 @@ class BackwardPassGenerator:
 
                 if isinstance(node, nd.AccessNode):
                     # this means we are writing out a grad to an array. In this case, we need to set
-                    # all incoming memlets to WCR Sum
-                    # TODO @orausch there could/should be an intersection check here to remove this if not required...
+                    # all incoming memlets to WCR Sum if there are conflicts
+                    # for now this is a simple check; if the source or target node is a map, we do sum
                     for edge in self.backward_state.in_edges(reversed_node):
                         for path_edge in self.backward_state.memlet_tree(edge):
-                            path_edge.data.wcr = "lambda x, y: x + y"
+                            src_or_dest_map = (
+                                isinstance(path_edge.src,
+                                           (nd.MapExit, nd.MapEntry))
+                                or isinstance(path_edge.dst,
+                                              (nd.MapExit, nd.MapEntry)))
+                            connector_in_edges = defaultdict(int)
+                            for _, _, _, dst_conn, _ in self.backward_state.in_edges(
+                                    path_edge.dst):
+                                connector_in_edges[dst_conn] += 1
+
+                            if any(v > 1 for v in connector_in_edges.values()
+                                   ) or src_or_dest_map:
+                                for edge in self.backward_state.in_edges(
+                                        path_edge.dst):
+                                    edge.data.wcr = "lambda x, y: x + y"
 
             except AutoDiffException as e:
                 raise AutoDiffException(
@@ -775,19 +789,20 @@ class BackwardPassGenerator:
                 node, given_gradients, required_gradients)
 
         # (2)
-        impl = find_backward_implementation(self.sdfg, forward_state=self.forward_state, node=node)
+        impl = find_backward_implementation(self.sdfg,
+                                            forward_state=self.forward_state,
+                                            node=node)
         if impl is not None:
-            return impl.backward(
-                forward_node=node,
-                context=BackwardContext(
-                    forward_state=self.forward_state,
-                    forward_sdfg=self.sdfg,
-                    backward_state=self.backward_state,
-                    backward_sdfg=self.backward_sdfg,
-                    backward_generator=self,
-                ),
-                given_gradients=given_gradients,
-                required_gradients=required_gradients)
+            return impl.backward(forward_node=node,
+                                 context=BackwardContext(
+                                     forward_state=self.forward_state,
+                                     forward_sdfg=self.sdfg,
+                                     backward_state=self.backward_state,
+                                     backward_sdfg=self.backward_sdfg,
+                                     backward_generator=self,
+                                 ),
+                                 given_gradients=given_gradients,
+                                 required_gradients=required_gradients)
 
         raise AutoDiffException("Unable to differentiate node type {}".format(
             type(node)))
