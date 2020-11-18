@@ -61,7 +61,7 @@ def _add_ort_init_code(sdfg: SDFG):
 
         if any(
                 hasattr(node, "schedule")
-                and node.schedule == ScheduleType.GPU_Device
+                and node.schedule in [ScheduleType.GPU_Device, ScheduleType.GPU_Persistent, ScheduleType.GPU_Default]
                 for state in sdfg.nodes() for node in state.nodes()):
             # if the SDFG contains a GPU node, add the CUDA provider and the memory_info
             sdfg.append_global_code("OrtMemoryInfo* __ort_cuda_mem_info;\n")
@@ -233,7 +233,7 @@ def expand_node(node, state, sdfg):
     actual_node_schedule = node.schedule
     if node.schedule == ScheduleType.CPU_Multicore or node.schedule == ScheduleType.Default:
         provider_index = 0
-    elif node.schedule == ScheduleType.GPU_Device:
+    elif node.schedule in [ScheduleType.GPU_Device, ScheduleType.GPU_Persistent, ScheduleType.GPU_Default]:
         provider_index = 1
         try:
             # the ith position indicates whether the ith output is in host memory
@@ -247,7 +247,7 @@ def expand_node(node, state, sdfg):
             print("Falling back to CPU for node {}. Reason:\n{}".format(
                 node.name, str(e)))
             provider_index = 0
-            actual_node_schedule = ScheduleType.Default
+            actual_node_schedule = ScheduleType.CPU_Default
     else:
         raise NotImplementedError(
             "ORT expansion for schedule '{}' is not implemented".format(
@@ -278,7 +278,7 @@ def expand_node(node, state, sdfg):
 
         if isinstance(
                 array,
-                dt.Scalar) and actual_node_schedule == ScheduleType.GPU_Device:
+                dt.Scalar) and actual_node_schedule in [ScheduleType.GPU_Device, ScheduleType.GPU_Persistent, ScheduleType.GPU_Default]:
             # ORT kernels expect scalars to be cudaMalloced. We will copy during expansion to enforce this
             is_device_mismatch = True
             output_copy_required[edge.src_conn]['copy_to_array'] = True
@@ -286,7 +286,7 @@ def expand_node(node, state, sdfg):
         if is_device_mismatch:
             # we need to insert a copy
             output_copy_required[edge.src_conn][
-                'storage'] = StorageType.Default if output_on_host else StorageType.GPU_Global
+                'storage'] = StorageType.CPU_Heap if output_on_host else StorageType.GPU_Global
 
     # check inputs (same thing again)
     for edge, input_on_host in zip(node.iter_inputs_in_onnx_order(state),
@@ -302,7 +302,7 @@ def expand_node(node, state, sdfg):
 
         if isinstance(
                 array,
-                dt.Scalar) and actual_node_schedule == ScheduleType.GPU_Device:
+                dt.Scalar) and actual_node_schedule in [ScheduleType.GPU_Device, ScheduleType.GPU_Persistent, ScheduleType.GPU_Default]:
             # ORT kernels expect scalars to be cudaMalloced. We will copy during expansion to enforce this
             is_device_mismatch = True
             input_copy_required[edge.dst_conn]['copy_to_array'] = True
@@ -310,7 +310,7 @@ def expand_node(node, state, sdfg):
         if is_device_mismatch:
             # we need to insert a copy
             input_copy_required[edge.dst_conn][
-                'storage'] = StorageType.Default if input_on_host else StorageType.GPU_Global
+                'storage'] = StorageType.CPU_Heap if input_on_host else StorageType.GPU_Global
 
     # begin codegen
     ##########################################
@@ -358,7 +358,7 @@ def expand_node(node, state, sdfg):
              and 'copy_to_array' in output_copy_required[parameter_name])
             or (parameter_name in input_copy_required
                 and 'copy_to_array' in input_copy_required[parameter_name]))
-        if desc.storage == StorageType.Default:
+        if desc.storage in [StorageType.Default, StorageType.CPU_Heap]:
             mem_info = "__ort_cpu_mem_info"
         elif desc.storage == StorageType.GPU_Global:
             mem_info = "__ort_cuda_mem_info"

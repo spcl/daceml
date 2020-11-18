@@ -20,7 +20,7 @@ def pytest_generate_tests(metafunc):
     if "default_implementation" in metafunc.fixturenames:
         metafunc.parametrize("default_implementation", [
             pytest.param("pure", marks=pytest.mark.pure),
-            pytest.param("onnxruntime", marks=pytest.mark.pure)
+            pytest.param("onnxruntime", marks=pytest.mark.ort)
         ])
 
 
