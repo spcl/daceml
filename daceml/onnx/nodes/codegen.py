@@ -2,18 +2,17 @@ import logging
 from collections import Iterable, defaultdict
 from copy import deepcopy
 from functools import reduce
-
-import numpy as np
+from typing import Dict, NamedTuple, Tuple, List, Optional
 
 import dace
 import dace.data as dt
+from dace import dtypes, SDFGState, SDFG
 import dace.sdfg.nodes as nd
-from dace import SDFG, ScheduleType, StorageType
-from dace.dtypes import DTYPE_TO_TYPECLASS, can_access
+import numpy as np
 from dace.libraries.standard.nodes.code import _get_inputs_and_outputs
 
 from daceml.onnx.check_impl import check_op, ONNXOpValidationError
-from daceml.onnx.converters import ONNX_DTYPES_TO_DACE_TYPE_CLASS, clean_onnx_name, typeclass_to_onnx_str
+from daceml.onnx.converters import clean_onnx_name, typeclass_to_onnx_str
 from daceml.onnx.nodes.node_utils import get_position
 from daceml.onnx.schema import ONNXAttributeType, _ATTR_TYPE_TO_PYTHON_TYPE, ONNXAttribute
 
@@ -60,9 +59,10 @@ def _add_ort_init_code(sdfg: SDFG):
         """
 
         if any(
-                hasattr(node, "schedule")
-                and node.schedule in [ScheduleType.GPU_Device, ScheduleType.GPU_Persistent, ScheduleType.GPU_Default]
-                for state in sdfg.nodes() for node in state.nodes()):
+                hasattr(node, "schedule") and node.schedule in [
+                    dtypes.ScheduleType.GPU_Device, dtypes.ScheduleType.
+                    GPU_Persistent, dtypes.ScheduleType.GPU_Default
+                ] for state in sdfg.nodes() for node in state.nodes()):
             # if the SDFG contains a GPU node, add the CUDA provider and the memory_info
             sdfg.append_global_code("OrtMemoryInfo* __ort_cuda_mem_info;\n")
             sdfg.append_global_code(
@@ -154,7 +154,7 @@ def _gen_attr_init_code(kernel_context: str, attr: ONNXAttribute,
     elif attr.type == ONNXAttributeType.Tensor:
         assert_type(value, _ATTR_TYPE_TO_PYTHON_TYPE[attr.type])
 
-        dace_typeclass = DTYPE_TO_TYPECLASS[value.dtype.type]
+        dace_typeclass = dtypes.DTYPE_TO_TYPECLASS[value.dtype.type]
 
         supported_types = {
             dace.float16: dace.float32,
@@ -205,6 +205,211 @@ def _gen_attr_init_code(kernel_context: str, attr: ONNXAttribute,
     return init_code
 
 
+class Copy(NamedTuple):
+    """ Describes a copy that needs to be done before connecting to the ORT tasklet. """
+    storage: dtypes.StorageType  #: the storage of the descriptor
+    copy_to_array: bool  #: True for scalars that must be copied to arrays with shape [1].
+
+
+def check_required_copies(
+    node: nd.Node, state: SDFGState, sdfg: SDFG, outputs_on_host: List[bool],
+    inputs_on_host: List[bool], actual_node_schedule: dtypes.ScheduleType
+) -> Tuple[Dict[str, Copy], Dict[str, Copy]]:
+    """ Check whether copies are required for all parameters.
+        :param node: the node.
+        :param state: the state.
+        :param sdfg: the sdfg.
+        :param outputs_on_host: boolean list, where the ith bool indicates if the ith output should be on host.
+        :param inputs_on_host: boolean list, where the ith bool indicates if the ith input should be on host.
+        :param actual_node_schedule: the actual schedule we will use for expansion. This is != node.schedule when
+                                     the ORT does not support running that node with that schedule.
+        :return: two dicts containing :class:``Copy`` objects for each of the connectors that require copies. The first
+                 dict is for the inputs, the second is for the outputs.
+    """
+
+    # maps the connectors for which a copy will be required to the storage type required to be connected to the tasklet
+    input_copy_required: Dict[str, Copy] = {}
+    output_copy_required: Dict[str, Copy] = {}
+
+    assert len(node.iter_outputs_in_onnx_order(state)) == len(outputs_on_host)
+    assert len(node.iter_inputs_in_onnx_order(state)) == len(inputs_on_host)
+
+    # check outputs
+    for edge, output_on_host in zip(node.iter_outputs_in_onnx_order(state),
+                                    outputs_on_host):
+        # get the memlet for this output
+        array = sdfg.arrays[edge.data.data]
+
+        if output_on_host:
+            is_device_mismatch = not dtypes.can_access(
+                dtypes.ScheduleType.Default, array.storage)
+        else:
+            is_device_mismatch = not dtypes.can_access(
+                dtypes.ScheduleType.GPU_Device, array.storage)
+
+        copy: Optional[Copy] = None
+        if isinstance(array, dt.Scalar) and actual_node_schedule in [
+                dtypes.ScheduleType.GPU_Device,
+                dtypes.ScheduleType.GPU_Persistent,
+                dtypes.ScheduleType.GPU_Default
+        ]:
+            # ORT kernels expect scalars to be cudaMalloced. We will copy during expansion to enforce this
+            is_device_mismatch = True
+            copy = Copy(
+                storage=dtypes.StorageType.Default,
+                copy_to_array=True)  # default will be overwritten below
+
+        if is_device_mismatch:
+            # we need to insert a copy
+            storage = dtypes.StorageType.CPU_Heap if output_on_host else dtypes.StorageType.GPU_Global
+            if copy is None:
+                copy = Copy(storage=storage, copy_to_array=False)
+            else:
+                copy = Copy(storage=storage, copy_to_array=copy.copy_to_array)
+        if copy is not None:
+            output_copy_required[edge.src_conn] = copy
+
+    # check inputs (same thing again)
+    for edge, input_on_host in zip(node.iter_inputs_in_onnx_order(state),
+                                   inputs_on_host):
+        array = sdfg.arrays[edge.data.data]
+
+        if input_on_host:
+            is_device_mismatch = not dtypes.can_access(
+                dtypes.ScheduleType.Default, array.storage)
+        else:
+            is_device_mismatch = not dtypes.can_access(
+                dtypes.ScheduleType.GPU_Device, array.storage)
+
+        copy: Optional[Copy] = None
+        if isinstance(array, dt.Scalar) and actual_node_schedule in [
+                dtypes.ScheduleType.GPU_Device,
+                dtypes.ScheduleType.GPU_Persistent,
+                dtypes.ScheduleType.GPU_Default
+        ]:
+            # ORT kernels expect scalars to be cudaMalloced. We will copy during expansion to enforce this
+            is_device_mismatch = True
+            copy = Copy(
+                storage=dtypes.StorageType.Default,
+                copy_to_array=True)  # default will be overwritten below
+
+        if is_device_mismatch:
+            # we need to insert a copy
+            storage = dtypes.StorageType.CPU_Heap if input_on_host else dtypes.StorageType.GPU_Global
+            if copy is None:
+                copy = Copy(storage=storage, copy_to_array=False)
+            else:
+                copy = Copy(storage=storage, copy_to_array=copy.copy_to_array)
+        if copy is not None:
+            input_copy_required[edge.dst_conn] = copy
+
+    return input_copy_required, output_copy_required
+
+
+def emit_setup_code_for_ortvalue(parameter_name: str, edge_connector_name: str,
+                                 desc: dt.Data, required_copy: Optional[Copy],
+                                 is_input: bool, ort_value_name: str,
+                                 connector_dict: dict) -> str:
+    """ Emit the code that creates the OrtValue for a parameter.
+
+        :param parameter_name: the onnx name of the parameter.
+        :param edge_connector_name: the name of the edge connector to the tasklet.
+        :param desc: the dace input descriptor connected to this parameter.
+        :param required_copy: the ``Copy`` object for this parameter, if a copy is required.
+        :param is_input: whether the parameter is an input.
+        :param ort_value_name: the name for the ort_value.
+        :param connector_dict: either the input connector or output connector dict for the expanded node, depending on
+                               whether this is an input or an output.
+        :return: the code that creates the OrtValue for ``parameter_name``.
+    """
+
+    input_output_string = "input" if is_input else "output"
+    code = ""
+
+    if required_copy is not None:
+        storage = required_copy.storage
+        copy_to_array = required_copy.copy_to_array
+    else:
+        storage = desc.storage
+        copy_to_array = False
+
+    if storage in [dtypes.StorageType.Default, dtypes.StorageType.CPU_Heap]:
+        mem_info = "__ort_cpu_mem_info"
+    elif storage is dtypes.StorageType.GPU_Global:
+        mem_info = "__ort_cuda_mem_info"
+    elif storage is dtypes.StorageType.CPU_Pinned:
+        mem_info = "__ort_cuda_pinned_mem_info"
+    else:
+        raise ValueError(
+            "Unsupported storage type {} for input to ONNX node".format(
+                desc.storage))
+
+    if (isinstance(desc, dt.Scalar) and
+            # when copying to array, the ort value is not a scalar but an array
+            not copy_to_array):
+
+        code += """
+        OrtValue* {ort_value_name};
+        __ort_check_status(__ort_api->CreateTensorWithDataAsOrtValue(
+            {mem_info},
+            &{edge_connector_name},
+            {data_size} * sizeof({ctype}),
+            nullptr,
+            0,
+            ONNX_TENSOR_ELEMENT_DATA_TYPE_{type_str},
+            &{ort_value_name}
+        ));
+        """.format(mem_info=mem_info,
+                   edge_connector_name=edge_connector_name,
+                   data_size=reduce(lambda x, y: x * y, desc.shape),
+                   ctype=desc.dtype.ctype,
+                   type_str=typeclass_to_onnx_str(desc.dtype).upper(),
+                   ort_value_name=ort_value_name)
+        connector_dict[parameter_name] = None
+    elif isinstance(desc, dt.Array) or copy_to_array:
+
+        # when we copy a scalar to an array, that scalar ofc has shape []
+        dims = [] if copy_to_array else desc.shape
+
+        # setup dims array
+        code += """
+        int64_t {input_output_string}_{parameter_name}_dims[{dims_size}] = {{{dims}}};
+        """.format(input_output_string=input_output_string,
+                   parameter_name=parameter_name,
+                   dims_size=len(dims),
+                   dims=", ".join(str(s) for s in dims))
+
+        data = "const_cast < void * > (reinterpret_cast < const void * > ({}))".format(
+            edge_connector_name)
+
+        code += """
+        OrtValue* {ort_value_name};
+        __ort_check_status(__ort_api->CreateTensorWithDataAsOrtValue(
+            {mem_info},
+            {data},
+            {data_size} * sizeof({ctype}),
+            {input_output_string}_{parameter_name}_dims,
+            {dims_size},
+            ONNX_TENSOR_ELEMENT_DATA_TYPE_{type_str},
+            &{ort_value_name}
+        ));
+        """.format(input_output_string=input_output_string,
+                   data=data,
+                   mem_info=mem_info,
+                   parameter_name=parameter_name,
+                   data_size=reduce(lambda x, y: x * y, desc.shape),
+                   ctype=desc.dtype.ctype,
+                   dims_size=len(dims),
+                   type_str=typeclass_to_onnx_str(desc.dtype).upper(),
+                   ort_value_name=ort_value_name)
+        connector_dict[parameter_name] = dace.pointer(desc.dtype)
+    else:
+        raise NotImplementedError(
+            "Data-descriptor type {} not supported for ONNX nodes".format(
+                type(desc)))
+    return code
+
+
 def expand_node(node, state, sdfg):
     inputs, outputs = _get_inputs_and_outputs(sdfg, state, node)
 
@@ -223,17 +428,20 @@ def expand_node(node, state, sdfg):
     __ort_check_status(__ort_api->CreateExecutableKernelContext("{name}", "{op_type}", &__ort_context_{name}));
     """.format(name=unique_id, op_type=node.schema.name))
 
-    # check if ORT supports CUDA for this node
-    ##########################################
+    # check if ORT supports CUDA for this node using the op checker
+    ###############################################################
 
     # Default: all parameters are on CPU if we execute using cpu
     outputs_on_host = [True for _ in range(len(outputs))]
     inputs_on_host = [True for _ in range(len(inputs))]
 
     actual_node_schedule = node.schedule
-    if node.schedule == ScheduleType.CPU_Multicore or node.schedule == ScheduleType.Default:
+    if node.schedule == dtypes.ScheduleType.CPU_Multicore or node.schedule == dtypes.ScheduleType.Default:
         provider_index = 0
-    elif node.schedule in [ScheduleType.GPU_Device, ScheduleType.GPU_Persistent, ScheduleType.GPU_Default]:
+    elif node.schedule in [
+            dtypes.ScheduleType.GPU_Device, dtypes.ScheduleType.GPU_Persistent,
+            dtypes.ScheduleType.GPU_Default
+    ]:
         provider_index = 1
         try:
             # the ith position indicates whether the ith output is in host memory
@@ -247,7 +455,7 @@ def expand_node(node, state, sdfg):
             print("Falling back to CPU for node {}. Reason:\n{}".format(
                 node.name, str(e)))
             provider_index = 0
-            actual_node_schedule = ScheduleType.CPU_Default
+            actual_node_schedule = dtypes.ScheduleType.CPU_Default
     else:
         raise NotImplementedError(
             "ORT expansion for schedule '{}' is not implemented".format(
@@ -256,72 +464,15 @@ def expand_node(node, state, sdfg):
     # check if we need to insert device copies
     ##########################################
 
-    # maps the connectors for which a copy will be required to the storage type required to be connected to the tasklet
-    input_copy_required = defaultdict(dict)
-    output_copy_required = defaultdict(dict)
-
-    assert len(node.iter_outputs_in_onnx_order(state)) == len(outputs_on_host)
-    assert len(node.iter_inputs_in_onnx_order(state)) == len(inputs_on_host)
-
-    # check outputs
-    for edge, output_on_host in zip(node.iter_outputs_in_onnx_order(state),
-                                    outputs_on_host):
-        # get the memlet for this output
-        array = sdfg.arrays[edge.data.data]
-
-        if output_on_host:
-            is_device_mismatch = not can_access(ScheduleType.Default,
-                                                array.storage)
-        else:
-            is_device_mismatch = not can_access(ScheduleType.GPU_Device,
-                                                array.storage)
-
-        if isinstance(
-                array,
-                dt.Scalar) and actual_node_schedule in [ScheduleType.GPU_Device, ScheduleType.GPU_Persistent, ScheduleType.GPU_Default]:
-            # ORT kernels expect scalars to be cudaMalloced. We will copy during expansion to enforce this
-            is_device_mismatch = True
-            output_copy_required[edge.src_conn]['copy_to_array'] = True
-
-        if is_device_mismatch:
-            # we need to insert a copy
-            output_copy_required[edge.src_conn][
-                'storage'] = StorageType.CPU_Heap if output_on_host else StorageType.GPU_Global
-
-    # check inputs (same thing again)
-    for edge, input_on_host in zip(node.iter_inputs_in_onnx_order(state),
-                                   inputs_on_host):
-        array = sdfg.arrays[edge.data.data]
-
-        if input_on_host:
-            is_device_mismatch = not can_access(ScheduleType.Default,
-                                                array.storage)
-        else:
-            is_device_mismatch = not can_access(ScheduleType.GPU_Device,
-                                                array.storage)
-
-        if isinstance(
-                array,
-                dt.Scalar) and actual_node_schedule in [ScheduleType.GPU_Device, ScheduleType.GPU_Persistent, ScheduleType.GPU_Default]:
-            # ORT kernels expect scalars to be cudaMalloced. We will copy during expansion to enforce this
-            is_device_mismatch = True
-            input_copy_required[edge.dst_conn]['copy_to_array'] = True
-
-        if is_device_mismatch:
-            # we need to insert a copy
-            input_copy_required[edge.dst_conn][
-                'storage'] = StorageType.CPU_Heap if input_on_host else StorageType.GPU_Global
+    input_copy_required, output_copy_required = check_required_copies(
+        node, state, sdfg, outputs_on_host, inputs_on_host,
+        actual_node_schedule)
 
     # begin codegen
     ##########################################
     tasklet_setup_code = ""
     tasklet_code = ""
     tasklet_cleanup_code = ""
-
-    reversed_onnx_dtype_map = {
-        v: k
-        for k, v in ONNX_DTYPES_TO_DACE_TYPE_CLASS.items()
-    }
 
     # emit code for inputs and outputs
     ##########################################
@@ -332,20 +483,14 @@ def expand_node(node, state, sdfg):
 
         parameter_name = edge.dst_conn if is_input else edge.src_conn
 
-        if len(output_copy_required) != 0 or len(input_copy_required) != 0:
-            edge_connector_name = "_conn_" + parameter_name
-        else:
-            edge_connector_name = parameter_name
-
         input_output_string = "input" if is_input else "output"
-        connector_dict = in_connectors if is_input else out_connectors
         memlet = edge.data
         desc = sdfg.arrays[memlet.data]
         sdfg.append_init_code("""
         // Add parameter {parameter_name}
         __ort_check_status(__ort_api->ExecutableKernelContext_Add{input_output_string}(__ort_context_{id}, ONNX_TENSOR_ELEMENT_DATA_TYPE_{type_string}));
         """.format(id=unique_id,
-                   type_string=reversed_onnx_dtype_map[desc.dtype].upper(),
+                   type_string=typeclass_to_onnx_str(desc.dtype).upper(),
                    parameter_name=parameter_name,
                    input_output_string=input_output_string.capitalize()))
 
@@ -353,87 +498,23 @@ def expand_node(node, state, sdfg):
             input_output_string=input_output_string,
             parameter_name=parameter_name)
 
-        copy_to_array = (
-            (parameter_name in output_copy_required
-             and 'copy_to_array' in output_copy_required[parameter_name])
-            or (parameter_name in input_copy_required
-                and 'copy_to_array' in input_copy_required[parameter_name]))
-        if desc.storage in [StorageType.Default, StorageType.CPU_Heap]:
-            mem_info = "__ort_cpu_mem_info"
-        elif desc.storage == StorageType.GPU_Global:
-            mem_info = "__ort_cuda_mem_info"
-        elif desc.storage == StorageType.CPU_Pinned:
-            mem_info = "__ort_cuda_pinned_mem_info"
+        # when we emit a NestedSDFG (i.e. when we have to perform any copy), the edge connector names must be prefixed
+        if len(output_copy_required) != 0 or len(input_copy_required) != 0:
+            edge_connector_name = "_conn_" + parameter_name
         else:
-            raise ValueError(
-                "Unsupported storage type {} for input to ONNX node".format(
-                    desc.storage))
-        if (isinstance(desc, dt.Scalar) and
-                # when copying to array, the ort value is not a scalar but an array
-                not copy_to_array):
+            edge_connector_name = parameter_name
 
-            tasklet_setup_code += """
-            OrtValue* {ort_value_name};
-            __ort_check_status(__ort_api->CreateTensorWithDataAsOrtValue(
-                {mem_info},
-                &{edge_connector_name},
-                {data_size} * sizeof({ctype}),
-                nullptr,
-                0,
-                ONNX_TENSOR_ELEMENT_DATA_TYPE_{type_str},
-                &{ort_value_name}
-            ));
-            """.format(input_output_string=input_output_string,
-                       mem_info=mem_info,
-                       edge_connector_name=edge_connector_name,
-                       data_size=reduce(lambda x, y: x * y, desc.shape),
-                       ctype=desc.dtype.ctype,
-                       type_str=reversed_onnx_dtype_map[desc.dtype].upper(),
-                       ort_value_name=ort_value_name)
-            connector_dict[parameter_name] = None
+        copy_options_dict = input_copy_required if is_input else output_copy_required
+        copy_options = copy_options_dict.get(parameter_name, None)
 
-        elif isinstance(desc, dt.Array) or copy_to_array:
-
-            # when we copy a scalar to an array, that scalar ofc has shape []
-            dims = [] if copy_to_array else desc.shape
-
-            # setup dims array
-            tasklet_setup_code += """
-            int64_t {input_output_string}_{parameter_name}_dims[{dims_size}] = {{{dims}}};
-            """.format(input_output_string=input_output_string,
-                       parameter_name=parameter_name,
-                       dims_size=len(dims),
-                       dims=", ".join(str(s) for s in dims))
-
-            connector_dict[parameter_name] = dace.pointer(desc.dtype)
-            data = "const_cast < void * > (reinterpret_cast < const void * > ({}))".format(
-                edge_connector_name)
-
-            tasklet_setup_code += """
-            OrtValue* {ort_value_name};
-            __ort_check_status(__ort_api->CreateTensorWithDataAsOrtValue(
-                {mem_info},
-                {data},
-                {data_size} * sizeof({ctype}),
-                {input_output_string}_{parameter_name}_dims,
-                {dims_size},
-                ONNX_TENSOR_ELEMENT_DATA_TYPE_{type_str},
-                &{ort_value_name}
-            ));
-            """.format(input_output_string=input_output_string,
-                       data=data,
-                       mem_info=mem_info,
-                       parameter_name=parameter_name,
-                       data_size=reduce(lambda x, y: x * y, desc.shape),
-                       ctype=desc.dtype.ctype,
-                       dims_size=len(dims),
-                       type_str=reversed_onnx_dtype_map[desc.dtype].upper(),
-                       ort_value_name=ort_value_name)
-        else:
-            raise NotImplementedError(
-                "Data-descriptor type {} not supported for ONNX nodes".format(
-                    type(desc)))
-
+        tasklet_setup_code += emit_setup_code_for_ortvalue(
+            parameter_name=parameter_name,
+            edge_connector_name=edge_connector_name,
+            desc=desc,
+            required_copy=copy_options,
+            is_input=is_input,
+            ort_value_name=ort_value_name,
+            connector_dict=in_connectors if is_input else out_connectors)
 
         tasklet_code += "__ort_check_status(__ort_api->ExecutableKernel_Set{input_output_string_capital}(" \
                         "__ort_kernel_{unique_id}, {position}, {ort_value_name}));\n".format(
@@ -517,8 +598,9 @@ def expand_node(node, state, sdfg):
                     "Unsupported data type {} connected to an ONNX tasklet".
                     format(type(desc)))
 
-            if parameter_name not in (input_copy_required
-                                      if is_input else output_copy_required):
+            copy_options_dict = input_copy_required if is_input else output_copy_required
+            # handle parameters for which no copies are required
+            if parameter_name not in copy_options_dict:
                 if is_input:
                     access = nstate.add_read(parameter_name)
                     nstate.add_edge(access, None, ntasklet,
@@ -531,18 +613,17 @@ def expand_node(node, state, sdfg):
                                     nsdfg.make_array_memlet(parameter_name))
                 continue
 
-            copy_options = input_copy_required[
-                parameter_name] if is_input else output_copy_required[
-                    parameter_name]
+            # handle copies
+            copy_options = copy_options_dict[parameter_name]
 
             # add the copy of the descriptor
-            if 'copy_to_array' in copy_options:
+            if copy_options.copy_to_array:
                 copy_desc = dt.Array(shape=[1], dtype=desc.dtype)
             else:
                 copy_desc = deepcopy(desc)
 
             copy_desc.transient = True
-            copy_desc.storage = copy_options['storage']
+            copy_desc.storage = copy_options.storage
             nsdfg.add_datadesc("copy_" + memlet.data, copy_desc)
 
             nmemlet = deepcopy(memlet)

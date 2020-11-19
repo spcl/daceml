@@ -10,7 +10,8 @@ from daceml.transformation import ConstantFolding
 
 
 @pytest.mark.slow
-def test_bert_encoder(gpu, default_implementation):
+@pytest.mark.pure
+def test_bert_encoder(gpu):
     batch_size = 8
     seq_len = 512
     hidden_size = 768
@@ -57,4 +58,4 @@ def test_bert_cf(apply_strict):
 
 
 if __name__ == "__main__":
-    test_bert_encoder(False, False)
+    test_bert_encoder(True)

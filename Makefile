@@ -12,7 +12,7 @@ else
 ACTIVATE = . $(VENV_PATH)/bin/activate &&
 endif
 
-.PHONY: clean doc doctest test test-gpu codecov check-formatting
+.PHONY: clean doc doctest test test-gpu codecov check-formatting check-formatting-names clean-dacecaches
 clean:
 	! test -d $(VENV_PATH) || rm -r $(VENV_PATH)
 
@@ -48,6 +48,9 @@ test-gpu:
 
 codecov:
 	curl -s https://codecov.io/bash | bash
+
+clean-dacecaches:
+	find . -name ".dacecache" -type d -not -path "*CMakeFiles*" -exec rm -r {} \;
 
 check-formatting:
 	$(ACTIVATE) $(YAPF) \

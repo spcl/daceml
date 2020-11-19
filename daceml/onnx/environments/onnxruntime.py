@@ -50,8 +50,10 @@ def _get_dist_includes():
 
 
 if 'ORT_RELEASE' in os.environ:
+    log.debug("Using ORT_RELEASE")
     INCLUDES, ORT_DLL_PATH = _get_dist_includes()
 else:
+    log.debug("Using ORT_ROOT")
     INCLUDES, ORT_DLL_PATH = _get_src_includes()
 
 
