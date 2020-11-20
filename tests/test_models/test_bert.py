@@ -4,7 +4,7 @@ import subprocess
 import numpy as np
 import onnx
 
-from daceml.onnx import ONNXModel
+import daceml.onnx as donnx
 
 
 def test_bert_full(gpu, default_implementation):
@@ -21,7 +21,7 @@ def test_bert_full(gpu, default_implementation):
 
     model = onnx.load(bert_path)
 
-    dace_model = ONNXModel("bert", model, cuda=gpu, infer_shapes=False)
+    dace_model = donnx.ONNXModel("bert", model, cuda=gpu, infer_shapes=False)
     feed = {
         "input_ids:0": np.load(os.path.join(data_directory, "input_ids.npy")),
         "input_mask:0": np.load(os.path.join(data_directory,
@@ -37,7 +37,3 @@ def test_bert_full(gpu, default_implementation):
 
     assert np.all(np.abs(outputs[1] - unstack_0) < 1e-4)
     assert np.all(np.abs(outputs[0] - unstack_1) < 1e-4)
-
-
-if __name__ == "__main__":
-    test_bert_full(False)

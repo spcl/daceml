@@ -195,7 +195,7 @@ class PureErf(ONNXForward):
         return program_for_node(prog, sdfg, state, node).to_sdfg()
 
 
-@autoregister_params(op="Reshape", name="pure")
+#@autoregister_params(op="Reshape", name="pure")
 class PureReshape(ONNXForward):
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
@@ -632,6 +632,10 @@ class PureCast(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
+
+        if node.schedule is dtypes.ScheduleType.GPU_Default:
+            # TODO fix this (this breaks bert_full) because of a GPU scalar cast
+            return False
 
         target_type = node.to
         try:
