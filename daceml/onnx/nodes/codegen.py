@@ -479,8 +479,17 @@ def expand_node(node, state, sdfg):
     in_connectors = {}
     out_connectors = {}
 
-    for edge, is_input in node.iter_edges(state):
+    # we will expand to a nested sdfg if we require copies, or if we have a name clash in the parent scope
+    conn_name = lambda e, is_input: e.dst_conn if is_input else e.src_conn
+    name_clash_in_parent_scope = any(
+        conn_name(e, is_input) in sdfg.arrays
+        or conn_name(e, is_input) in sdfg.symbols
+        for e, is_input in node.iter_edges(state))
 
+    return_nested_sdfg = name_clash_in_parent_scope or len(
+        output_copy_required) != 0 or len(input_copy_required) != 0
+
+    for edge, is_input in node.iter_edges(state):
         parameter_name = edge.dst_conn if is_input else edge.src_conn
 
         input_output_string = "input" if is_input else "output"
@@ -499,7 +508,7 @@ def expand_node(node, state, sdfg):
             parameter_name=parameter_name)
 
         # when we emit a NestedSDFG (i.e. when we have to perform any copy), the edge connector names must be prefixed
-        if len(output_copy_required) != 0 or len(input_copy_required) != 0:
+        if return_nested_sdfg:
             edge_connector_name = "_conn_" + parameter_name
         else:
             edge_connector_name = parameter_name
@@ -566,7 +575,7 @@ def expand_node(node, state, sdfg):
                          language=dace.dtypes.Language.CPP)
     tasklet.environments = {"ONNXRuntime"}
 
-    if len(output_copy_required) != 0 or len(input_copy_required) != 0:
+    if return_nested_sdfg:
         nsdfg = dace.SDFG("nested_{}".format(unique_id))
         nstate = nsdfg.add_state()
         ntasklet = deepcopy(tasklet)
