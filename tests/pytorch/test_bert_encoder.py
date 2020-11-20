@@ -10,8 +10,10 @@ from daceml.transformation import ConstantFolding
 
 
 @pytest.mark.slow
-@pytest.mark.pure
-def test_bert_encoder(gpu):
+def test_bert_encoder(gpu, default_implementation):
+    if not gpu and default_implementation == 'onnxruntime':
+        pytest.skip("combination is tested below")
+
     batch_size = 8
     seq_len = 512
     hidden_size = 768
@@ -27,12 +29,10 @@ def test_bert_encoder(gpu):
     diff = np.abs(dace_outputs0 - pt_outputs[0].detach().numpy())
 
     assert np.max(diff) < 1e-5
-    print("testing passed")
 
 
-@pytest.mark.parametrize("apply_strict", [True, False])
 @pytest.mark.ort
-def test_bert_cf(apply_strict):
+def test_bert_cf():
     batch_size = 8
     seq_len = 512
     hidden_size = 768
@@ -47,6 +47,8 @@ def test_bert_cf(apply_strict):
 
     dace_model.dace_model.sdfg.apply_transformations_repeated(
         [ConstantFolding, RedundantSecondArray], validate_all=True)
+    dace_model.dace_model.sdfg.expand_library_nodes()
+    dace_model.dace_model.sdfg.apply_strict_transformations()
 
     dace_outputs1 = dace_model(input.clone())
 
@@ -54,8 +56,3 @@ def test_bert_cf(apply_strict):
 
     assert np.max(diff) < 1e-5
     assert np.allclose(dace_outputs1, dace_outputs0)
-    print("testing passed")
-
-
-if __name__ == "__main__":
-    test_bert_encoder(True)

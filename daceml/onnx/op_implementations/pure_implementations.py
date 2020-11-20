@@ -79,6 +79,11 @@ class PurePow(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
+        if node.schedule is dtypes.ScheduleType.GPU_Default:
+            # TODO fix this in a follow up PR (this returns NaN in the PT bert encoder test; check
+            # how ORT implements Pow for cuda...)
+            return False
+
         return in_desc_with_name(node, state, sdfg, 'X').dtype in [
             dace.float16, dace.float32, dace.float64
         ]
