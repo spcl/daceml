@@ -79,8 +79,6 @@ def test_squeeze(gpu, apply_strict, break_opchecker, default_implementation):
             sdfg.expand_library_nodes()
             sdfg.apply_strict_transformations()
 
-        sdfg.expand_library_nodes()
-        sdfg.view()
         result = sdfg(X_arr=X)
 
         assert result.shape == (1, )
@@ -167,9 +165,6 @@ def test_unsqueeze(gpu, apply_strict, break_opchecker, default_implementation):
 @pytest.mark.parametrize("break_opchecker", [True, False])
 def test_add(gpu, scalars, apply_strict, break_opchecker,
              default_implementation):
-    if scalars and default_implementation == 'pure':
-        pytest.skip('Scalars on GPU are broken in dace')
-
     with BreakOpChecker() if break_opchecker else suppress():
         sdfg = dace.SDFG("test_expansion")
 

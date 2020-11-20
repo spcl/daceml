@@ -455,7 +455,7 @@ def expand_node(node, state, sdfg):
             print("Falling back to CPU for node {}. Reason:\n{}".format(
                 node.name, str(e)))
             provider_index = 0
-            actual_node_schedule = dtypes.ScheduleType.CPU_Default
+            actual_node_schedule = dtypes.ScheduleType.Default
     else:
         raise NotImplementedError(
             "ORT expansion for schedule '{}' is not implemented".format(

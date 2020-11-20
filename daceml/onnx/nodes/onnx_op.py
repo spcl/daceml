@@ -3,11 +3,10 @@ import logging
 from typing import Iterator, Tuple, List, Dict, Type
 
 import dace
-import dace.data as dt
 import dace.sdfg.nodes as nd
 import dace.frontend.common.op_repository as dace_op_repo
 import onnx
-from dace import SDFG, SDFGState
+from dace import SDFG, SDFGState, dtypes, data
 from dace.properties import Property, ListProperty
 from dace.sdfg.graph import MultiConnectorEdge
 from dace.transformation.transformation import ExpandTransformation
@@ -583,7 +582,14 @@ for schema in onnx.defs.get_all_schemas():
 
                 @classmethod
                 def expansion(cls, node, state, sdfg):
-                    if cls.forward_impl.forward_can_be_applied(
+                    # scalars on gpu don't work in dace at the moment.
+                    skip_due_to_scalars_on_gpu = (
+                        node.schedule == dtypes.ScheduleType.GPU_Default
+                        and any(
+                            isinstance(sdfg.arrays[e.data.data], data.Scalar)
+                            for e in state.out_edges(node)))
+
+                    if not skip_due_to_scalars_on_gpu and cls.forward_impl.forward_can_be_applied(
                             node, state, sdfg):
                         return cls.forward_impl.forward(node, state, sdfg)
                     else:
