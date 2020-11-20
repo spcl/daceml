@@ -6,26 +6,6 @@ from dace import SDFG, SDFGState
 import dace.data as dt
 
 
-# from paramdec package
-def paramdec(dec):
-    """
-    Create parametrized decorator.
-    >>> @paramdec
-    ... def dec(func, foo=42, bar=None):
-    ...     def wrapper(*func_args, **func_kwargs):
-    ...         # Process foo and bar
-    ...         return func(*func_args, **func_kwargs)
-    ...     return wrapper
-    """
-    @wraps(dec)
-    def wrapper(func=None, **dec_kwargs):
-        if callable(func) and not dec_kwargs:
-            return dec(func)
-        return lambda real_func: dec(real_func, **dec_kwargs)
-
-    return wrapper
-
-
 def is_desc_contiguous(desc: dt.Data) -> bool:
     if type(desc) is dt.Scalar:
         return True
