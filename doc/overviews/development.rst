@@ -39,8 +39,8 @@ both ``True`` and ``False`` to that argument.
 
 Setting the default implementation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Nodes can be expanded to different implementations. To control the default implementation that is used, tests can be
-decorated with the following two markers.
+Nodes can be expanded to different implementations (See :ref:`node_implementations`). To control the default
+implementation that is used, tests can be decorated with the following two markers.
 
 ``pytest.mark.ort``
     Use the ONNXRuntime expansion as default

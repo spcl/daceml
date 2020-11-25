@@ -101,6 +101,8 @@ or the SDFG API:
 
     Automatically expanded library node "MyConvNode" with implementation "onnxruntime".
 
+.. _node_implementations:
+
 Node Implementations
 --------------------
 The ONNX library nodes work like library nodes in dace: they can have multiple implementations that can be selected
