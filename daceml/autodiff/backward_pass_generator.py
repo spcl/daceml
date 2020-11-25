@@ -337,6 +337,10 @@ class BackwardPassGenerator:
                             def expansion(cls, node, state, sdfg):
                                 return impl.forward(node, state, sdfg)
 
+                            @staticmethod
+                            def annotates_memlets() -> bool:
+                                return True
+
                         Expansion._match_node = xf.PatternNode(type(node))
                         Expansion.apply_to(state.parent,
                                            verify=False,

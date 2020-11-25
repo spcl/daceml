@@ -14,7 +14,7 @@ def test_bert_encoder(gpu):
     hidden_size = 768
 
     input = torch.randn([batch_size, seq_len, hidden_size])
-    ptmodel = BertLayer(BertConfig()).eval()
+    ptmodel = BertLayer(BertConfig(hidden_act="relu")).eval()
 
     dace_model = DaceModule(ptmodel, cuda=gpu, train=False, backward=True)
 
