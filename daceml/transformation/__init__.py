@@ -1,1 +1,2 @@
 from .constant_folding import ConstantFolding
+from .reshape_transpose_elimination import ReshapeTransposeElimination
