@@ -47,6 +47,22 @@ Schema Representation
     :members:
     :no-undoc-members:
 
+Op Implementation Registration
+------------------------------
+
+.. autoclass:: daceml.onnx.implementation_abc.ONNXForward
+    :members:
+
+.. _pure-ops:
+
+Pure ONNX Implementations
+-------------------------
+
+.. automodule:: daceml.onnx.op_implementations.pure_implementations
+    :members:
+    :show-inheritance:
+    :exclude-members: program_for_node, forward_can_be_applied, forward
+
 Supported ONNX Operators
 ------------------------
 The following documentation is mostly automatically generated from the ONNX documentation, except for the removal of unsupported attributes and nodes.

@@ -358,8 +358,6 @@ class PureTanh(ONNXForward):
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
-        # TODO can this be replaced with elementwise(tanh)?
-
         node.validate(sdfg, state)
         in_edges = state.in_edges(node)
 

@@ -17,14 +17,26 @@ class ONNXForward(abc.ABC):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
+        """ Return whether this expansion can be applied.
+
+            :param node: the candidate node.
+            :param state: the candidate state.
+            :param sdfg: the candidate sdfg.
+            :return: whether this expansion can be applied.
+        """
         return True
 
     @staticmethod
     @abc.abstractmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
+        """ Expand `node` and return its expansion.
 
-        # TODO docstring
+            :param node: the candidate node.
+            :param state: the candidate state.
+            :param sdfg: the candidate sdfg.
+            :return: the expanded node.
+        """
         ...
 
 
