@@ -29,7 +29,10 @@ endif
 	$(ACTIVATE) $(PIP) install -e .[testing,debug,docs]
 
 doc:
-	$(ACTIVATE) cd doc && make clean html
+# suppress warnings in ONNXOps docstrings using grep -v
+	$(ACTIVATE) cd doc && make clean html 2>&1 \
+	| grep -v ".*daceml\/daceml\/onnx\/nodes\/onnx_op\.py:docstring of daceml\.onnx\.nodes\.onnx_op\.ONNX.*:[0-9]*: WARNING:"
+
 
 doctest:
 	$(ACTIVATE) cd doc && make doctest
