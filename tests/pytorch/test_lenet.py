@@ -30,7 +30,7 @@ class LeNet(nn.Module):
 @pytest.mark.pure
 def test_lenet():
 
-    input = torch.rand(1, 1, 32, 32, dtype=torch.float32)
+    input = torch.rand(8, 1, 32, 32, dtype=torch.float32)
 
     net = LeNet()
     dace_net = LeNet()
@@ -39,4 +39,5 @@ def test_lenet():
 
     torch_output = net(torch.clone(input))
     dace_output = dace_net(torch.clone(input))
+    dace_net.sdfg.expand_library_nodes()
     assert np.allclose(torch_output.detach().numpy(), dace_output)
