@@ -685,7 +685,6 @@ class PureConv2D(ONNXForward):
             B = None
 
         image_dims = len(X.shape) - 2
-        image_x, image_y = X.shape[2:]
         strides = node.strides if node.strides is not None else [
             1 for _ in range(image_dims)
         ]
@@ -703,7 +702,9 @@ class PureConv2D(ONNXForward):
         output_size_y, output_size_x = Y.shape[2:]
 
         new_sdfg = dace.SDFG("pure_conv")
-        new_state = new_sdfg.add_state()
+
+        init_state = new_sdfg.add_state("init")
+        new_state = new_sdfg.add_state_after(init_state, "compute")
         new_sdfg.add_datadesc("X", copy.deepcopy(X))
         new_sdfg.add_datadesc("W", copy.deepcopy(W))
         new_sdfg.add_datadesc("Y", copy.deepcopy(Y))
@@ -714,6 +715,23 @@ class PureConv2D(ONNXForward):
         new_sdfg.arrays["X"].transient = False
         new_sdfg.arrays["W"].transient = False
         new_sdfg.arrays["Y"].transient = False
+
+        # add init state
+        # yapf: disable
+        init_state.add_mapped_tasklet("init",
+                                      map_ranges={
+                                          "i{}".format(i): "0:{}".format(i, s)
+                                          for i, s in enumerate(Y.shape)
+                                      },
+                                      inputs={},
+                                      code="y = 0",
+                                      outputs=dict(
+                                          y=dace.Memlet("Y[{}]".format(
+                                              ", ".join("i{}".format(i)
+                                                        for i, _ in enumerate(Y.shape))))
+                                      ),
+                                      external_edges=True)
+        # yapf: enable
 
         # the outer map loops over every entry in the output array
         outer_me, outer_mx = new_state.add_map(
@@ -775,6 +793,7 @@ class PureConv2D(ONNXForward):
         new_state.add_edge(outer_me, None, inner_me, None, inner_image_memlet)
         new_state.add_edge(read_X, None, outer_me, None, outer_image_memlet)
 
+        # hook up outputs
         output_memlet = dace.Memlet("Y[b, m, out_x, out_y]",
                                     wcr="lambda x, y: x + y")
         inner_output_memlet = propagation.propagate_memlet(
@@ -788,6 +807,7 @@ class PureConv2D(ONNXForward):
         new_state.add_edge_pair(outer_mx, inner_mx, write_Y,
                                 inner_output_memlet, outer_output_memlet)
 
+        # hook up B if required
         if B is not None:
             read_B = new_state.add_read("B")
             B_memlet = dace.Memlet("B[m]")
