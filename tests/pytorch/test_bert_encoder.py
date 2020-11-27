@@ -125,9 +125,9 @@ def test_bert_encoder(gpu, apply_strict):
     from dace.transformation.dataflow.nested_sdfg_fusion import NestedSDFGFusion
 
     NestedSDFGFusion.apply_to(sdfg=softmax_state.parent,
-                              nested_sdfg1=nested_sdfg1,
-                              access_node=access_node,
-                              nested_sdfg2=nested_sdfg2)
+                              _nested_sdfg1=nested_sdfg1,
+                              _access_node=access_node,
+                              _nested_sdfg2=nested_sdfg2)
 
     dace_model.sdfg.save('attn4_2.sdfg')
 
@@ -139,8 +139,8 @@ def test_bert_encoder(gpu, apply_strict):
         print("Match found in state", subgraph.graph.label, ". Nodes:", subgraph.nodes())
 
         StateReordering.apply_to(sdfg=subgraph.graph,
-                                 first_state=subgraph.nodes()[0],
-                                 second_state=subgraph.nodes()[1])
+                                 _first_state=subgraph.nodes()[0],
+                                 _second_state=subgraph.nodes()[1])
 
     dace_model.sdfg.save('attn4_3.sdfg')
 
@@ -205,7 +205,7 @@ def test_bert_encoder(gpu, apply_strict):
 
             MapTiling.apply_to(sdfg=state.parent,
                                options={'tile_sizes': (seq_len//32,)},
-                               map_entry=map_entry)
+                               _map_entry=map_entry)
 
     dace_model.sdfg.save('attn5.sdfg')
 
@@ -239,27 +239,27 @@ def test_bert_encoder(gpu, apply_strict):
         else:
             raise Exception("Unknown reduction type")
 
-        AccumulateTransient.apply_to(subgraph_view.graph.parent, {'identity': identity_value},
-                                     tasklet=tasklet, map_exit=map_exit1, outer_map_exit=map_exit2)
+        AccumulateTransient.apply_to(subgraph_view.graph.parent, {'identity': str(identity_value)},
+                                     _tasklet=tasklet, _map_exit=map_exit1, _outer_map_exit=map_exit2)
 
     dace_model.sdfg.save('attn6.sdfg')
 
-    from dace.transformation.dataflow.wcr_extraction import WCRExtraction
-
-    pattern = sdutil.node_path_graph(dace.nodes.MapExit(dace.nodes.Map("", [], [])),
-                                     dace.nodes.AccessNode("_"))
-
-    for subgraph_view in enumerate_matches(softmax_state.parent, pattern):
-
-        access_node: sdfg_nodes.AccessNode = subgraph_view.nodes()[1]
-        if access_node.label in {'_out', 'n2__out'}:
-            print("Match found in state", subgraph_view.graph.label, ". Nodes:", subgraph_view.nodes())
-
-            WCRExtraction.apply_to(sdfg=subgraph_view.graph.parent,
-                                   map_exit=subgraph_view.nodes()[0],
-                                   output_node=subgraph_view.nodes()[1])
-
-    dace_model.sdfg.save('attn7.sdfg')
+    # from dace.transformation.dataflow.wcr_extraction import WCRExtraction
+    #
+    # pattern = sdutil.node_path_graph(dace.nodes.MapExit(dace.nodes.Map("", [], [])),
+    #                                  dace.nodes.AccessNode("_"))
+    #
+    # for subgraph_view in enumerate_matches(softmax_state.parent, pattern):
+    #
+    #     access_node: sdfg_nodes.AccessNode = subgraph_view.nodes()[1]
+    #     if access_node.label in {'_out', 'n2__out'}:
+    #         print("Match found in state", subgraph_view.graph.label, ". Nodes:", subgraph_view.nodes())
+    #
+    #         WCRExtraction.apply_to(sdfg=subgraph_view.graph.parent,
+    #                                _map_exit=subgraph_view.nodes()[0],
+    #                                _output_node=subgraph_view.nodes()[1])
+    #
+    # dace_model.sdfg.save('attn7.sdfg')
 
     # nest map at the end into nested sdfg
 
@@ -299,9 +299,9 @@ def test_bert_encoder(gpu, apply_strict):
 
         subgraph = all_matches[0]
         NestedSDFGFusion.apply_to(sdfg=subgraph.graph.parent,
-                                nested_sdfg1=subgraph.nodes()[0],
-                                access_node=subgraph.nodes()[1],
-                                nested_sdfg2=subgraph.nodes()[2])
+                                _nested_sdfg1=subgraph.nodes()[0],
+                                _access_node=subgraph.nodes()[1],
+                                _nested_sdfg2=subgraph.nodes()[2])
 
     # for subgraph in enumerate_matches(softmax_sdfg, pattern):
     #     NestedSDFGFusion.apply_to(sdfg=subgraph.graph.parent,
@@ -311,8 +311,49 @@ def test_bert_encoder(gpu, apply_strict):
 
     dace_model.sdfg.save('attn8.sdfg')
 
-    # dace_model.sdfg = dace.SDFG.from_file('attn8.sdfg')
+    pattern = sdutil.node_path_graph(dace.sdfg.SDFGState(),
+                                     dace.sdfg.SDFGState(),
+                                     dace.sdfg.SDFGState(),
+                                     dace.sdfg.SDFGState(),
+                                     dace.sdfg.SDFGState())
 
+    for subgraph in enumerate_matches(softmax_state.parent, pattern):
+        print("Match found in state", subgraph.graph.label, ". Nodes:", subgraph.nodes())
+
+        StateReordering.apply_to(sdfg=subgraph.graph,
+                                 _first_state=subgraph.nodes()[1],
+                                 _second_state=subgraph.nodes()[2])
+
+    dace_model.sdfg.save('attn9.sdfg')
+
+    pattern = sdutil.node_path_graph(dace.sdfg.SDFGState(),
+                                     dace.sdfg.SDFGState(),
+                                     dace.sdfg.SDFGState(),
+                                     dace.sdfg.SDFGState(),
+                                     dace.sdfg.SDFGState())
+
+    for subgraph in enumerate_matches(softmax_state.parent, pattern):
+        print("Match found in state", subgraph.graph.label, ". Nodes:", subgraph.nodes())
+
+        StateFusion.apply_to(sdfg=subgraph.graph,
+                             first_state=subgraph.nodes()[2],
+                             second_state=subgraph.nodes()[3])
+
+    dace_model.sdfg.save('attn10.sdfg')
+
+    pattern = sdutil.node_path_graph(dace.sdfg.SDFGState(),
+                                     dace.sdfg.SDFGState(),
+                                     dace.sdfg.SDFGState(),
+                                     dace.sdfg.SDFGState())
+
+    for subgraph in enumerate_matches(softmax_state.parent, pattern):
+        print("Match found in state", subgraph.graph.label, ". Nodes:", subgraph.nodes())
+
+        StateFusion.apply_to(sdfg=subgraph.graph,
+                             first_state=subgraph.nodes()[2],
+                             second_state=subgraph.nodes()[3])
+
+    dace_model.sdfg.save('attn11.sdfg')
 
     # from dace.transformation.dataflow.warp_all_reduce_detection import WarpAllReduceDetection
     #

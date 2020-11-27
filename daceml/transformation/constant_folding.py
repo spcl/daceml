@@ -9,6 +9,7 @@ import dace.data as dt
 from dace import registry
 from dace.properties import make_properties
 from dace.transformation import pattern_matching
+from dace.transformation import transformation
 from dace.sdfg import nodes as nd
 from dace.sdfg import utils as sdutil
 
@@ -40,7 +41,7 @@ NONDETERMINISTIC_OPS = {'ONNXDropout',
 
 @registry.autoregister_params(singlestate=True)
 @make_properties
-class ConstantFolding(pattern_matching.Transformation):
+class ConstantFolding(transformation.Transformation):
     # pattern matching only checks that the type of the node matches,
     _onnx_node = ONNXOp("_")
 
