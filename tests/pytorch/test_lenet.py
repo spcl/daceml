@@ -7,8 +7,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class LeNet(nn.Module):
 
+class LeNet(nn.Module):
     def __init__(self):
         super(LeNet, self).__init__()
         self.conv1 = nn.Conv2d(1, 6, 3)
@@ -26,7 +26,8 @@ class LeNet(nn.Module):
         x = self.fc3(x)
         return x
 
-@pytest.mark.ort
+
+@pytest.mark.pure
 def test_lenet():
 
     input = torch.rand(1, 1, 32, 32, dtype=torch.float32)
@@ -40,5 +41,3 @@ def test_lenet():
     dace_output = dace_net(torch.clone(input))
     dace_net.sdfg.view()
     assert np.allclose(torch_output.detach().numpy(), dace_output)
-
-
