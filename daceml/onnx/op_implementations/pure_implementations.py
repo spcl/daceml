@@ -966,3 +966,50 @@ class PureConv2D(ONNXForward):
         new_sdfg.fill_scope_connectors()
 
         return new_sdfg
+
+
+@autoregister_params(op="Gemm", name="pure")
+class PureGemm(ONNXForward):
+    @staticmethod
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
+        if node.alpha == 1.0 and node.beta == 1.0 and node.transA == 0 and node.transB == 1:
+            return True
+        return False
+
+    @staticmethod
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+        node.validate(sdfg, state)
+
+        assert node.alpha == 1.0 and node.beta == 1.0 and node.transA == 0 and node.transB == 1
+
+        # the gemm libnode is broken for now, so we just do it manually
+        atype = in_desc_with_name(node, state, sdfg, "A")
+        if "C" in node.in_connectors:
+
+            def prog(A, B, C, Y):
+                Y[:] = A @ np.transpose(B) + C
+        else:
+
+            def prog(A, B, Y):
+                Y[:] = A @ np.transpose(B)
+
+        sdfg = program_for_node(prog, sdfg, state, node).to_sdfg()
+        sdfg.apply_strict_transformations()
+        return sdfg
+
+
+@autoregister_params(op="Relu", name="pure")
+class PureRelu(ONNXForward):
+    @staticmethod
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+        input_dtype = in_desc_with_name(node, state, sdfg, "X").dtype
+        cast_lambda = "lambda x: max(x, dace.{}(0))".format(
+            input_dtype.to_string())
+
+        def prog(X, Y):
+            Y[:] = dace.elementwise(cast_lambda, X)
+
+        return program_for_node(prog, sdfg, state, node).to_sdfg()
