@@ -38,7 +38,6 @@ def test_conv_simple(num_in_channels, kernel_size, num_filters):
     state.add_edge(conv, "Y", access_Z, None, sdfg.make_array_memlet("Z_arr"))
 
     sdfg.expand_library_nodes()
-    sdfg.view()
     sdfg(X_arr=X, W_arr=W, Z_arr=dace_Z)
 
     print(torch_Z - dace_Z)
