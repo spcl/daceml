@@ -598,6 +598,7 @@ for schema in onnx.defs.get_all_schemas():
                         return cls.forward_impl.forward(node, state, sdfg)
                     else:
                         # fall back to ORT
+                        Expansion.environments.append(ONNXRuntime)
                         reason = (
                             "scalar inputs/outputs are not supported on GPU"
                             if skip_due_to_scalars_on_gpu else
