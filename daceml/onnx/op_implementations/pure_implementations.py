@@ -1032,7 +1032,7 @@ class PureReshape(ONNXForward):
             copy.deepcopy(in_desc_with_name(node, state, sdfg, "shape")))
         expansion.add_datadesc(
             "data",
-            copy.deepcopy(out_desc_with_name(node, state, sdfg, "reshaped")))
+            copy.deepcopy(in_desc_with_name(node, state, sdfg, "data")))
         expansion.add_datadesc(
             "reshaped",
             copy.deepcopy(out_desc_with_name(node, state, sdfg, "reshaped")))
