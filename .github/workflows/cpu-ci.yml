@@ -1,7 +1,4 @@
-# This workflow will install Python dependencies, run tests and lint with a variety of Python versions
-# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
-
-name: Build and Test
+name: CPU CI
 
 on:
   push:
@@ -31,7 +28,7 @@ jobs:
     - name: Check formatting
       run: make check-formatting
 
-  cpu-test:
+  test-cpu:
     runs-on: ubuntu-latest
     env:
       VENV_PATH: ''
@@ -65,29 +62,3 @@ jobs:
 
     - name: Upload coverage
       run: make codecov
-
-  test-gpu:
-    runs-on: [self-hosted, linux, gpu]
-    env:
-      ORT_ROOT: '/opt/onnxruntime'
-
-    steps:
-      - uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
-
-      - name: Install dependencies
-        env:
-          UPDATE_PIP: 'true'
-        run: |
-          rm -rf .dacecache tests/.dacecache
-          . /opt/setupenv
-          make clean install
-
-      - name: Test with pytest
-        env:
-          PYTEST_ARGS: --cov=daceml --cov-report=term --cov-report xml --cov-config=.coveragerc --gpu -s -v
-        run: make test
-
-      - name: Upload coverage
-        run: make codecov
