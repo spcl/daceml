@@ -5,6 +5,7 @@ PIP ?= pip
 YAPF ?= yapf
 
 TORCH_VERSION ?= torch==1.6.0+cpu torchvision==0.7.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
+UPDATE_PIP ?= python -m pip install --upgrade pip
 
 ifeq ($(VENV_PATH),)
 ACTIVATE = 
@@ -23,7 +24,7 @@ endif
 
 install: venv
 ifneq ($(VENV_PATH),)
-	$(ACTIVATE) pip install --upgrade pip
+	$(ACTIVATE) $(UPDATE_PIP)
 endif
 	$(ACTIVATE) $(PIP) install $(TORCH_VERSION) 
 	$(ACTIVATE) $(PIP) install -e .[testing,debug,docs]
