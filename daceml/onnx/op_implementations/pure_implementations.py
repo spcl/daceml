@@ -969,3 +969,129 @@ class PureConv2D(ONNXForward):
         new_sdfg.fill_scope_connectors()
 
         return new_sdfg
+
+
+@autoregister_params(op="LogSoftmax", name="pure")
+class PureLogSoftmax(ONNXForward):
+    @staticmethod
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[nodes.Node, SDFG]:
+
+        # NOTE: once there is a reshape node this whole expansion becomes much simpler:
+        #
+        # exp = np.exp(X - np.max(X, axis=axis, keepdims=True))
+        # sum = np.sum(exp, axis=axis, keepdims=True)
+
+        # result = exp / sum
+
+        node.validate(sdfg, state)
+        inparr = in_desc_with_name(node, state, sdfg, "input")
+
+        axis = node.axis
+        if type(axis) is not int or not (-len(inparr.shape) <= axis < len(
+                inparr.shape)):
+            raise ValueError("expected axis to be an integer in range"
+                             " [-{}, {}), got {}".format(
+                                 len(inparr.shape), len(inparr.shape), axis))
+
+        if axis < 0:
+            axis += len(inparr.shape)
+        out_tmp_shape = inparr.shape
+        out_tmp_dtype = inparr.dtype
+
+        tmp_max_shape = list(copy.deepcopy(inparr.shape))
+        tmp_max_shape.pop(axis)
+
+        ##################
+        # exp (X - max)
+        exp_minus_max = dace.SDFG("exp_minus_max")
+        exp_minus_max.add_array("exp_tmp_max", tmp_max_shape, inparr.dtype)
+        exp_minus_max.add_array("exp_input", inparr.shape, inparr.dtype)
+        exp_minus_max.add_array("exp_output", out_tmp_shape, out_tmp_dtype)
+        exp_minus_max.add_state().add_mapped_tasklet(
+            "_softmax_exp_",
+            map_ranges={
+                "__i" + str(i): "0:" + str(shape)
+                for i, shape in enumerate(inparr.shape)
+            },
+            inputs={
+                '__max':
+                dace.Memlet.simple(
+                    "exp_tmp_max", ','.join("__i" + str(i)
+                                            for i in range(len(inparr.shape))
+                                            if i != axis)),
+                '__x':
+                dace.Memlet.simple(
+                    "exp_input",
+                    ','.join("__i" + str(i) for i in range(len(inparr.shape))))
+            },
+            code='__out = exp(__x - __max)',
+            outputs={
+                '__out':
+                dace.Memlet.simple(
+                    "exp_output",
+                    ','.join("__i" + str(i) for i in range(len(inparr.shape))))
+            },
+            external_edges=True)
+
+        ##################
+        # out_tmp / sum
+        out_tmp_div_sum = dace.SDFG("out_tmp_div_sum")
+        out_tmp_div_sum.add_array("div_tmp", inparr.shape, inparr.dtype)
+        out_tmp_div_sum.add_array("div_sum", tmp_max_shape, inparr.dtype)
+        out_tmp_div_sum.add_array("div_X", inparr.shape, inparr.dtype)
+        out_tmp_div_sum.add_array("div_max", tmp_max_shape, inparr.dtype)
+        out_tmp_div_sum.add_array("div_output", out_tmp_shape, out_tmp_dtype)
+
+        out_tmp_div_sum.add_state().add_mapped_tasklet(
+            "_softmax_div_",
+            map_ranges={
+                "__i" + str(i): "0:" + str(shape)
+                for i, shape in enumerate(inparr.shape)
+            },
+            inputs={
+                '__sum':
+                dace.Memlet.simple(
+                    "div_sum", ','.join("__i" + str(i)
+                                        for i in range(len(inparr.shape))
+                                        if i != axis)),
+                '__max':
+                dace.Memlet.simple(
+                    "div_max", ','.join("__i" + str(i)
+                                        for i in range(len(inparr.shape))
+                                        if i != axis)),
+                '__x':
+                dace.Memlet.simple(
+                    "div_X",
+                    ','.join("__i" + str(i) for i in range(len(inparr.shape))))
+            },
+            code='__out = __x - __max - log(__sum)',
+            outputs={
+                '__out':
+                dace.Memlet.simple(
+                    "div_output",
+                    ','.join("__i" + str(i) for i in range(len(inparr.shape))))
+            },
+            external_edges=True)
+
+        ##################
+        # put everything together as a program
+        def prog(input, output):
+            tmp_max = np.max(input, axis=axis)
+
+            # this holds exp (X - max)
+            out_tmp = dace.define_local(out_tmp_shape, out_tmp_dtype)
+            exp_minus_max(exp_tmp_max=tmp_max,
+                          exp_input=input,
+                          exp_output=out_tmp)
+
+            tmp_sum = np.sum(out_tmp, axis=axis)
+
+            # this holds exp (X - max)
+            out_tmp_div_sum(div_X=input,
+                            div_max=tmp_max,
+                            div_tmp=out_tmp,
+                            div_sum=tmp_sum,
+                            div_output=output)
+
+        return program_for_node(prog, sdfg, state, node).to_sdfg()
