@@ -312,7 +312,46 @@ def test_softmax(axis):
 
     result = sdfg(X=X)
 
-    assert np.allclose(torch_result, result)
+    assert np.linalg.norm(torch_result - result) < 1e-5
+
+
+@pytest.mark.pure
+@pytest.mark.parametrize("axis", [0, -1])
+def test_logsoftmax(axis):
+
+    X = np.random.normal(scale=10, size=(2, 4, 10)).astype(np.float32)
+
+    torch_result = torch.nn.functional.log_softmax(torch.Tensor(X),
+                                               dim=axis).numpy()
+    sdfg = dace.SDFG("test_softmax")
+
+    sdfg.add_array("X", [2, 4, 10], dace.float32)
+    sdfg.add_array("__return", torch_result.shape, dace.float32)
+
+    state = sdfg.add_state()
+    access_X = state.add_access("X")
+    access_result = state.add_access("__return")
+
+    op_node = donnx.ONNXLogSoftmax("logsoftmax")
+    op_node.axis = axis
+
+    state.add_node(op_node)
+    state.add_edge(access_X, None, op_node, "input",
+                   sdfg.make_array_memlet("X"))
+
+    state.add_edge(op_node, "output", access_result, None,
+                   sdfg.make_array_memlet("__return"))
+
+    sdfg.expand_library_nodes()
+
+    # check that the expansion worked. The default ORT expansion wouldn't produce a map
+    assert any(
+        isinstance(n, dace.nodes.MapEntry)
+        for n, _ in sdfg.all_nodes_recursive())
+
+    result = sdfg(X=X)
+
+    assert np.linalg.norm(torch_result - result) < 1e-5
 
 
 @pytest.mark.pure
