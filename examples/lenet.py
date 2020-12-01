@@ -4,11 +4,12 @@ import argparse
 
 from daceml.pytorch import DaceModule
 import daceml.onnx as donnx
-
+import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import datasets, transforms
+from dace.transformation.interstate import FPGATransformSDFG
 
 
 def print_mnist_mean_and_std():
@@ -56,12 +57,25 @@ class LeNet(nn.Module):
         x = F.log_softmax(x, dim=1)
         return x
 
+import daceml.onnx as donnx
+donnx.default_implementation = "pure"
 
 def eval_model(args, test_dataloader, model, device, single=False):
     model.eval()
     if device == 'dace':
         model.to('cpu')
         model = DaceModule(model)
+        device = 'cpu'
+    elif device == 'fpga':
+        # transform to FPGA, for pytorch the device is always 'cpu'
+        model.to('cpu')
+        dummy_input = next(iter(test_dataloader))
+
+        model = DaceModule(model, dummy_inputs=dummy_input[0])
+        sdfg = model.sdfg
+        sdfg.apply_transformations([FPGATransformSDFG])
+        sdfg.states()[0].location["is_FPGA_kernel"] = False
+        sdfg.states()[0].nodes()[0].sdfg.states()[0].location["is_FPGA_kernel"] = False
         device = 'cpu'
     else:
         model.to(device)
@@ -71,7 +85,10 @@ def eval_model(args, test_dataloader, model, device, single=False):
 
     def eval_single_batch(data, target):
         data, target = data.to(device), target.to(device)
+        start_time = time.time()
         output = model(data)
+        elapsed_time = time.time() - start_time
+        print("Inference performed in " + str(elapsed_time) + " secs.")
         pred = output.argmax(1)
         if isinstance(pred, torch.Tensor):
             pred = np.array(pred.cpu())
@@ -192,6 +209,7 @@ if __name__ == '__main__':
         # try to load the weights
         model.load_state_dict(torch.load("./data/weights.pt"))
 
-    eval_model(args, test_loader, model, 'cuda')
+    # eval_model(args, test_loader, model, 'cuda')
     eval_model(args, test_loader, model, 'cpu', single=True)
     eval_model(args, test_loader, model, 'dace', single=True)
+    eval_model(args, test_loader, model, 'fpga', single=True)
