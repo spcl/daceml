@@ -105,8 +105,8 @@ class FPGAConv2D(ONNXForward):
 
         new_sdfg = dace.SDFG("fpga_conv")
 
-        init_state = new_sdfg.add_state("init")
-        new_state = new_sdfg.add_state_after(init_state, "compute")
+        # init_state = new_sdfg.add_state("init")
+        new_state = new_sdfg.add_state("compute")
         new_sdfg.add_datadesc("X", copy.deepcopy(X))
         new_sdfg.add_datadesc("W", copy.deepcopy(W))
         new_sdfg.add_datadesc("Y", copy.deepcopy(Y))
@@ -148,19 +148,19 @@ class FPGAConv2D(ONNXForward):
 
         # add init state
         # yapf: disable
-        init_state.add_mapped_tasklet("init",
-                                      map_ranges={
-                                          "i{}".format(i): "0:{}".format(s)
-                                          for i, s in enumerate(Y.shape)
-                                      },
-                                      inputs={},
-                                      code="y = 0",
-                                      outputs=dict(
-                                          y=dace.Memlet("Y[{}]".format(
-                                              ", ".join("i{}".format(i)
-                                                        for i, _ in enumerate(Y.shape))))
-                                      ),
-                                      external_edges=True)
+        # init_state.add_mapped_tasklet("init",
+        #                               map_ranges={
+        #                                   "i{}".format(i): "0:{}".format(s)
+        #                                   for i, s in enumerate(Y.shape)
+        #                               },
+        #                               inputs={},
+        #                               code="y = 0",
+        #                               outputs=dict(
+        #                                   y=dace.Memlet("Y[{}]".format(
+        #                                       ", ".join("i{}".format(i)
+        #                                                 for i, _ in enumerate(Y.shape))))
+        #                               ),
+        #                               external_edges=True)
         # yapf: enable
 
         # preload weights
