@@ -315,7 +315,7 @@ class PureIdentity(ONNXForward):
         node.validate(sdfg, state)
 
         def prog(input, output):
-            output[:] = dace.elementwise(lambda x: x, input)
+            output[:] = input
 
         return program_for_node(prog, sdfg, state, node).to_sdfg()
 

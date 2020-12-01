@@ -32,7 +32,7 @@ Testing
 DaceML uses ``pytest`` to run tests. The pytest runner takes a custom argument ``--gpu`` to run GPU tests.
 Tests can be parallelized using ``xdist`` by passing the arguments ``-n auto --dist loadfile``.
 
-Some tests are marked with ``pytest.mark.slow``. Slow tests are skipped on Travis CI (see ``.travis.yml``).
+Some tests are marked with ``pytest.mark.slow``. Slow tests are skipped on the automated CI.
 
 If you provide the fixture (i.e. an argument to the test) with name ``gpu``, then the test will be parameterized to pass
 both ``True`` and ``False`` to that argument.
@@ -46,7 +46,7 @@ implementation that is used, tests can be decorated with the following two marke
     Use the ONNXRuntime expansion as default
 
 ``pytest.mark.pure``
-    Use the pure expansion as default when possible (fallback is always ORT)
+    Use the pure expansion as default when possible (falling back to ONNXRuntime)
 
-If you provide the fixture (i.e. an argument to the test) with name ``default_implementation``, then the test will be
+If you provide the fixture (i.e., an argument to the test) with name ``default_implementation``, then the test will be
 parameterized to test both implementations.
