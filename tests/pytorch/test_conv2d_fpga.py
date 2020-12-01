@@ -18,7 +18,7 @@ from daceml.pytorch import DaceModule, dace_module
 class Model(nn.Module):
     def __init__(self):
         super(Model, self).__init__()
-        self.conv1 = nn.Conv2d(1, 4, 3)
+        self.conv1 = nn.Conv2d(1, 6, 5)
         # self.conv2 = nn.Conv2d(4, 4, 3)
 
     def forward(self, x):
@@ -31,7 +31,7 @@ import daceml.onnx as donnx
 donnx.default_implementation = "pure"
 
 ptmodel = Model()
-x = torch.rand(1, 1, 8, 8)
+x = torch.rand(1000, 1, 28, 28)
 
 dace_model = DaceModule(ptmodel)
 dace_output = dace_model(x)
