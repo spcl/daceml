@@ -18,7 +18,7 @@ from daceml.pytorch import DaceModule, dace_module
 class Model(nn.Module):
     def __init__(self):
         super(Model, self).__init__()
-        self.conv1 = nn.Conv2d(1, 4, 3, bias = False)
+        self.conv1 = nn.Conv2d(1, 4, 3)
         # self.conv2 = nn.Conv2d(4, 4, 3)
 
     def forward(self, x):

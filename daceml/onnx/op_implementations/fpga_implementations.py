@@ -211,7 +211,7 @@ class FPGAConv2D(ONNXForward):
             dict(m="0:{}".format(num_filters),
                  cin="0:{}".format(num_channels),
                  hx="0:{}".format(filter_hx),
-                 hy="0:{}".format(filter_hy)))
+                 hy="0:{}".format(filter_hy)), unroll=True)
 
         # we have to fill local_x properly: this should happen between the outer and the innermost map
         # The actual loading into local_X will be done in the tasklet, where we can add `if` conditions
@@ -235,12 +235,12 @@ class FPGAConv2D(ONNXForward):
 
         compute_tasklet = new_state.add_tasklet(
             "compute_entry",
-            inputs={"image_in", "local_X_in", "filter_in", "local_Y_in"},
+            inputs={"image_in", "local_X_in", "filter_in", "local_Y_in", "B_in"},
             outputs={"output", "local_X_out", "local_Y_out"},
             code="if m==0: local_X_in = image_in\n"
-                 "local_Y_out = (0 if hx == 0 and hy==0 else local_Y_in)  + local_X_in * filter_in\n" # TODO init
+                 "local_Y_out = (0 if hx == 0 and hy==0 else local_Y_in)  + local_X_in * filter_in\n" 
                  "local_X_out = local_X_in\n"
-                 "if hx == {}-1 and hy == {}-1: output = local_Y_out".format(filter_hx, filter_hy))
+                 "if hx == {}-1 and hy == {}-1: output = local_Y_out + B_in".format(filter_hx, filter_hy))
 
 
         filter_memlet = dace.Memlet("local_W[m, cin, hx, hy]")
@@ -257,6 +257,7 @@ class FPGAConv2D(ONNXForward):
         # hook up the inner map to the tasklet
 
         # local X goes inside the tasklet and then is written back
+        #TODO: capire se si puo' mettere X a dynamic
         new_state.add_memlet_path(
             local_X_read, inner_me, compute_tasklet,
             dst_conn='local_X_in',
@@ -286,7 +287,6 @@ class FPGAConv2D(ONNXForward):
                            image_memlet)
 
         # hook up filter
-        # read_W = new_state.add_read("local_W")
         inner_filter_memlet = propagation.propagate_memlet(
             new_state, filter_memlet, inner_me, False)
         outer_filter_memlet = propagation.propagate_memlet(
@@ -304,9 +304,8 @@ class FPGAConv2D(ONNXForward):
         new_state.add_edge(read_X, None, outer_me, None, outer_image_memlet)
 
         # hook up outputs
-        # output_memlet = dace.Memlet("Y[b, m, out_x, out_y]",
-        #                             wcr="lambda x, y: x + y")
-        output_memlet = dace.Memlet("Y[b, m, out_x, out_y]")
+        # The output memlet is set to be dynamic, so that the value is only written at the end of the computation
+        output_memlet = dace.Memlet("Y[b, m, out_x, out_y]", dynamic=True)
         inner_output_memlet = propagation.propagate_memlet(
             new_state, output_memlet, inner_me, False)
         outer_output_memlet = propagation.propagate_memlet(
@@ -323,22 +322,27 @@ class FPGAConv2D(ONNXForward):
         if B is not None:
             read_B = new_state.add_read("B")
             B_memlet = dace.Memlet("B[m]")
-            new_state.add_edge(
-                read_B, None, outer_me, None,
-                propagation.propagate_memlet(new_state, B_memlet, outer_me,
-                                             False))
+            new_state.add_memlet_path(
+                read_B, outer_me, inner_me, compute_tasklet,
+                dst_conn='B_in',
+                memlet=B_memlet
+            )
+            # new_state.add_edge(
+            #     read_B, None, outer_me, None,
+            #     propagation.propagate_memlet(new_state, B_memlet, outer_me,
+            #                                  False))
 
-            add_bias_tasklet = new_state.add_tasklet("add_bias", {"bias_in"},
-                                                     {"output"},
-                                                     "output = bias_in")
-            new_state.add_edge(outer_me, None, add_bias_tasklet, "bias_in",
-                               B_memlet)
-            new_state.add_edge_pair(outer_mx,
-                                    add_bias_tasklet,
-                                    write_Y,
-                                    output_memlet,
-                                    outer_output_memlet,
-                                    internal_connector="output")
+            # add_bias_tasklet = new_state.add_tasklet("add_bias", {"bias_in"},
+            #                                          {"output"},
+            #                                          "output = bias_in")
+            # new_state.add_edge(outer_me, None, add_bias_tasklet, "bias_in",
+            #                    B_memlet)
+            # new_state.add_edge_pair(outer_mx,
+            #                         add_bias_tasklet,
+            #                         write_Y,
+            #                         output_memlet,
+            #                         outer_output_memlet,
+            #                         internal_connector="output")
 
         new_sdfg.fill_scope_connectors()
         new_sdfg.save('/tmp/conv.sdfg')
