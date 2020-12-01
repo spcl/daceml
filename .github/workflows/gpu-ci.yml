@@ -27,7 +27,7 @@ jobs:
 
       - name: Test with pytest
         env:
-          PYTEST_ARGS: --cov=daceml --cov-report=term --cov-report xml --cov-config=.coveragerc --gpu -s -v
+          PYTEST_ARGS: --cov=daceml --cov-report=term --cov-report xml --cov-config=.coveragerc --gpu-only
         run: make test
 
       - name: Upload coverage
