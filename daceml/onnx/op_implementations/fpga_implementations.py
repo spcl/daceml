@@ -105,7 +105,6 @@ class FPGAConv2D(ONNXForward):
 
         new_sdfg = dace.SDFG("fpga_conv")
 
-        # init_state = new_sdfg.add_state("init")
         new_state = new_sdfg.add_state("compute")
         new_sdfg.add_datadesc("X", copy.deepcopy(X))
         new_sdfg.add_datadesc("W", copy.deepcopy(W))
@@ -115,9 +114,9 @@ class FPGAConv2D(ONNXForward):
             new_sdfg.arrays["B"].transient = False
 
         #TODO: stride
+        assert(stride_x == 1 and stride_y == 1)
 
         # add local storage for weights
-        # TODO: understand correct shape: maybe just use W shape?
         new_sdfg.add_array('local_W',
                            shape=W.shape,
                            dtype=W.dtype,
@@ -126,7 +125,7 @@ class FPGAConv2D(ONNXForward):
 
         # add local storage for X and Y, to increase reuse
 
-        # for X we will reuse the data to compute the result for each output channel
+        # for X we will reuse the data of a given input channel to update the result for all output channels
         new_sdfg.add_array('local_X',
                            shape=[num_channels, filter_hx, filter_hy],
                            dtype=X.dtype,
@@ -145,23 +144,6 @@ class FPGAConv2D(ONNXForward):
         new_sdfg.arrays["Y"].transient = False
 
         # we don't need init state for Y. This is done on the fly in the tasklet
-
-        # add init state
-        # yapf: disable
-        # init_state.add_mapped_tasklet("init",
-        #                               map_ranges={
-        #                                   "i{}".format(i): "0:{}".format(s)
-        #                                   for i, s in enumerate(Y.shape)
-        #                               },
-        #                               inputs={},
-        #                               code="y = 0",
-        #                               outputs=dict(
-        #                                   y=dace.Memlet("Y[{}]".format(
-        #                                       ", ".join("i{}".format(i)
-        #                                                 for i, _ in enumerate(Y.shape))))
-        #                               ),
-        #                               external_edges=True)
-        # yapf: enable
 
         # preload weights
         preload_W_map_entry, preload_W_map_exit = new_state.add_map(
@@ -208,16 +190,15 @@ class FPGAConv2D(ONNXForward):
         # the inner map computes the value for a single entry in the output array (i.e. Y[b, m, x, y])
         inner_me, inner_mx = new_state.add_map(
             'inner_conv_map',
-            dict(m="0:{}".format(num_filters),
-                 cin="0:{}".format(num_channels),
+            dict(cin="0:{}".format(num_channels),
+                 m="0:{}".format(num_filters),
                  hx="0:{}".format(filter_hx),
                  hy="0:{}".format(filter_hy)), unroll=True)
 
         # we have to fill local_x properly: this should happen between the outer and the innermost map
         # The actual loading into local_X will be done in the tasklet, where we can add `if` conditions
-        # Note: this is not pure SDFG API: the cleanest solution would involve creatin another nested SDFG
+        # Note: this is not pure SDFG API: the cleanest solution would involve creating another nested SDFG
         local_X_read = new_state.add_access("local_X")
-        local_X_write = new_state.add_write("local_X")
 
         # empty memlet to create the storage
         new_state.add_memlet_path(
@@ -233,14 +214,20 @@ class FPGAConv2D(ONNXForward):
             memlet=dace.Memlet()
         )
 
+        inputs = {"image_in", "local_X_in", "filter_in", "local_Y_in"}
+        if B is not None:
+            inputs.add("B_in")
+
+        # In the tasklet we read local_X (for every given input channel) and
+        # we write the final result if we are computing over the last input channel
         compute_tasklet = new_state.add_tasklet(
             "compute_entry",
-            inputs={"image_in", "local_X_in", "filter_in", "local_Y_in", "B_in"},
-            outputs={"output", "local_X_out", "local_Y_out"},
+            inputs = inputs,
+            outputs={"output", "local_Y_out"},
             code="if m==0: local_X_in = image_in\n"
-                 "local_Y_out = (0 if hx == 0 and hy==0 else local_Y_in)  + local_X_in * filter_in\n" 
-                 "local_X_out = local_X_in\n"
-                 "if hx == {}-1 and hy == {}-1: output = local_Y_out + B_in".format(filter_hx, filter_hy))
+                 "local_Y_out = (0 if hx == 0 and hy==0 and cin==0 else local_Y_in)  + local_X_in * filter_in\n" 
+                 # "local_X_out = local_X_in\n"
+                 "if hx == {}-1 and hy == {}-1 and cin=={}-1: output = local_Y_out {}".format(filter_hx, filter_hy, num_channels, "+ B_in" if B is not None else""))
 
 
         filter_memlet = dace.Memlet("local_W[m, cin, hx, hy]")
@@ -256,17 +243,12 @@ class FPGAConv2D(ONNXForward):
 
         # hook up the inner map to the tasklet
 
-        # local X goes inside the tasklet and then is written back
-        #TODO: capire se si puo' mettere X a dynamic
+        # local X goes inside the tasklet. Being a dynamic element, this will be codegenerated as a pointer
+        # and therefore will also write back into the tile of X
         new_state.add_memlet_path(
             local_X_read, inner_me, compute_tasklet,
             dst_conn='local_X_in',
-            memlet=dace.Memlet(f"{local_X_read.data}[cin, hx, hy]")
-        )
-        new_state.add_memlet_path(
-            compute_tasklet, inner_mx, local_X_write,
-            src_conn='local_X_out',
-            memlet=dace.Memlet(f"{local_X_write.data}[cin, hx, hy]")
+            memlet=dace.Memlet(f"{local_X_read.data}[cin, hx, hy]", dynamic=True)
         )
 
         # similarly, local Y
@@ -318,7 +300,6 @@ class FPGAConv2D(ONNXForward):
                                 inner_output_memlet, outer_output_memlet)
 
         # hook up B if required
-        # TODO
         if B is not None:
             read_B = new_state.add_read("B")
             B_memlet = dace.Memlet("B[m]")
@@ -327,22 +308,6 @@ class FPGAConv2D(ONNXForward):
                 dst_conn='B_in',
                 memlet=B_memlet
             )
-            # new_state.add_edge(
-            #     read_B, None, outer_me, None,
-            #     propagation.propagate_memlet(new_state, B_memlet, outer_me,
-            #                                  False))
-
-            # add_bias_tasklet = new_state.add_tasklet("add_bias", {"bias_in"},
-            #                                          {"output"},
-            #                                          "output = bias_in")
-            # new_state.add_edge(outer_me, None, add_bias_tasklet, "bias_in",
-            #                    B_memlet)
-            # new_state.add_edge_pair(outer_mx,
-            #                         add_bias_tasklet,
-            #                         write_Y,
-            #                         output_memlet,
-            #                         outer_output_memlet,
-            #                         internal_connector="output")
 
         new_sdfg.fill_scope_connectors()
         new_sdfg.save('/tmp/conv.sdfg')
