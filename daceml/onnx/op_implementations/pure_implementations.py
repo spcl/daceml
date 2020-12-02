@@ -346,67 +346,20 @@ class PureTanh(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
-
-        in_edges = state.in_edges(node)
-        input_dim = len(in_edges[0].data.subset.size())
-        if input_dim == 2:
-            return True
-
-        return False
+        return in_desc_with_name(node, state, sdfg, 'X').dtype in [
+            dace.float16, dace.float32, dace.float64
+        ]
 
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         node.validate(sdfg, state)
-        in_edges = state.in_edges(node)
 
-        ii = in_edges[0].data.subset.size()[0]
-        jj = in_edges[0].data.subset.size()[1]
+        def prog(X, Y):
+            Y[:] = dace.elementwise(lambda x: tanh(x), X)
 
-        I = str(ii)
-        J = str(jj)
-
-        sdfg_exp = dace.SDFG('tanhExpansion')
-        sdfg_exp.add_array('input', (ii, jj), dace.float32)
-        sdfg_exp.add_array('output', (ii, jj), dace.float32)
-
-        state_exp = sdfg_exp.add_state()
-
-        tmp_out = state_exp.add_transient('tmp_out', (ii, jj), dace.float32)
-
-        task1 = state_exp.add_tasklet(
-            'threshold1', {'_a1'}, {'_b1'},
-            '_b1 = 80.0 if _a1 > 80.0 else (-80.0 if _a1 < -80.0 else _a1)')
-        task2 = state_exp.add_tasklet(
-            'tanh', {'_a2'}, {'_b2'},
-            '_b2 = (exp(_a2) - exp(-_a2))/(exp(_a2) + exp(-_a2))')
-
-        input = state_exp.add_read('input')
-        output = state_exp.add_access('output')
-
-        me1, mx1 = state_exp.add_map('map1', dict(i='0:' + I, j='0:' + J))
-        state_exp.add_edge(input, None, me1, None,
-                           dace.Memlet.simple(input, '0:' + I + ', 0:' + J))
-        state_exp.add_edge(me1, None, task1, '_a1',
-                           dace.Memlet.simple(input, 'i, j'))
-        state_exp.add_edge(task1, '_b1', mx1, None,
-                           dace.Memlet.simple(tmp_out, 'i, j'))
-        state_exp.add_edge(mx1, None, tmp_out, None,
-                           dace.Memlet.simple(tmp_out, '0:' + I + ', 0:' + J))
-
-        me2, mx2 = state_exp.add_map('map2', dict(i='0:' + I, j='0:' + J))
-        state_exp.add_edge(tmp_out, None, me2, None,
-                           dace.Memlet.simple(tmp_out, '0:' + I + ', 0:' + J))
-        state_exp.add_edge(me2, None, task2, '_a2',
-                           dace.Memlet.simple(tmp_out, 'i, j'))
-        state_exp.add_edge(task2, '_b2', mx2, None,
-                           dace.Memlet.simple(output, 'i, j'))
-        state_exp.add_edge(mx2, None, output, None,
-                           dace.Memlet.simple(output, '0:' + I + ', 0:' + J))
-        sdfg_exp.fill_scope_connectors()
-
-        return sdfg_exp
+        return program_for_node(prog, sdfg, state, node).to_sdfg()
 
 
 @autoregister_params(op="ReduceSum", name="pure")
