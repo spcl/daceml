@@ -322,7 +322,7 @@ def test_logsoftmax(axis):
     X = np.random.normal(scale=10, size=(2, 4, 10)).astype(np.float32)
 
     torch_result = torch.nn.functional.log_softmax(torch.Tensor(X),
-                                               dim=axis).numpy()
+                                                   dim=axis).numpy()
     sdfg = dace.SDFG("test_softmax")
 
     sdfg.add_array("X", [2, 4, 10], dace.float32)
