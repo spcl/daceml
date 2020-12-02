@@ -59,10 +59,9 @@ def _add_ort_init_code(sdfg: SDFG):
         """
 
         if any(
-                hasattr(node, "schedule") and node.schedule in [
-                    dtypes.ScheduleType.GPU_Device, dtypes.ScheduleType.
-                    GPU_Persistent, dtypes.ScheduleType.GPU_Default
-                ] for state in sdfg.nodes() for node in state.nodes()):
+                hasattr(node, "schedule") and node.schedule in
+                dtypes.GPU_SCHEDULES + [dtypes.ScheduleType.GPU_Default]
+                for state in sdfg.nodes() for node in state.nodes()):
             # if the SDFG contains a GPU node, add the CUDA provider and the memory_info
             sdfg.append_global_code("OrtMemoryInfo* __ort_cuda_mem_info;\n")
             sdfg.append_global_code(
@@ -248,11 +247,11 @@ def check_required_copies(
                 dtypes.ScheduleType.GPU_Device, array.storage)
 
         copy: Optional[Copy] = None
-        if isinstance(array, dt.Scalar) and actual_node_schedule in [
-                dtypes.ScheduleType.GPU_Device,
-                dtypes.ScheduleType.GPU_Persistent,
-                dtypes.ScheduleType.GPU_Default
-        ]:
+        if isinstance(
+                array,
+                dt.Scalar) and actual_node_schedule in dtypes.GPU_SCHEDULES + [
+                    dtypes.ScheduleType.GPU_Default
+                ]:
             # ORT kernels expect scalars to be cudaMalloced. We will copy during expansion to enforce this
             is_device_mismatch = True
             copy = Copy(
@@ -282,11 +281,11 @@ def check_required_copies(
                 dtypes.ScheduleType.GPU_Device, array.storage)
 
         copy: Optional[Copy] = None
-        if isinstance(array, dt.Scalar) and actual_node_schedule in [
-                dtypes.ScheduleType.GPU_Device,
-                dtypes.ScheduleType.GPU_Persistent,
-                dtypes.ScheduleType.GPU_Default
-        ]:
+        if isinstance(
+                array,
+                dt.Scalar) and actual_node_schedule in dtypes.GPU_SCHEDULES + [
+                    dtypes.ScheduleType.GPU_Default
+                ]:
             # ORT kernels expect scalars to be cudaMalloced. We will copy during expansion to enforce this
             is_device_mismatch = True
             copy = Copy(
@@ -438,8 +437,7 @@ def expand_node(node, state, sdfg):
     actual_node_schedule = node.schedule
     if node.schedule == dtypes.ScheduleType.CPU_Multicore or node.schedule == dtypes.ScheduleType.Default:
         provider_index = 0
-    elif node.schedule in [
-            dtypes.ScheduleType.GPU_Device, dtypes.ScheduleType.GPU_Persistent,
+    elif node.schedule in dtypes.GPU_SCHEDULES + [
             dtypes.ScheduleType.GPU_Default
     ]:
         provider_index = 1
