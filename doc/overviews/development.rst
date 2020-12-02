@@ -32,8 +32,6 @@ Testing
 DaceML uses ``pytest`` to run tests. The pytest runner takes a custom argument ``--gpu`` to run GPU tests.
 Tests can be parallelized using ``xdist`` by passing the arguments ``-n auto --dist loadfile``.
 
-Some tests are marked with ``pytest.mark.slow``. Slow tests are skipped on the automated CI.
-
 If you provide the fixture (i.e. an argument to the test) with name ``gpu``, then the test will be parameterized to pass
 both ``True`` and ``False`` to that argument.
 
