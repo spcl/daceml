@@ -335,8 +335,11 @@ class PureReciprocal(ONNXForward):
 
         node.validate(sdfg, state)
 
+        dtype = in_desc_with_name(node, state, sdfg, 'X').dtype
+        tanh_lambda = "lambda x: dace.{}(1) / x".format(dtype.to_string())
+
         def prog(X, Y):
-            Y[:] = dace.elementwise(lambda x: 1 / x, X)
+            Y[:] = dace.elementwise(tanh_lambda, X)
 
         return program_for_node(prog, sdfg, state, node).to_sdfg()
 
