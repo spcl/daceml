@@ -1,4 +1,5 @@
-[![Build Status](https://travis-ci.com/spcl/daceml.svg?branch=master)](https://travis-ci.com/spcl/daceml)
+![CPU CI](https://github.com/spcl/daceml/workflows/CPU%20CI/badge.svg)
+![GPU CI](https://github.com/spcl/daceml/workflows/GPU%20CI/badge.svg)
 [![codecov](https://codecov.io/gh/spcl/daceml/branch/master/graph/badge.svg)](https://codecov.io/gh/spcl/daceml)
 [![Documentation Status](https://readthedocs.org/projects/daceml/badge/?version=latest)](https://daceml.readthedocs.io/en/latest/?badge=latest)
 
