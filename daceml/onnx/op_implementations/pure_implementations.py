@@ -81,7 +81,7 @@ class PurePow(ONNXForward):
                                sdfg: SDFG) -> bool:
         if node.schedule is dtypes.ScheduleType.GPU_Default:
             # TODO fix this in a follow up PR (this returns NaN in the PT bert encoder test; check
-            # how ORT implements Pow for cuda...)
+            # how ORT implements Pow for cuda...) Issue #21
             return False
 
         return in_desc_with_name(node, state, sdfg, 'X').dtype in [
@@ -597,7 +597,7 @@ class PureCast(ONNXForward):
                                sdfg: SDFG) -> bool:
 
         if node.schedule is dtypes.ScheduleType.GPU_Default:
-            # TODO fix this (this breaks bert_full) because of a GPU scalar cast
+            # TODO fix this (this breaks bert_full) because of a GPU scalar cast. Issue #20
             return False
 
         target_type = node.to
