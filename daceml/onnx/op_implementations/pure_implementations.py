@@ -344,20 +344,13 @@ class PureReciprocal(ONNXForward):
 @autoregister_params(op="Tanh", name="pure")
 class PureTanh(ONNXForward):
     @staticmethod
-    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
-                               sdfg: SDFG) -> bool:
-        return in_desc_with_name(node, state, sdfg, 'X').dtype in [
-            dace.float16, dace.float32, dace.float64
-        ]
-
-    @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         node.validate(sdfg, state)
 
-        def prog(X, Y):
-            Y[:] = dace.elementwise(lambda x: tanh(x), X)
+        def prog(input, output):
+            output[:] = dace.elementwise(lambda x: tanh(x), input)
 
         return program_for_node(prog, sdfg, state, node).to_sdfg()
 
