@@ -178,6 +178,7 @@ class FPGAConv2D(ONNXForward):
         # Here we want to increase reuse of the input feature, that is read the input once and oupdate all the
         # m output channels. Therefore we interchange some of maps indices.
         # - the outer map loops over every entry in the ouput array, not considering the channel (Y[b,:,x,y])
+        # - a mid map over the input channels (this is splitted from the inner map just to have more control on unrolling)
         # - the inner computes the value for all the entries of a given point
 
         # the outer map loops over every entry in the output array
@@ -187,11 +188,14 @@ class FPGAConv2D(ONNXForward):
                  out_x="0:{}".format(output_size_x),
                  out_y="0:{}".format(output_size_y)))
 
+        mid_me, mid_mx = new_state.add_map(
+            'mid_conv_map',
+            dict(cin="0:{}".format(num_channels)))
+
         # the inner map computes the value for a single entry in the output array (i.e. Y[b, m, x, y])
         inner_me, inner_mx = new_state.add_map(
             'inner_conv_map',
-            dict(cin="0:{}".format(num_channels),
-                 m="0:{}".format(num_filters),
+            dict(m="0:{}".format(num_filters),
                  hx="0:{}".format(filter_hx),
                  hy="0:{}".format(filter_hy)), unroll=True)
 
@@ -246,65 +250,83 @@ class FPGAConv2D(ONNXForward):
         # local X goes inside the tasklet. Being a dynamic element, this will be codegenerated as a pointer
         # and therefore will also write back into the tile of X
         new_state.add_memlet_path(
-            local_X_read, inner_me, compute_tasklet,
+            local_X_read, mid_me, inner_me, compute_tasklet,
             dst_conn='local_X_in',
             memlet=dace.Memlet(f"{local_X_read.data}[cin, hx, hy]", dynamic=True)
         )
 
         # similarly, local Y
         new_state.add_memlet_path(
-            local_Y_read, inner_me, compute_tasklet,
+            local_Y_read, mid_me, inner_me, compute_tasklet,
             dst_conn='local_Y_in',
             memlet=dace.Memlet(f"{local_Y_read.data}[m]")
         )
         new_state.add_memlet_path(
-            compute_tasklet, inner_mx, local_Y_write,
+            compute_tasklet, inner_mx, mid_mx, local_Y_write,
             src_conn='local_Y_out',
             memlet=dace.Memlet(f"{local_Y_write.data}[m]")
         )
 
-        new_state.add_edge(inner_me, None, compute_tasklet, "filter_in",
-                           filter_memlet)
-        new_state.add_edge(inner_me, None, compute_tasklet, "image_in",
-                           image_memlet)
+
+
 
         # hook up filter
-        inner_filter_memlet = propagation.propagate_memlet(
-            new_state, filter_memlet, inner_me, False)
-        outer_filter_memlet = propagation.propagate_memlet(
-            new_state, inner_filter_memlet, outer_me, False)
-        new_state.add_edge(outer_me, None, inner_me, None, inner_filter_memlet)
-        new_state.add_edge(local_W_access, None, outer_me, None, outer_filter_memlet)
+        # new_state.add_edge(inner_me, None, compute_tasklet, "filter_in",
+        #                    filter_memlet)
+        # inner_filter_memlet = propagation.propagate_memlet(
+        #     new_state, filter_memlet, inner_me, False)
+        # outer_filter_memlet = propagation.propagate_memlet(
+        #     new_state, inner_filter_memlet, outer_me, False)
+        # new_state.add_edge(outer_me, None, inner_me, None, inner_filter_memlet)
+        # new_state.add_edge(local_W_access, None, outer_me, None, outer_filter_memlet)
+        new_state.add_memlet_path(
+            local_W_access, outer_me, mid_me, inner_me, compute_tasklet,
+            dst_conn='filter_in',
+            memlet=filter_memlet
+        )
 
-        # hook up X
+        # hook up X: this goes directly to the tasklet
         read_X = new_state.add_read("X")
-        inner_image_memlet = propagation.propagate_memlet(
-            new_state, image_memlet, inner_me, False)
-        outer_image_memlet = propagation.propagate_memlet(
-            new_state, inner_image_memlet, outer_me, False)
-        new_state.add_edge(outer_me, None, inner_me, None, inner_image_memlet)
-        new_state.add_edge(read_X, None, outer_me, None, outer_image_memlet)
+        # new_state.add_edge(inner_me, None, compute_tasklet, "image_in",
+        #                    image_memlet)
+        # inner_image_memlet = propagation.propagate_memlet(
+        #     new_state, image_memlet, inner_me, False)
+        # outer_image_memlet = propagation.propagate_memlet(
+        #     new_state, inner_image_memlet, outer_me, False)
+        # new_state.add_edge(outer_me, None, inner_me, None, inner_image_memlet)
+        # new_state.add_edge(read_X, None, outer_me, None, outer_image_memlet)
+        new_state.add_memlet_path(
+            read_X, outer_me, mid_me, inner_me, compute_tasklet,
+            dst_conn='image_in',
+            memlet=image_memlet
+        )
 
         # hook up outputs
         # The output memlet is set to be dynamic, so that the value is only written at the end of the computation
         output_memlet = dace.Memlet("Y[b, m, out_x, out_y]", dynamic=True)
-        inner_output_memlet = propagation.propagate_memlet(
-            new_state, output_memlet, inner_me, False)
-        outer_output_memlet = propagation.propagate_memlet(
-            new_state, inner_output_memlet, outer_me, False)
-        new_state.add_edge(compute_tasklet, "output", inner_mx, None,
-                           output_memlet)
-
         write_Y = new_state.add_write("Y")
-        new_state.add_edge_pair(outer_mx, inner_mx, write_Y,
-                                inner_output_memlet, outer_output_memlet)
+        # inner_output_memlet = propagation.propagate_memlet(
+        #     new_state, output_memlet, inner_me, False)
+        # outer_output_memlet = propagation.propagate_memlet(
+        #     new_state, inner_output_memlet, outer_me, False)
+        # new_state.add_edge(compute_tasklet, "output", inner_mx, None,
+        #                    output_memlet)
+        #
+        # new_state.add_edge_pair(outer_mx, inner_mx, write_Y,
+        #                         inner_output_memlet, outer_output_memlet)
+
+        new_state.add_memlet_path(
+            compute_tasklet, inner_mx, mid_mx, outer_mx,write_Y,
+            src_conn='output',
+            memlet=output_memlet
+        )
 
         # hook up B if required
         if B is not None:
             read_B = new_state.add_read("B")
             B_memlet = dace.Memlet("B[m]")
             new_state.add_memlet_path(
-                read_B, outer_me, inner_me, compute_tasklet,
+                read_B, outer_me, mid_me, inner_me, compute_tasklet,
                 dst_conn='B_in',
                 memlet=B_memlet
             )
