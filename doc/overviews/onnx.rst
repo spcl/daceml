@@ -101,6 +101,57 @@ or the SDFG API:
 
     Automatically expanded library node "MyConvNode" with implementation "onnxruntime".
 
+.. _node_implementations:
+
+Node Implementations
+--------------------
+The ONNX library nodes work like library nodes in dace: they can have multiple implementations that can be selected
+prior to compilation. By default, the nodes use the ``onnxruntime`` implementation which calls the kernels from
+ONNXRuntime.
+
+The implementation of a node can be chosen either by specifying the default implementation for the whole ONNX library:
+
+.. code-block:: python
+
+    import daceml.onnx as donnx
+    donnx.default_implementation = "pure"
+
+Or for a specific node:
+
+.. code-block:: python
+
+    import daceml.onnx as donnx
+    donnx.ONNXMatMul.default_implementation = "pure"
+
+Note that if an implementation doesn't exist, or cannot be applied, the node expansion will fall back to
+``onnxruntime``.
+
+Implementation Registration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Implementations for an ONNX node can be registered by implementing the abstract
+:class:`~daceml.onnx.implementation_abc.ONNXForward` class. The implementation can be registered using the
+``autoregister_params`` decorator from dace. For registration, the parameters ``op`` and ``name`` must be passed,
+where ``op`` is the name of the ONNX op (without the ``ONNX`` prefix), and ``name`` is the name of the implementation.
+For example:
+
+.. code-block:: python
+
+    import daceml.onnx as donnx
+    from dace.registry import autoregister_params
+    from daceml.onnx.implementation_abc import ONNXForward
+
+    @autoregister_params(op="MatMul", name="my_implementation_name")
+    class MyMatMul(ONNXForward):
+        ...
+
+    # can then be used with the library nodes
+    donnx.ONNXMatMul.default_implementation = "my_implementation_name"
+
+Pure Implementations
+~~~~~~~~~~~~~~~~~~~~
+Several nodes have a pure (i.e. analyzable SDFG IR) implementation. The list of all implementations can be found
+:ref:`here <pure-ops>`.
+
 Importing ONNX models
 ---------------------
 ONNX models can be imported using the :class:`~daceml.onnx.ONNXModel` frontend.
@@ -142,8 +193,8 @@ ONNX models can be imported using the :class:`~daceml.onnx.ONNXModel` frontend.
 Schema Representation & Protobuf conversion
 -------------------------------------------
 ONNX protobufs are imported and converted to python property classes that can be serialized to and from json by
-dace (for example :class:`daceml.onnx.ONNXSchema`). ONNX protobuf instances can be converted to these classes using the
+dace (for example :class:`~daceml.onnx.ONNXSchema`). ONNX protobuf instances can be converted to these classes using the
 ``from_onnx_proto`` class method that is present on these objects.
 
-These objects are created using :func:`daceml.onnx.onnx_representation`. Other ONNX protobuf types can likely be
+These objects are created using :func:`~daceml.onnx.onnx_representation`. Other ONNX protobuf types can likely be
 supported in this manner as well. For examples, see the source file ``daceml/onnx/schema.py``.

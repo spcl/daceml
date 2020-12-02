@@ -1,18 +1,17 @@
 import itertools
 import logging
-from typing import Iterator, Tuple, List, Type
+from typing import Iterator, Tuple, List, Dict, Type
 
 import dace
-import dace.frontend.common.op_repository as dace_op_repo
 import dace.sdfg.nodes as nd
+import dace.frontend.common.op_repository as dace_op_repo
 import onnx
-from dace import SDFG, SDFGState
+from dace import SDFG, SDFGState, dtypes, data
 from dace.properties import Property, ListProperty
 from dace.sdfg.graph import MultiConnectorEdge
 from dace.transformation.transformation import ExpandTransformation
 
 from daceml.onnx.environments import ONNXRuntime
-from daceml.onnx.implementation_repository import ONNXImplementations
 from daceml.onnx.nodes.node_utils import parse_variadic_param
 from daceml.onnx.schema import ONNXSchema, ONNXAttributeType, _ATTR_TYPE_TO_PYTHON_TYPE, ONNXParameterType, ONNXAttribute, ONNXParameter, ONNXTypeConstraint
 from daceml.onnx.nodes.codegen import expand_node
@@ -563,30 +562,46 @@ for schema in onnx.defs.get_all_schemas():
 
         @staticmethod
         def expansion(node, state: SDFGState, sdfg: SDFG):
-            try:
-                node.validate(sdfg, state)
-            except Exception as ex:
-                raise ValueError(
-                    "Node validation failed: {} (at state {}, node {}, which is an ONNX Operator of type {})"
-                    .format(str(ex), state, node, schema.name)) from ex
-
             return node.expansion(node, state, sdfg)
 
     cls.register_implementation('onnxruntime', Expansion)
-    cls.default_implementation = 'onnxruntime'
 
     # Register pure implementations
     ##########################################
 
-    if ONNXImplementations.has_implementation(schema.name):
-        for i, impl in enumerate(ONNXImplementations.get(schema.name)):
-            # subclass the implementation to get _register_implementation to work
-            class Expansion(impl):
-                pass
+    # avoid import loop
+    from daceml.onnx.implementation_abc import ONNXForward
 
-            implementation_name = 'pure_{}'.format(i)
+    registered = False
+    for impl, args in ONNXForward.extensions().items():
+        if "op" in args and args["op"] == schema.name:
+
+            class Expansion(ExpandTransformation):
+                environments = [ONNXRuntime]
+                forward_impl: ONNXForward = impl
+
+                @classmethod
+                def expansion(cls, node, state, sdfg):
+                    # scalars on gpu don't work in dace at the moment.
+                    skip_due_to_scalars_on_gpu = (
+                        node.schedule == dtypes.ScheduleType.GPU_Default
+                        and any(
+                            isinstance(sdfg.arrays[e.data.data], data.Scalar)
+                            for e in state.out_edges(node)))
+
+                    if not skip_due_to_scalars_on_gpu and cls.forward_impl.forward_can_be_applied(
+                            node, state, sdfg):
+                        return cls.forward_impl.forward(node, state, sdfg)
+                    else:
+                        # fall back to ORT
+                        return node.expansion(node, state, sdfg)
+
+            implementation_name = args["name"]
             cls.register_implementation(implementation_name, Expansion)
-            cls.default_implementation = implementation_name
+            registered = True
+
+    if not registered:
+        cls.default_implementation = "onnxruntime"
 
     # register python frontend replacement
     #######################################

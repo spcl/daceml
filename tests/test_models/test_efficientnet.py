@@ -7,7 +7,7 @@ import onnx
 from daceml.onnx import ONNXModel
 
 
-def test_efficientnet(gpu):
+def test_efficientnet(gpu, default_implementation):
     data_directory = os.path.join(os.path.dirname(__file__), "data")
 
     path = os.path.join(data_directory, "efficientnet.onnx")

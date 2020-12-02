@@ -13,7 +13,7 @@ else
 ACTIVATE = . $(VENV_PATH)/bin/activate &&
 endif
 
-.PHONY: clean doc doctest test test-gpu codecov check-formatting
+.PHONY: clean doc doctest test test-gpu codecov check-formatting check-formatting-names clean-dacecaches
 clean:
 	! test -d $(VENV_PATH) || rm -r $(VENV_PATH)
 
@@ -41,11 +41,17 @@ doctest:
 test: 
 	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests
 
+test-parallel: 
+	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests -n auto --dist loadfile
+
 test-gpu: 
 	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests --gpu
 
 codecov:
 	curl -s https://codecov.io/bash | bash
+
+clean-dacecaches:
+	find . -name ".dacecache" -type d -not -path "*CMakeFiles*" -exec rm -r {} \;
 
 check-formatting:
 	$(ACTIVATE) $(YAPF) \
@@ -54,3 +60,11 @@ check-formatting:
 		--recursive \
 		daceml tests setup.py \
 		--exclude daceml/onnx/shape_inference/symbolic_shape_infer.py
+
+check-formatting-names:
+	$(ACTIVATE) $(YAPF) \
+		--parallel \
+		--diff \
+		--recursive \
+		daceml tests setup.py \
+		--exclude daceml/onnx/shape_inference/symbolic_shape_infer.py |  grep "+++" || echo "All good!"
