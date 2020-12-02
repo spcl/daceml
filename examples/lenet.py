@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import datasets, transforms
 from dace.transformation.interstate import FPGATransformSDFG
-
+import copy
 
 def print_mnist_mean_and_std():
     train_dataset = datasets.MNIST('./data',
@@ -64,18 +64,25 @@ def eval_model(args, test_dataloader, model, device, single=False):
     model.eval()
     if device == 'dace':
         model.to('cpu')
-        model = DaceModule(model)
+        dummy_input = next(iter(test_dataloader))
+        model = DaceModule(model, dummy_inputs=dummy_input[0])
+        model.sdfg.save('/tmp/out.sdfg')
+        model.sdfg.expand_library_nodes()
+        model.sdfg.save('/tmp/out_expanded.sdfg')
         device = 'cpu'
     elif device == 'fpga':
         # transform to FPGA, for pytorch the device is always 'cpu'
         model.to('cpu')
         dummy_input = next(iter(test_dataloader))
-
+        donnx.ONNXConv.default_implementation = "fpga"
         model = DaceModule(model, dummy_inputs=dummy_input[0])
         sdfg = model.sdfg
         sdfg.apply_transformations([FPGATransformSDFG])
         sdfg.states()[0].location["is_FPGA_kernel"] = False
         sdfg.states()[0].nodes()[0].sdfg.states()[0].location["is_FPGA_kernel"] = False
+        sdfg.save('/tmp/out_fpga.sdfg')
+        sdfg.expand_library_nodes()
+        sdfg.save('/tmp/out_fpga_expanded.sdfg')
         device = 'cpu'
     else:
         model.to(device)
