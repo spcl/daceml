@@ -74,7 +74,7 @@ def eval_model(args, test_dataloader, model, device, single=False):
         # transform to FPGA, for pytorch the device is always 'cpu'
         model.to('cpu')
         dummy_input = next(iter(test_dataloader))
-        donnx.ONNXConv.default_implementation = "fpga"
+        donnx.ONNXRelu.default_implementation = "fpga"
         model = DaceModule(model, dummy_inputs=dummy_input[0])
         sdfg = model.sdfg
         sdfg.apply_transformations([FPGATransformSDFG])
