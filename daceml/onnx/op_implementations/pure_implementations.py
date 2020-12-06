@@ -673,7 +673,6 @@ class PureMaxPool2D(ONNXForward):
         stride_x, stride_y = strides
         filter_hx, filter_hy = node.kernel_shape
         output_size_y, output_size_x = Y.shape[2:]
-
         new_sdfg = dace.SDFG("pure_maxpool")
 
         init_state = new_sdfg.add_state("init")
@@ -728,7 +727,6 @@ class PureMaxPool2D(ONNXForward):
                                               kernel_size=filter_hy)
 
         image_memlet = dace.Memlet("X[b, c, {}, {}]".format(x_idx, y_idx))
-
         new_state.add_edge(inner_me, None, compute_tasklet, "image_in",
                            image_memlet)
 
