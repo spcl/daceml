@@ -76,6 +76,8 @@ def eval_model(args, test_dataloader, model, device, single=False):
         dummy_input = next(iter(test_dataloader))
         donnx.ONNXRelu.default_implementation = "fpga"
         donnx.ONNXMaxPool.default_implementation = "fpga"
+        donnx.ONNXGemm.default_implementation = "fpga"
+
         model = DaceModule(model, dummy_inputs=dummy_input[0])
         sdfg = model.sdfg
         sdfg.apply_transformations([FPGATransformSDFG])
@@ -84,6 +86,9 @@ def eval_model(args, test_dataloader, model, device, single=False):
         sdfg.save('/tmp/out_fpga.sdfg')
         sdfg.expand_library_nodes()
         sdfg.save('/tmp/out_fpga_expanded.sdfg')
+        device = 'cpu'
+    elif device == 'pytorch':
+        model.to('cpu')
         device = 'cpu'
     else:
         model.to(device)
@@ -219,5 +224,7 @@ if __name__ == '__main__':
 
     # eval_model(args, test_loader, model, 'cuda')
     eval_model(args, test_loader, model, 'cpu', single=True)
+    # eval_model(args, test_loader, model, 'pytorch', single=True)
+
     eval_model(args, test_loader, model, 'dace', single=True)
     eval_model(args, test_loader, model, 'fpga', single=True)

@@ -985,7 +985,6 @@ class PureGemm(ONNXForward):
         # the gemm libnode is broken for now, so we just do it manually
         atype = in_desc_with_name(node, state, sdfg, "A")
         if "C" in node.in_connectors:
-
             def prog(A, B, C, Y):
                 Y[:] = A @ np.transpose(B) + C
         else:
