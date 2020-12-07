@@ -20,7 +20,7 @@ class Model(nn.Module):
         super(Model, self).__init__()
 
     def forward(self, x):
-        return F.max_pool2d(x, 2)
+        return F.max_pool2d(x, 4)
 
 
 import daceml.onnx as donnx

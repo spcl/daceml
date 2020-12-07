@@ -521,6 +521,7 @@ class FPGAMaxPool2D(ONNXForward):
                     filter_height, filter_height, filter_height, filter_width))
 
         shift_register = new_state.add_access("shift_register")
+
         read_X = new_state.add_read("X")
         write_Y = new_state.add_write("Y")
         read_max_res = new_state.add_access("max_res")
@@ -534,6 +535,18 @@ class FPGAMaxPool2D(ONNXForward):
             memlet=dace.Memlet("X[b, c, in_y, in_x]",
                                other_subset="{}".format(shift_register_size -
                                                         1)))
+
+        # To create the shift register outside the map, add an empty memlet path
+        shift_register_write = new_state.add_write("shift_register")
+        shift_register_read = new_state.add_read("shift_register")
+        new_state.add_memlet_path(
+            shift_register_read,
+            outer_me,
+            inner_me,
+            inner_mx,
+            outer_mx,
+            shift_register_write,
+            memlet=dace.Memlet())
 
         # memlet from shift register to max tasklet
         new_state.add_memlet_path(
@@ -550,6 +563,7 @@ class FPGAMaxPool2D(ONNXForward):
                                   compute_tasklet,
                                   dst_conn="max_in",
                                   memlet=dace.Memlet("max_res[0]"))
+        #empty memlet
         new_state.add_memlet_path(outer_me, read_max_res, memlet=dace.Memlet())
 
         new_state.add_memlet_path(compute_tasklet,
@@ -557,6 +571,9 @@ class FPGAMaxPool2D(ONNXForward):
                                   write_max_res,
                                   src_conn="max_out",
                                   memlet=dace.Memlet("max_res[0]"))
+        #empty memlet
+        new_state.add_memlet_path(write_max_res, outer_mx, memlet=dace.Memlet())
+
 
         y_memlet = dace.Memlet("Y[b,c, in_y//{}, in_x//{}]".format(
             filter_height, filter_width),
