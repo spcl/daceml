@@ -50,3 +50,4 @@ class ONNXForward(abc.ABC):
 
 # register expansions
 import daceml.onnx.op_implementations.pure_implementations
+import daceml.onnx.op_implementations.img_op_implementations

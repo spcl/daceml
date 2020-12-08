@@ -1,6 +1,7 @@
 import pytest
 import numpy as np
 
+import daceml.onnx as donnx
 from daceml.pytorch import DaceModule
 
 import torch
@@ -20,7 +21,8 @@ class LeNet(nn.Module):
     def forward(self, x):
         x = F.max_pool2d(F.relu(self.conv1(x)), 2)
         x = F.max_pool2d(F.relu(self.conv2(x)), 2)
-        x = x.view(-1, 576)
+
+        x = x.view(-1, 16 * 5 * 5)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
@@ -28,8 +30,10 @@ class LeNet(nn.Module):
         return x
 
 
+@pytest.mark.parametrize("conv_impl", ["pure", "im2col"])
 @pytest.mark.pure
-def test_lenet():
+def test_lenet(conv_impl):
+    donnx.ONNXConv.default_implementation = conv_impl
 
     input = torch.rand(8, 1, 32, 32, dtype=torch.float32)
 
@@ -41,4 +45,6 @@ def test_lenet():
     torch_output = net(torch.clone(input))
     dace_output = dace_net(torch.clone(input))
     dace_net.sdfg.expand_library_nodes()
-    assert np.allclose(torch_output.detach().numpy(), dace_output)
+
+    diff = np.linalg.norm(torch_output.detach().numpy() - dace_output)
+    assert diff < 1e-5
