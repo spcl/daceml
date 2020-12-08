@@ -72,3 +72,9 @@ The following documentation is mostly automatically generated from the ONNX docu
     :exclude-members: Expansion, has_onnx_node, get_onnx_node, ONNXOp
     :show-inheritance:
     :no-undoc-members:
+
+Dace CMake Environments
+-----------------------
+
+.. automodule:: daceml.onnx.environments.onnxruntime
+    :members:
