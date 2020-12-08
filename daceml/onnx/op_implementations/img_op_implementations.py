@@ -152,8 +152,6 @@ class PureMaxPool2D(ONNXForward):
         return new_sdfg
 
 
-
-
 @autoregister_params(op="Conv", name="pure")
 class PureConv2D(ONNXForward):
     """ The "trivial" convolution implementation, i.e. two nested maps.
@@ -361,3 +359,216 @@ class PureConv2D(ONNXForward):
 
         return new_sdfg
 
+
+@autoregister_params(op="Conv", name="im2col")
+class Im2ColConv(ONNXForward):
+    """ Conv implementation based on Gemm
+
+        Note interesting CPU optimizations for Im2Col:
+        https://github.com/BVLC/caffe/pull/3536
+        (might be relevant)
+    """
+    @staticmethod
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
+        X = in_desc_with_name(node, state, sdfg, "X")
+        W = in_desc_with_name(node, state, sdfg, "W")
+        try:
+            B = in_desc_with_name(node, state, sdfg, "B")
+        except Exception as e:
+            B = None
+
+        image_dims = len(X.shape) - 2
+        num_filters = W.shape[0]
+        num_channels = X.shape[1]
+
+        if (X.dtype not in [dace.float16, dace.float32, dace.float64]
+                or W.dtype not in [dace.float16, dace.float32, dace.float64]):
+            return False
+
+        # only do 2D for now
+        if len(X.shape) != 4 or len(W.shape) != 4:
+            return False
+
+        if node.group != 1:
+            return False
+
+        if num_channels != W.shape[1]:
+            return False
+
+        if node.dilations is not None and (not all(d == 1
+                                                   for d in node.dilations) or
+                                           len(node.dilations) != image_dims):
+            return False
+
+        if node.pads is not None and (not all(p == 0 for p in node.pads)
+                                      or len(node.pads) != image_dims * 2):
+            return False
+
+        if node.strides is not None and len(node.strides) != image_dims:
+            return False
+
+        if B is not None and B.shape[0] != num_filters:
+            return False
+
+        if node.auto_pad != 'NOTSET':
+            return False
+
+        return True
+
+    @staticmethod
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[nodes.Node, SDFG]:
+        X = in_desc_with_name(node, state, sdfg, "X")
+        W = in_desc_with_name(node, state, sdfg, "W")
+        Y = out_desc_with_name(node, state, sdfg, "Y")
+        try:
+            B = in_desc_with_name(node, state, sdfg, "B")
+        except Exception as e:
+            B = None
+
+        image_dims = len(X.shape) - 2
+        strides = node.strides if node.strides is not None else [
+            1 for _ in range(image_dims)
+        ]
+
+        if node.kernel_shape is not None:
+            filter_hx, filter_hy = node.kernel_shape
+        else:
+            filter_hx, filter_hy = W.shape[2:]
+
+        num_filters = W.shape[0]
+        num_channels = X.shape[1]
+        batch_size = X.shape[0]
+
+        output_size_x, output_size_y = Y.shape[2:]
+
+        new_sdfg = dace.SDFG("im2col_conv")
+
+        # setup inputs and outputs
+        new_state = new_sdfg.add_state()
+        new_sdfg.add_datadesc("X", copy.deepcopy(X))
+
+        new_sdfg.add_datadesc("W", copy.deepcopy(W))
+        new_sdfg.add_datadesc("Y", copy.deepcopy(Y))
+        if B is not None:
+            new_sdfg.add_datadesc("B", copy.deepcopy(B))
+            new_sdfg.arrays["B"].transient = False
+
+        new_sdfg.arrays["X"].transient = False
+        new_sdfg.arrays["W"].transient = False
+        new_sdfg.arrays["Y"].transient = False
+
+        # the batch map loops over every image in the batch
+        batch_me, batch_mx = new_state.add_map(
+            'batch_map',
+            dict(b="0:{}".format(batch_size)),
+            schedule=dtypes.ScheduleType.
+            Sequential  # todo why does non-sequential fail on CPU
+        )
+
+        # for each image, we create the im2col matrix
+        # im2col_map fills one entry in I per "iteration"
+        ##############################################################
+        new_sdfg.add_array(
+            "I",
+            [num_channels, filter_hx, filter_hy, output_size_x, output_size_y],
+            X.dtype,
+            transient=True)
+        access_I = new_state.add_access("I")
+        im2col_me, im2col_mx = new_state.add_map(
+            'im2col_map',
+            dict(cin="0:{}".format(num_channels),
+                 hx="0:{}".format(filter_hx),
+                 hy="0:{}".format(filter_hy),
+                 x="0:{}".format(output_size_y),
+                 y="0:{}".format(output_size_x)))
+
+        # add im2col tasklet and connect it to the im2col map
+        im2col_tasklet = new_state.add_tasklet("im2col_copy", {"input"},
+                                               {"output"}, "output = input")
+
+        im2col_input_memlet = dace.Memlet("X[b, cin, x + hx, y + hy]")
+        im2col_output_memlet = dace.Memlet("I[cin, hx, hy, x, y]")
+
+        new_state.add_edge(im2col_me, None, im2col_tasklet, "input",
+                           im2col_input_memlet)
+        new_state.add_edge(im2col_tasklet, "output", im2col_mx, None,
+                           im2col_output_memlet)
+
+        # connect the im2col_map to the im2col buffer:
+        new_state.add_edge(
+            im2col_mx, None, access_I, None,
+            propagation.propagate_memlet(new_state, im2col_output_memlet,
+                                         im2col_me, False))
+
+        # connect the image to the im2col_map
+        im2col_me_memlet = propagation.propagate_memlet(
+            new_state, im2col_input_memlet, im2col_me, False)
+        new_state.add_edge(batch_me, None, im2col_me, None, im2col_me_memlet)
+        new_state.add_edge(
+            new_state.add_read("X"), None, batch_me, None,
+            propagation.propagate_memlet(new_state, im2col_me_memlet, batch_me,
+                                         False))
+
+        # add a gemm_node within a nested sdfg to multiply the weights and the im2col matrix
+        # we use the nested sdfg to reshape the weights, biases and matrix
+
+        im2col_desc = X.dtype[num_channels * filter_hx * filter_hy,
+                              output_size_x * output_size_y]
+        weights_desc = X.dtype[num_filters,
+                               num_channels * filter_hx * filter_hy]
+        result_desc = X.dtype[num_filters, output_size_x * output_size_y]
+
+        # avoid import loop
+        import daceml.onnx as donnx
+        if B is not None:
+            # biases must be reshaped for correct broadcasting
+            biases_desc = X.dtype[num_filters, 1]
+
+            @dace.program
+            def matmul_nsdfg(weights: weights_desc, im2col: im2col_desc,
+                             biases: biases_desc, result: result_desc):
+                donnx.ONNXGemm(A=weights, B=im2col, C=biases, Y=result)
+
+            gemm_sdfg = new_state.add_nested_sdfg(
+                matmul_nsdfg.to_sdfg(), None, {"weights", "im2col", "biases"},
+                {"result"})
+
+            # connect biases -> matmul
+            new_state.add_edge(new_state.add_read("B"), None, batch_me, None,
+                               new_sdfg.make_array_memlet("B"))
+            new_state.add_edge(batch_me, None, gemm_sdfg, "biases",
+                               new_sdfg.make_array_memlet("B"))
+        else:
+
+            @dace.program
+            def matmul_nsdfg(weights: weights_desc, im2col: im2col_desc,
+                             result: result_desc):
+                donnx.ONNXGemm(A=weights, B=im2col, Y=result)
+
+            gemm_sdfg = new_state.add_nested_sdfg(matmul_nsdfg.to_sdfg(), None,
+                                                  {"weights", "im2col"},
+                                                  {"result"})
+
+        # connect im2col -> matmul
+        new_state.add_edge(access_I, None, gemm_sdfg, "im2col",
+                           new_sdfg.make_array_memlet("I"))
+
+        # connect weights -> matmul
+        new_state.add_edge(new_state.add_read("W"), None, batch_me, None,
+                           new_sdfg.make_array_memlet("W"))
+        new_state.add_edge(batch_me, None, gemm_sdfg, "weights",
+                           new_sdfg.make_array_memlet("W"))
+
+        # connect matmul -> Y
+        new_state.add_edge(
+            gemm_sdfg, "result", batch_mx, None,
+            dace.Memlet("Y[b, 0:{}, 0:{}, 0:{}]".format(
+                num_filters, output_size_x, output_size_y)))
+        new_state.add_edge(batch_mx, None, new_state.add_write("Y"), None,
+                           new_sdfg.make_array_memlet("Y"))
+
+        new_sdfg.fill_scope_connectors()
+
+        return new_sdfg
