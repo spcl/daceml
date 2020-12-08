@@ -662,17 +662,13 @@ class FPGAGemm(ONNXForward):
         new_sdfg.arrays["C"].transient = False
         new_sdfg.arrays["Y"].transient = False
 
-        # Symbols: we need to "mangle" them otherwise Intel gets confused if they are specialized
-
         # GEMM Parameters
 
         N = A.shape[0]
         K = A.shape[1]
         M = C.shape[0]
-        P = 4   # Num PEs
+        P = math.gcd(N, 16)   # Num PEs
         vec_width = math.gcd(M, 8)
-        print(P)
-        print(vec_width)
 
         ####################################################
         # Build the SDFG: starting point: gemm_fpga_systolic vectorized sample
