@@ -91,9 +91,6 @@ def eval_model(args, test_dataloader, model, device, single=False):
                 amount_samples += batch_num_samples
     print("TESTING")
     print("Accuracy: {:.2f}%".format(100 * correct / amount_samples))
-    if hasattr(model, "sdfg"):
-        model.sdfg.expand_library_nodes()
-        model.sdfg.view()
 
 
 def train_model(args, train_dataloader, model, device):

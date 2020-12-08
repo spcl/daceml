@@ -1,44 +1,63 @@
 import pytest
 import dace
-from daceml.onnx import ONNXConv
+import daceml.onnx as donnx
 import torch
 import torch.nn.functional as F
 import numpy as np
 
 
-@pytest.mark.parametrize("num_in_channels, kernel_size, num_filters",
-                         [(1, (3, 3), 8), (8, (3, 3), 3), (8, (5, 5), 3),
-                          (8, (4, 4), 3)])
+@pytest.mark.parametrize("implementation", ["pure", "im2col"])
+@pytest.mark.parametrize("num_in_channels, kernel_size, num_filters, bias",
+                         [(1, (3, 3), 8, True), (8, (3, 3), 3, False),
+                          (8, (5, 5), 3, True), (8, (4, 4), 3, False)])
 @pytest.mark.pure
-def test_conv_simple(num_in_channels, kernel_size, num_filters):
+def test_conv_simple(num_in_channels, kernel_size, num_filters, bias,
+                     implementation):
+    old_implementation = donnx.ONNXConv.default_implementation
+    donnx.ONNXConv.default_implementation = implementation
+
     batch_size = 8
 
     X = np.random.rand(batch_size, num_in_channels, 32, 32).astype(np.float32)
     W = np.random.rand(num_filters, num_in_channels,
                        *kernel_size).astype(np.float32)
 
-    torch_Z = F.conv2d(torch.from_numpy(X), torch.from_numpy(W)).numpy()
+    if bias:
+        B = np.random.rand(num_filters).astype(np.float32)
+        torch_Z = F.conv2d(torch.from_numpy(X),
+                           torch.from_numpy(W),
+                           bias=torch.from_numpy(B)).numpy()
+    else:
+        B = None
+        torch_Z = F.conv2d(torch.from_numpy(X), torch.from_numpy(W)).numpy()
+
     dace_Z = np.zeros_like(torch_Z)
 
-    sdfg = dace.SDFG("conv_test")
-    sdfg.add_array("X_arr", X.shape, dace.float32)
-    sdfg.add_array("W_arr", W.shape, dace.float32)
-    sdfg.add_array("Z_arr", torch_Z.shape, dace.float32)
+    if bias:
 
-    state = sdfg.add_state()
-    access_X = state.add_access("X_arr")
-    access_W = state.add_access("W_arr")
-    access_Z = state.add_access("Z_arr")
+        @dace.program
+        def conv(X_: dace.float32[tuple(X.shape)],
+                 W_: dace.float32[tuple(W.shape)],
+                 B_: dace.float32[tuple(B.shape)],
+                 Z_: dace.float32[tuple(torch_Z.shape)]):
+            donnx.ONNXConv(X=X_, W=W_, B=B_, Y=Z_)
+    else:
 
-    conv = ONNXConv("MyConvNode")
+        @dace.program
+        def conv(X_: dace.float32[tuple(X.shape)],
+                 W_: dace.float32[tuple(W.shape)],
+                 Z_: dace.float32[tuple(torch_Z.shape)]):
+            donnx.ONNXConv(X=X_, W=W_, Y=Z_)
 
-    state.add_node(conv)
-    state.add_edge(access_X, None, conv, "X", sdfg.make_array_memlet("X_arr"))
-    state.add_edge(access_W, None, conv, "W", sdfg.make_array_memlet("W_arr"))
-    state.add_edge(conv, "Y", access_Z, None, sdfg.make_array_memlet("Z_arr"))
-
+    sdfg = conv.to_sdfg()
     sdfg.expand_library_nodes()
-    sdfg(X_arr=X, W_arr=W, Z_arr=dace_Z)
+
+    if bias:
+        sdfg(X_=X, W_=W, Z_=dace_Z, B_=B)
+    else:
+        sdfg(X_=X, W_=W, Z_=dace_Z)
 
     print(torch_Z - dace_Z)
     assert np.allclose(torch_Z, dace_Z)
+
+    donnx.ONNXConv.default_implementation = old_implementation

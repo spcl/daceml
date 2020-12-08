@@ -425,13 +425,15 @@ def register_op_repo_replacement(cls: Type[ONNXOp], cls_name: str,
             read = state.add_read(arr_name)
             state.add_edge(read, None, onnx_node, inp,
                            sdfg.make_array_memlet(arr_name))
-            onnx_node.add_in_connector(inp)
+            if inp in input_names:
+                onnx_node.add_in_connector(inp)
 
         for outp, arr_name in outputs.items():
             write = state.add_read(arr_name)
             state.add_edge(onnx_node, outp, write, None,
                            sdfg.make_array_memlet(arr_name))
-            onnx_node.add_out_connector(outp)
+            if outp in output_names:
+                onnx_node.add_out_connector(outp)
         return []
 
 
@@ -598,7 +600,6 @@ for schema in onnx.defs.get_all_schemas():
                         return cls.forward_impl.forward(node, state, sdfg)
                     else:
                         # fall back to ORT
-                        Expansion.environments.append(ONNXRuntime)
                         reason = (
                             "scalar inputs/outputs are not supported on GPU"
                             if skip_due_to_scalars_on_gpu else
