@@ -19,7 +19,7 @@ import copy
 class Model(nn.Module):
     def __init__(self):
         super(Model, self).__init__()
-        self.fc1 = nn.Linear(256, 120)
+        self.fc1 = nn.Linear(256, 10)
 
     def forward(self, x):
         return self.fc1(x)
@@ -29,7 +29,7 @@ import daceml.onnx as donnx
 donnx.default_implementation = "pure"
 
 ptmodel = Model()
-x = torch.rand(256, 256, dtype=torch.float32)
+x = torch.rand(1000, 256, dtype=torch.float32)
 
 dace_model = DaceModule(ptmodel)
 dace_output = dace_model(x)

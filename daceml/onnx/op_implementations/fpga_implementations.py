@@ -643,8 +643,7 @@ class FPGAGemm(ONNXForward):
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
         node.validate(sdfg, state)
 
-        vec_width = 4
-        num_pes = 4
+
         assert node.alpha == 1.0 and node.beta == 1.0 and node.transA == 0 and node.transB == 1
 
         A = in_desc_with_name(node, state, sdfg, "A")
@@ -664,18 +663,16 @@ class FPGAGemm(ONNXForward):
         new_sdfg.arrays["Y"].transient = False
 
         # Symbols: we need to "mangle" them otherwise Intel gets confused if they are specialized
-        N_name = node.name + "_N"
-        M_name = node.name + "_M"
-        K_name = node.name + "_K"
-        P_name = node.name + "_"
-        new_sdfg.add_symbol("N", int)
-        new_sdfg.add_symbol("K", int)
-        new_sdfg.add_symbol("M", int)
-        new_sdfg.add_symbol("P", int)  # number of PEs
-        N = dace.symbol("N")
-        K = dace.symbol("K")
-        M = dace.symbol("M")
-        P = dace.symbol("P")
+
+        # GEMM Parameters
+
+        N = A.shape[0]
+        K = A.shape[1]
+        M = C.shape[0]
+        P = 4   # Num PEs
+        vec_width = math.gcd(M, 8)
+        print(P)
+        print(vec_width)
 
         ####################################################
         # Build the SDFG: starting point: gemm_fpga_systolic vectorized sample
@@ -684,9 +681,9 @@ class FPGAGemm(ONNXForward):
 
             # TODO: vectorize also this, by reading more than one element at a time
             entry, exit = state.add_map("read_A", {
-                "n0": "0:N/P",
-                "k": "0:K",
-                "n1": "0:P"
+                "n0": "0:{}/{}".format(N,P),
+                "k": "0:{}".format(K),
+                "n1": "0:{}".format(P)
             },
                                         schedule=dace.ScheduleType.FPGA_Device)
 
@@ -700,7 +697,7 @@ class FPGAGemm(ONNXForward):
                                   entry,
                                   tasklet,
                                   dst_conn="from_memory",
-                                  memlet=dace.Memlet("A[n0 * P + n1, k]"))
+                                  memlet=dace.Memlet("A[n0 * {} + n1, k]".format(P)))
             state.add_memlet_path(tasklet,
                                   exit,
                                   pipe,
@@ -716,9 +713,9 @@ class FPGAGemm(ONNXForward):
             # gear boxing: we read plain data types, we stream vector data types
             # Therefore we have two maps, the innermost is unrolled
             entry, exit = state.add_map("read_B", {
-                "n": "0:N/P",
-                "m": "0:K",
-                "k0": "0:M/{}".format(vec_width)
+                "n": "0:{}/{}".format(N,P),
+                "m": "0:{}".format(K),
+                "k0": "0:{}/{}".format(M, vec_width)
             },
                                         schedule=dace.ScheduleType.FPGA_Device)
 
@@ -782,8 +779,8 @@ class FPGAGemm(ONNXForward):
 
             entry_map, exit_map = state.add_map(
                 "write_C", {
-                    "n": "0:N",
-                    "m0": "0:M/{}".format(vec_width)
+                    "n": "0:{}".format(N),
+                    "m0": "0:{}/{}".format(M, vec_width)
                 },
                 schedule=dace.ScheduleType.FPGA_Device)
 
@@ -810,7 +807,7 @@ class FPGAGemm(ONNXForward):
                                   entry_map,
                                   copy_in_tasklet,
                                   dst_conn="in_con",
-                                  memlet=dace.Memlet("C_pipe[P-1]"))
+                                  memlet=dace.Memlet("C_pipe[{}-1]".format(P)))
             # this will trigger gear boxing
             state.add_memlet_path(copy_in_tasklet,
                                   vect_data,
@@ -855,24 +852,24 @@ class FPGAGemm(ONNXForward):
 
             entry_n0, exit_n0 = state.add_map(
                 "n0", {
-                    "n0": "0:N/P",
+                    "n0": "0:{}/{}".format(N,P),
                 },
                 schedule=dace.ScheduleType.FPGA_Device)
             entry_k, exit_k = state.add_map(
-                "k", {"k": "0:K"}, schedule=dace.ScheduleType.FPGA_Device)
+                "k", {"k": "0:{}".format(K)}, schedule=dace.ScheduleType.FPGA_Device)
             entry_a, exit_a = state.add_map(
-                "buffer_A", {"n1": "0:P"},
+                "buffer_A", {"n1": "0:{}".format(P)},
                 schedule=dace.ScheduleType.FPGA_Device)
 
             # As we are using vectorized data types for B, we have to consider it into these
             # two maps
             entry_m, exit_m = state.add_map(
-                "m", {"m": "0:M/{}".format(vec_width)},
+                "m", {"m": "0:{}/{}".format(M,vec_width)},
                 schedule=dace.ScheduleType.FPGA_Device)
             entry_c, exit_c = state.add_map(
                 "write_C", {
-                    "n1": "0:P",
-                    "m": "0:M/{}".format(vec_width)
+                    "n1": "0:{}".format(P),
+                    "m": "0:{}/{}".format(M, vec_width)
                 },
                 schedule=dace.ScheduleType.FPGA_Device)
 
@@ -894,10 +891,10 @@ class FPGAGemm(ONNXForward):
             # every PE: reads input data, buffer the data assigned to it, forwards the data
             buffer_a_tasklet = state.add_tasklet(
                 "buffer_a", {"a_in"}, {"a_reg", "a_out"}, """\
-if n1 == P - p - 1:
+if n1 == {P} - p - 1:
     a_reg = a_in
-if p < P - 1:
-    a_out = a_in""")
+if p < {P} - 1:
+    a_out = a_in""".format(P=P))
             state.add_memlet_path(A_pipe_in,
                                   entry_n0,
                                   entry_k,
@@ -925,8 +922,8 @@ if p < P - 1:
                 """\
 c_prev = 0 if k == 0 else c_in
 c_out = c_prev + a_in * b_in
-if p < P - 1:
-    b_out = b_in""")
+if p < {P} - 1:
+    b_out = b_in""".format(P=P))
 
             state.add_memlet_path(A_reg,
                                   entry_m,
@@ -991,7 +988,7 @@ if n1 <= p:
 
             # Unroll processing elements
             compute_entry, compute_exit = state.add_map(
-                "unroll_compute", {"p": "0:P"},
+                "unroll_compute", {"p": "0:{}".format(P)},
                 schedule=dace.ScheduleType.FPGA_Device,
                 unroll=True)
 
@@ -1023,7 +1020,7 @@ if n1 <= p:
                             transient=True,
                             shape=(P + 1, ),
                             storage=dace.dtypes.StorageType.FPGA_Local,
-                            buffer_size="P")
+                            buffer_size=str(P))
         new_sdfg.add_stream("B_pipe",
                             vec_type,
                             transient=True,
@@ -1042,7 +1039,6 @@ if n1 <= p:
 
         new_sdfg.fill_scope_connectors()
         # Specialize the new sdfg, by using the input shapes
-        new_sdfg.specialize(dict(P=num_pes, M=C.shape[0], N=A.shape[0], K=A.shape[1]))
         new_sdfg.save("/tmp/gemm.sdfg")
         new_sdfg.validate()
         return new_sdfg
