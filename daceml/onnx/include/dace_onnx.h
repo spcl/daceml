@@ -1,7 +1,7 @@
-#include "onnxruntime_c_api.h"
-#include "cpu_provider_factory.h"
 #ifndef __DACE_ONNX_H
 #define __DACE_ONNX_H
+#include "onnxruntime_c_api.h"
+#include "cpu_provider_factory.h"
 
 const OrtApi* __ort_api = OrtGetApiBase()->GetApi(ORT_API_VERSION);
 

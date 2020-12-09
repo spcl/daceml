@@ -80,11 +80,11 @@ class ONNXRuntime:
         "cuda_provider_factory.h",
     ]
     init_code = """
-    __ort_check_status(__ort_api->CreateCpuMemoryInfo(OrtDeviceAllocator, OrtMemTypeDefault, &__ort_cpu_mem_info));
-    __ort_check_status(__ort_api->CreateEnv(ORT_LOGGING_LEVEL_WARNING, "dace_graph", &__ort_env));
+    __ort_check_status(__ort_api->CreateCpuMemoryInfo(OrtDeviceAllocator, /*type=*/OrtMemTypeDefault, &__ort_cpu_mem_info));
+    __ort_check_status(__ort_api->CreateEnv(/*default_logging_level=*/ORT_LOGGING_LEVEL_WARNING, /*logid=*/"dace_graph", &__ort_env));
     __ort_check_status(__ort_api->CreateSessionOptions(&__ort_session_options));
     __ort_check_status(OrtSessionOptionsAppendExecutionProvider_CPU(__ort_session_options, /*use_arena=*/0));
-    __ort_check_status(__ort_api->CreateKernelSession(__ort_session_options, &__ort_session, 12));
+    __ort_check_status(__ort_api->CreateKernelSession(__ort_session_options, &__ort_session, /*opset_version=*/12));
     """
     finalize_code = """
     __ort_api->ReleaseMemoryInfo(__ort_cpu_mem_info);
@@ -121,7 +121,7 @@ class ONNXRuntimeCUDA:
     // overwrite the CPU ORT session with the CUDA session
     
     __ort_api->ReleaseKernelSession(__ort_session);
-    __ort_check_status(__ort_api->CreateKernelSession(__ort_session_options, &__ort_session, 12));
+    __ort_check_status(__ort_api->CreateKernelSession(__ort_session_options, &__ort_session, /*opset_version=*/12));
     """
 
     finalize_code = """
