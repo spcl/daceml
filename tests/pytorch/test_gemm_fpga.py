@@ -20,11 +20,14 @@ class Model(nn.Module):
     def __init__(self):
         super(Model, self).__init__()
         self.fc1 = nn.Linear(256, 120)
-        self.fc2 = nn.Linear(120, 80)
+        self.fc2 = nn.Linear(120, 84)
+        self.fc3 = nn.Linear(84, 10)
+
 
     def forward(self, x):
         x = self.fc1(x)
-        return self.fc2(x)
+        x = self.fc2(x)
+        return self.fc3(x)
 
 
 import daceml.onnx as donnx
