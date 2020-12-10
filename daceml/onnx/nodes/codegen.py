@@ -19,70 +19,6 @@ from daceml.onnx.schema import ONNXAttributeType, _ATTR_TYPE_TO_PYTHON_TYPE, ONN
 log = logging.getLogger(__name__)
 
 
-def _add_ort_init_code(sdfg: SDFG):
-    """ Add onnxruntime initialization code to the SDFG if required """
-
-    if "OrtKernelSession" not in sdfg.global_code['frame'].as_string:
-        sdfg.append_global_code("""
-        // Start global ORT setup
-        const OrtApi* __ort_api = OrtGetApiBase()->GetApi(ORT_API_VERSION);
-
-        // helper function to check for status
-        void __ort_check_status(OrtStatus* status)
-        {
-            if (status != NULL) {
-                const char* msg = __ort_api->GetErrorMessage(status);
-                fprintf(stderr, "%s\\n", msg);
-                __ort_api->ReleaseStatus(status);
-                exit(1);
-            }
-        }
-        OrtEnv* __ort_env;
-        OrtKernelSession* __ort_session;
-        OrtSessionOptions* __ort_session_options;
-
-        OrtMemoryInfo* __ort_cpu_mem_info;
-        """)
-
-        sdfg.append_init_code("""
-        __ort_check_status(__ort_api->CreateCpuMemoryInfo(OrtDeviceAllocator, OrtMemTypeDefault, &__ort_cpu_mem_info));
-        __ort_check_status(__ort_api->CreateEnv(ORT_LOGGING_LEVEL_WARNING, "dace_graph", &__ort_env));
-        __ort_check_status(__ort_api->CreateSessionOptions(&__ort_session_options));
-        __ort_check_status(OrtSessionOptionsAppendExecutionProvider_CPU(__ort_session_options, /*use_arena=*/0));
-        """)
-
-        session_cleanup_code = """
-        __ort_api->ReleaseMemoryInfo(__ort_cpu_mem_info);
-        __ort_api->ReleaseKernelSession(__ort_session);
-        __ort_api->ReleaseSessionOptions(__ort_session_options);
-        __ort_api->ReleaseEnv(__ort_env);
-        """
-
-        if any(
-                hasattr(node, "schedule") and node.schedule in
-                dtypes.GPU_SCHEDULES + [dtypes.ScheduleType.GPU_Default]
-                for state in sdfg.nodes() for node in state.nodes()):
-            # if the SDFG contains a GPU node, add the CUDA provider and the memory_info
-            sdfg.append_global_code("OrtMemoryInfo* __ort_cuda_mem_info;\n")
-            sdfg.append_global_code(
-                "OrtMemoryInfo* __ort_cuda_pinned_mem_info;\n")
-            sdfg.append_init_code("""
-            __ort_check_status(__ort_api->CreateMemoryInfo("Cuda", /*allocator_type=*/OrtDeviceAllocator, /*device=*/0, /*mem_type=*/OrtMemTypeDefault, &__ort_cuda_mem_info));
-            __ort_check_status(__ort_api->CreateMemoryInfo("CudaPinned", /*allocator_type=*/OrtDeviceAllocator, /*device=*/0, /*mem_type=*/OrtMemTypeCPU, &__ort_cuda_pinned_mem_info));
-            __ort_check_status(OrtSessionOptionsAppendExecutionProvider_CUDA(__ort_session_options, /*device=*/0));
-            """)
-            session_cleanup_code = ("""
-            __ort_api->ReleaseMemoryInfo(__ort_cuda_mem_info);
-            __ort_api->ReleaseMemoryInfo(__ort_cuda_pinned_mem_info);
-            """ + session_cleanup_code)
-
-        sdfg.append_global_code("// End global ORT setup\n")
-        sdfg.prepend_exit_code(session_cleanup_code)
-        sdfg.append_init_code("""
-        __ort_check_status(__ort_api->CreateKernelSession(__ort_session_options, &__ort_session, 12));
-        """)
-
-
 def _gen_attr_init_code(kernel_context: str, attr: ONNXAttribute,
                         value) -> str:
     """ Get the code to setup an attribute on an onnx::NodeProto
@@ -414,8 +350,6 @@ def expand_node(node, state, sdfg):
 
     unique_id = "{}_{}_{}_{}".format(clean_onnx_name(node.name), sdfg.sdfg_id,
                                      sdfg.node_id(state), state.node_id(node))
-    _add_ort_init_code(sdfg)
-
     sdfg.append_global_code(
         "OrtExecutableKernel *__ort_kernel_{};\n".format(unique_id))
     sdfg.append_global_code(
@@ -571,7 +505,13 @@ def expand_node(node, state, sdfg):
                          out_connectors,
                          tasklet_code,
                          language=dace.dtypes.Language.CPP)
-    tasklet.environments = {"ONNXRuntime"}
+
+    if actual_node_schedule in dtypes.GPU_SCHEDULES + [
+            dtypes.ScheduleType.GPU_Default
+    ]:
+        tasklet.environments = {"ONNXRuntimeCUDA"}
+    else:
+        tasklet.environments = {"ONNXRuntime"}
 
     if return_nested_sdfg:
         nsdfg = dace.SDFG("nested_{}".format(unique_id))

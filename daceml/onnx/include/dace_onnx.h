@@ -1,23 +1,24 @@
-#pragma once
-#include <string>
-#include <vector>
+#ifndef __DACE_ONNX_H
+#define __DACE_ONNX_H
+#include "onnxruntime_c_api.h"
+#include "cpu_provider_factory.h"
 
-// From https://stackoverflow.com/a/34571089
-std::string base64_decode(const std::string &in) {
-    std::string out;
+const OrtApi* __ort_api = OrtGetApiBase()->GetApi(ORT_API_VERSION);
 
-    std::vector<int> T(256,-1);
-    for (int i=0; i<64; i++) T["ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[i]] = i;
-
-    int val=0, valb=-8;
-    for (unsigned char c : in) {
-        if (T[c] == -1) break;
-        val = (val<<6) + T[c];
-        valb += 6;
-        if (valb>=0) {
-            out.push_back(char((val>>valb)&0xFF));
-            valb-=8;
-        }
+// helper function to check for status
+void __ort_check_status(OrtStatus* status)
+{
+    if (status != NULL) {
+        const char* msg = __ort_api->GetErrorMessage(status);
+        fprintf(stderr, "%s\\n", msg);
+        __ort_api->ReleaseStatus(status);
+        exit(1);
     }
-    return out;
 }
+OrtEnv* __ort_env;
+OrtKernelSession* __ort_session;
+OrtSessionOptions* __ort_session_options;
+
+OrtMemoryInfo* __ort_cpu_mem_info;
+
+#endif  // __DACE_ONNX_H

@@ -59,16 +59,8 @@ else:
 
 @dace.library.environment
 class ONNXRuntime:
-    """ Environment used to run ONNX operator nodes using ONNX Runtime. This environment expects the environment variable
-        ``ORT_ROOT`` to be set to the root of the patched onnxruntime repository (https://github.com/orausch/onnxruntime)
-
-        Furthermore, both the runtime and the protobuf shared libs should be built:
-
-        ``./build.sh --build_shared_lib --parallel --config Release``
-        ``mkdir build-protobuf && cd build-protobuf && cmake ../cmake/external/protobuf/cmake -Dprotobuf_BUILD_SHARED_LIBS=ON && make``
-
-        (add ``-jN`` to the make command for parallel builds)
-        See ``onnxruntime/BUILD.md`` for more details.
+    """ Environment used to run ONNX operator nodes using ONNX Runtime.
+        See :ref:`ort-installation` for installation instructions.
     """
 
     cmake_minimum_version = None
@@ -79,6 +71,7 @@ class ONNXRuntime:
     cmake_compile_flags = []
     cmake_link_flags = []
     cmake_files = []
+    dependencies = []
 
     headers = [
         "../include/dace_onnx.h",
@@ -86,5 +79,52 @@ class ONNXRuntime:
         "cpu_provider_factory.h",
         "cuda_provider_factory.h",
     ]
-    init_code = ""
-    finalize_code = ""
+    init_code = """
+    __ort_check_status(__ort_api->CreateCpuMemoryInfo(OrtDeviceAllocator, /*type=*/OrtMemTypeDefault, &__ort_cpu_mem_info));
+    __ort_check_status(__ort_api->CreateEnv(/*default_logging_level=*/ORT_LOGGING_LEVEL_WARNING, /*logid=*/"dace_graph", &__ort_env));
+    __ort_check_status(__ort_api->CreateSessionOptions(&__ort_session_options));
+    __ort_check_status(OrtSessionOptionsAppendExecutionProvider_CPU(__ort_session_options, /*use_arena=*/0));
+    __ort_check_status(__ort_api->CreateKernelSession(__ort_session_options, &__ort_session, /*opset_version=*/12));
+    """
+    finalize_code = """
+    __ort_api->ReleaseMemoryInfo(__ort_cpu_mem_info);
+    __ort_api->ReleaseKernelSession(__ort_session);
+    __ort_api->ReleaseSessionOptions(__ort_session_options);
+    __ort_api->ReleaseEnv(__ort_env);
+    """
+
+
+@dace.library.environment
+class ONNXRuntimeCUDA:
+    """ Environment used to run ONNX operator nodes using ONNX Runtime, with the CUDA execution provider.
+        See :ref:`ort-installation` for installation instructions.
+    """
+
+    cmake_minimum_version = None
+    cmake_packages = []
+    cmake_variables = {}
+    cmake_includes = INCLUDES
+    cmake_libraries = [ORT_DLL_PATH]
+    cmake_compile_flags = []
+    cmake_link_flags = []
+    cmake_files = []
+    dependencies = [ONNXRuntime]
+
+    headers = [
+        "../include/dace_onnx_cuda.h",
+    ]
+    init_code = """
+    __ort_check_status(__ort_api->CreateMemoryInfo("Cuda", /*allocator_type=*/OrtDeviceAllocator, /*device=*/0, /*mem_type=*/OrtMemTypeDefault, &__ort_cuda_mem_info));
+    __ort_check_status(__ort_api->CreateMemoryInfo("CudaPinned", /*allocator_type=*/OrtDeviceAllocator, /*device=*/0, /*mem_type=*/OrtMemTypeCPU, &__ort_cuda_pinned_mem_info));
+    __ort_check_status(OrtSessionOptionsAppendExecutionProvider_CUDA(__ort_session_options, /*device=*/0));
+    
+    // overwrite the CPU ORT session with the CUDA session
+    
+    __ort_api->ReleaseKernelSession(__ort_session);
+    __ort_check_status(__ort_api->CreateKernelSession(__ort_session_options, &__ort_session, /*opset_version=*/12));
+    """
+
+    finalize_code = """
+    __ort_api->ReleaseMemoryInfo(__ort_cuda_mem_info);
+    __ort_api->ReleaseMemoryInfo(__ort_cuda_pinned_mem_info);
+    """

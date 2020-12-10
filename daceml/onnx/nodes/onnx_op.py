@@ -398,10 +398,6 @@ class ONNXOp(nd.LibraryNode):
                     "Expected value for required attribute '{}', got None".
                     format(attr))
 
-    @staticmethod
-    def expansion(node, state: SDFGState, sdfg: SDFG) -> nd.Node:
-        return expand_node(node, state, sdfg)
-
 
 def register_op_repo_replacement(cls: Type[ONNXOp], cls_name: str,
                                  dace_schema: ONNXSchema):
@@ -429,11 +425,13 @@ def register_op_repo_replacement(cls: Type[ONNXOp], cls_name: str,
             read = state.add_read(arr_name)
             state.add_edge(read, None, onnx_node, inp,
                            sdfg.make_array_memlet(arr_name))
+            onnx_node.add_in_connector(inp)
 
         for outp, arr_name in outputs.items():
             write = state.add_read(arr_name)
             state.add_edge(onnx_node, outp, write, None,
                            sdfg.make_array_memlet(arr_name))
+            onnx_node.add_out_connector(outp)
         return []
 
 
@@ -558,11 +556,17 @@ for schema in onnx.defs.get_all_schemas():
 
     @dace.library.expansion
     class Expansion(ExpandTransformation):
-        environments = [ONNXRuntime]
+        environments = []
 
-        @staticmethod
-        def expansion(node, state: SDFGState, sdfg: SDFG):
-            return node.expansion(node, state, sdfg)
+        @classmethod
+        def expansion(cls, node, state: SDFGState, sdfg: SDFG):
+            result = expand_node(node, state, sdfg)
+
+            if not isinstance(result, SDFG):
+                # when we return an SDFG the the environments will be determined recursively by codegen.
+                cls.environments = map(dace.library.get_environment,
+                                       result.environments)
+            return result
 
     cls.register_implementation('onnxruntime', Expansion)
 
@@ -577,7 +581,7 @@ for schema in onnx.defs.get_all_schemas():
         if "op" in args and args["op"] == schema.name:
 
             class Expansion(ExpandTransformation):
-                environments = [ONNXRuntime]
+                environments = []
                 forward_impl: ONNXForward = impl
 
                 @classmethod
@@ -594,7 +598,20 @@ for schema in onnx.defs.get_all_schemas():
                         return cls.forward_impl.forward(node, state, sdfg)
                     else:
                         # fall back to ORT
-                        return node.expansion(node, state, sdfg)
+                        reason = (
+                            "scalar inputs/outputs are not supported on GPU"
+                            if skip_due_to_scalars_on_gpu else
+                            "forward_can_be_applied returned False")
+                        log.info(
+                            'Falling back to onnxruntime expansion for library node "{}". Reason: {}'
+                            .format(node.label, reason))
+                        result = expand_node(node, state, sdfg)
+                        if not isinstance(result, SDFG):
+                            # when we return an SDFG the the environments will be determined recursively by codegen.
+                            cls.environments = map(
+                                dace.library.get_environment,
+                                result.environments)
+                        return result
 
             implementation_name = args["name"]
             cls.register_implementation(implementation_name, Expansion)
