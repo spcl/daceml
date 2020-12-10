@@ -482,12 +482,11 @@ class FPGAIm2ColConv(ONNXForward):
         # GEMM Parameters
 
         #N = num_filters
-        K = filter_hx * filter_hy
+        K = num_channels * filter_hx * filter_hy
         M = output_size_y * output_size_x
         P = num_filters  # Num PEs  #TODO parametric
         #TODO: maybe this should depend also on output_size_x?
         vec_width = math.gcd(output_size_x, 16)  # TODO: parametric
-
         def make_read_W(state):
             # this will read the weights, organized as a matrix of size
             # num_filters x (num_channels * filter_hx * filter_hy)
@@ -532,7 +531,7 @@ class FPGAIm2ColConv(ONNXForward):
             # Matrix B will be the im2col matrix. We will build it row-by-row
             # to facilitate streaming in the systolic GEMM, avoiding storing it back to memory
             # Note: this will require to load multiple times the input feature, yet this save I/Os
-            # The im2col matrix has size (num_filters * filter_hx * filter_hy) x (output_size_y * output_size_x)
+            # The im2col matrix has size (num_channels * filter_hx * filter_hy) x (output_size_y * output_size_x)
 
             # gear boxing: we read plain data types, we stream vector data types
             # Therefore we have two maps, the innermost is unrolled
@@ -548,12 +547,11 @@ class FPGAIm2ColConv(ONNXForward):
                     "x": "0:{}".format(output_size_y),
                     "y0": "0:{}/{}".format(output_size_x,
                                            vec_width),  #TODO vectorize read
-                    "k0": "0:{}/{}".format(K, vec_width)
                 },
                 schedule=dace.ScheduleType.FPGA_Device)
 
             read_map_entry, read_map_exit = state.add_map(
-                "unrolled_reads_B", {"y1": "0:{}".format(vec_width)},
+                "unrolled_reads_X", {"y1": "0:{}".format(vec_width)},
                 schedule=dace.ScheduleType.FPGA_Device,
                 unroll=True)
 
@@ -567,7 +565,7 @@ class FPGAIm2ColConv(ONNXForward):
             X = state.add_read("X")
             pipe = state.add_write("im2col_pipe")
             vect_data = state.add_access("vec_data_im2col")
-            tasklet = state.add_tasklet("read_B", {"from_memory"},
+            tasklet = state.add_tasklet("read_X", {"from_memory"},
                                         {"to_kernel"},
                                         "to_kernel = from_memory")
 
@@ -698,12 +696,13 @@ class FPGAIm2ColConv(ONNXForward):
             Y_pipe_in = state.add_read("Y_pipe")
             Y_pipe_out = state.add_write("Y_pipe")
 
-            #batch_entr, batch_exit = state.add_map(
+            # batch_entry, batch_exit = state.add_map(
             #     "batch",  {"b": "0:{}".format(batch_size)},
             #     schedule=dace.ScheduleType.FPGA_Device)
 
             entry_n0, exit_n0 = state.add_map(
-                "n0", {
+                "batch_n0", {
+                    "b": "0:{}".format(batch_size),
                     "n0": "0:{}/{}".format(num_filters, P),
                 },
                 schedule=dace.ScheduleType.FPGA_Device)
@@ -864,6 +863,7 @@ if n1 <= p:
             state.add_memlet_path(Y_pipe_out,
                                   compute_exit,
                                   memlet=dace.memlet.Memlet())
+
 
         # build the compute State
         vec_type = dace.vector(dace.float32, vec_width)

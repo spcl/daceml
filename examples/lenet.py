@@ -93,7 +93,7 @@ def eval_model(args, test_dataloader, model, device, single=False):
         donnx.ONNXRelu.default_implementation = "fpga"
         donnx.ONNXMaxPool.default_implementation = "fpga"
         donnx.ONNXGemm.default_implementation = "fpga"
-        donnx.ONNXConv.default_implementation = 'pure'
+        donnx.ONNXConv.default_implementation = 'fpga'
 
         model = DaceModule(model, dummy_inputs=dummy_input[0])
         sdfg = model.sdfg

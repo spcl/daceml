@@ -1,6 +1,7 @@
 # Simple test for evaluating 2D convolutions for FPGA
 
 # TODO: conform to pytest syntax if needed
+# TODO: render this a real test
 
 from dace.transformation.interstate import FPGATransformSDFG
 
@@ -18,7 +19,9 @@ import copy
 class Model(nn.Module):
     def __init__(self):
         super(Model, self).__init__()
-        self.conv = nn.Conv2d(1, 6, 5)
+        self.conv = nn.Conv2d(6, 16, 5)
+
+        self.conv.weight = torch.nn.Parameter(torch.ones_like(self.conv.weight))
         # self.conv = nn.Conv2d(4, 4, 3)
 
     def forward(self, x):
@@ -32,8 +35,11 @@ donnx.default_implementation = "pure"
 donnx.ONNXConv.default_implementation = 'im2col'
 
 ptmodel = Model()
-# x = torch.rand(1, 1, 28, 28)
-x = torch.ones(1, 1, 28, 28)
+
+# numpy_array = np.arange(0, 1*2*4*4, dtype=np.float32).reshape(1,2,4,4)
+# x = torch.from_numpy(numpy_array)
+x = torch.rand(100, 6, 24, 24)
+# x = torch.ones(1, 1, 4, 4)
 
 dace_model = DaceModule(ptmodel)
 dace_output = dace_model(x)
