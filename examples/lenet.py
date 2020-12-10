@@ -38,9 +38,9 @@ def get_dataloader(train, batch_size):
                                        shuffle=train)
 
 
-class LeNet(nn.Module):
+class TrainLeNet(nn.Module):
     def __init__(self):
-        super(LeNet, self).__init__()
+        super(TrainLeNet, self).__init__()
         self.conv1 = nn.Conv2d(1, 6, 5)
         self.conv2 = nn.Conv2d(6, 16, 5)
         self.fc1 = nn.Linear(256, 120)
@@ -54,11 +54,27 @@ class LeNet(nn.Module):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
-        x = F.log_softmax(x, dim=1)
         return x
 
-import daceml.onnx as donnx
-donnx.default_implementation = "pure"
+class TestLeNet(nn.Module):
+    def __init__(self):
+        super(TestLeNet, self).__init__()
+        self.conv1 = nn.Conv2d(1, 6, 5)
+        self.conv2 = nn.Conv2d(6, 16, 5)
+        self.fc1 = nn.Linear(256, 120)
+        self.fc2 = nn.Linear(120, 84)
+        self.fc3 = nn.Linear(84, 10)
+
+    def forward(self, x):
+        x = F.max_pool2d(F.relu(self.conv1(x)), 2)
+        x = F.max_pool2d(F.relu(self.conv2(x)), 2)
+        x = x.view(-1, 256)
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+        x = F.softmax(x, dim=1)
+        return x
+
 
 def eval_model(args, test_dataloader, model, device, single=False):
     model.eval()
@@ -77,6 +93,7 @@ def eval_model(args, test_dataloader, model, device, single=False):
         donnx.ONNXRelu.default_implementation = "fpga"
         donnx.ONNXMaxPool.default_implementation = "fpga"
         donnx.ONNXGemm.default_implementation = "fpga"
+        donnx.ONNXConv.default_implementation = 'pure'
 
         model = DaceModule(model, dummy_inputs=dummy_input[0])
         sdfg = model.sdfg
@@ -129,6 +146,7 @@ def train_model(args, train_dataloader, model, device):
                                                 step_size=1,
                                                 gamma=args.gamma)
 
+    criterion = nn.CrossEntropyLoss()
     model.train()
     model.to(device)
     for epoch in range(args.epochs):
@@ -137,7 +155,7 @@ def train_model(args, train_dataloader, model, device):
             data, target = data.to(device), target.to(device)
             optimizer.zero_grad()
             output = model(data)
-            loss = F.nll_loss(output, target)
+            loss = criterion(output, target)
             loss.backward()
             optimizer.step()
 
@@ -149,10 +167,10 @@ def train_model(args, train_dataloader, model, device):
 
 
 def run_batch_inference():
-    input = torch.rand(8, 1, 32, 32, dtype=torch.float32)
+    input = torch.rand(8, 1, 28, 28, dtype=torch.float32)
 
-    net = LeNet()
-    dace_net = LeNet()
+    net = TestLeNet()
+    dace_net = TestLeNet()
     dace_net.load_state_dict(net.state_dict())
     dace_net = DaceModule(dace_net)
 
@@ -210,21 +228,21 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     donnx.default_implementation = 'pure'
+    donnx.ONNXConv.default_implementation = 'im2col'
 
     train_loader = get_dataloader(False, args.batch_size)
     test_loader = get_dataloader(True, args.test_batch_size)
 
-    model = LeNet()
 
     if args.train_model:
+        model = TrainLeNet()
         train_model(args, train_loader, model, 'cuda' if args.cuda else 'cpu')
-    else:
-        # try to load the weights
-        model.load_state_dict(torch.load("./data/weights.pt"))
 
-    # eval_model(args, test_loader, model, 'cuda')
+    model = TestLeNet()
+    # try to load the weights
+    model.load_state_dict(torch.load("./data/weights.pt"))
+
+    #eval_model(args, test_loader, model, 'cuda')
     eval_model(args, test_loader, model, 'cpu', single=True)
-    # eval_model(args, test_loader, model, 'pytorch', single=True)
-
     eval_model(args, test_loader, model, 'dace', single=True)
     eval_model(args, test_loader, model, 'fpga', single=True)

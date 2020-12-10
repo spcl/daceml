@@ -9,7 +9,6 @@ from daceml.pytorch import DaceModule
 from daceml.transformation import ConstantFolding
 
 
-@pytest.mark.slow
 def test_bert_encoder(gpu, default_implementation):
     if not gpu and default_implementation == 'onnxruntime':
         pytest.skip("combination is tested below")

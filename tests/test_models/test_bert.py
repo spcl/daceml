@@ -11,11 +11,10 @@ def test_bert_full(gpu, default_implementation):
     data_directory = os.path.join(os.path.dirname(__file__), "data")
 
     bert_path = os.path.join(data_directory, "bert_infer.onnx")
-    # Download onnx model from https://polybox.ethz.ch/index.php/s/tVng5qwlrukhZ5A
+    # Download onnx model
     if not os.path.exists(bert_path):
         subprocess.check_call([
-            "wget",
-            "https://polybox.ethz.ch/index.php/s/tVng5qwlrukhZ5A/download",
+            "wget", "http://spclstorage.inf.ethz.ch/~rauscho/bert_infer.onnx",
             "--output-document={}".format(bert_path)
         ])
 

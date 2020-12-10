@@ -39,8 +39,7 @@ def in_edge_with_name(node: Node, state: SDFGState,
         :return: the edge that connects to connector `name`.
      """
 
-    in_edges = state.in_edges(node)
-    cands = [edge for edge in in_edges if edge.dst_conn == name]
+    cands = list(state.in_edges_by_connector(node, name))
     if len(cands) != 1:
         raise ValueError(
             "Expected to find exactly one edge with name '{}', found {}".
@@ -56,8 +55,7 @@ def out_edge_with_name(node: Node, state: SDFGState,
         :param name: the output connector name.
         :return: the edge that connects to connector `name`.
      """
-    out_edges = state.out_edges(node)
-    cands = [edge for edge in out_edges if edge.src_conn == name]
+    cands = list(state.out_edges_by_connector(node, name))
     if len(cands) != 1:
         raise ValueError(
             "Expected to find exactly one edge with name '{}', found {}".

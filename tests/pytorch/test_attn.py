@@ -37,8 +37,3 @@ def test_attn(gpu):
     assert np.allclose(pt_outputs[1].detach().numpy(),
                        dace_outputs_1[1],
                        atol=1e-06)
-    print("testing passed")
-
-
-if __name__ == "__main__":
-    test_attn(False)

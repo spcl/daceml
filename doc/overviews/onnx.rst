@@ -164,7 +164,7 @@ ONNX models can be imported using the :class:`~daceml.onnx.ONNXModel` frontend.
     if not os.path.exists(model_path):
         subprocess.check_call([
             "wget",
-            "https://github.com/onnx/models/raw/master/vision/classification/efficientnet-lite4/model/efficientnet-lite4-11.onnx",
+            "http://spclstorage.inf.ethz.ch/~rauscho/efficientnet-lite4-11.onnx",
             "--output-document={}".format(model_path)
         ])
 
