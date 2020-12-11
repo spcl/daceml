@@ -69,6 +69,7 @@ class FPGAConv2D(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
+
         X = in_desc_with_name(node, state, sdfg, "X")
         W = in_desc_with_name(node, state, sdfg, "W")
         try:
@@ -442,6 +443,9 @@ class FPGAIm2ColConv(ONNXForward):
         X = in_desc_with_name(node, state, sdfg, "X")
         W = in_desc_with_name(node, state, sdfg, "W")
         Y = out_desc_with_name(node, state, sdfg, "Y")
+
+        #TODO deal with streams
+
         try:
             B = in_desc_with_name(node, state, sdfg, "B")
         except Exception as e:
@@ -685,7 +689,6 @@ class FPGAIm2ColConv(ONNXForward):
                                   src_conn="to_memory",
                                   memlet=dace.Memlet(
                                       "Y[b, n,x, y0*{}+y1]".format(vec_width)))
-            # dace.Memlet("Y[b, 0:{}, 0:{}, 0:{}]".format(
 
         def make_compute(sdfg, state, vec_width=1):
             vec_type = dace.vector(dace.float32, vec_width)
@@ -899,6 +902,18 @@ if n1 <= p:
 
 @autoregister_params(op="Relu", name="fpga")
 class FPGARelu(ONNXForward):
+
+    @staticmethod
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
+        X = in_desc_with_name(node, state, sdfg, "X")
+        Y = out_desc_with_name(node, state, sdfg, "Y")
+
+        # Input veclen must be equal to the output veclen
+        if X.veclen != Y.veclen:
+            return False
+        return True
+
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
@@ -906,16 +921,13 @@ class FPGARelu(ONNXForward):
         X = in_desc_with_name(node, state, sdfg, "X")
         Y = out_desc_with_name(node, state, sdfg, "Y")
 
-        # as vec width take the gcd between 32 (max vect width) and the shape of X
-        vec_width = math.gcd(X.shape[-1], 32)
-
-        # Build map ranges: one loop per dimension, with the last one being
-        # strip mined to expose vectorization
+        # Use the vector on the X
+        vec_width = X.veclen
+        # Build map ranges: one loop per dimension
         map_ranges = {
             '__i%d' % i: '0:%s' % n
-            for i, n in enumerate(X.shape[:-1])
+            for i, n in enumerate(X.shape)
         }
-        map_ranges[f'__i{len(X.shape)-1}'] = f"0:{X.shape[-1]//vec_width}"
 
         new_sdfg = dace.SDFG("fpga_relu")
 
@@ -923,34 +935,64 @@ class FPGARelu(ONNXForward):
         new_sdfg.add_datadesc("X", copy.deepcopy(X))
         new_sdfg.add_datadesc("Y", copy.deepcopy(Y))
 
-        outer_me, outer_mx = new_state.add_map('outer_relu_map', map_ranges)
+        outer_me, outer_mx = new_state.add_map('relu_map', map_ranges)
 
+        new_sdfg.add_array("vec_data_in", [vec_width],
+                       dtype=dace.float32,
+                       transient=True,
+                       storage=dace.dtypes.StorageType.FPGA_Registers)
+        new_sdfg.add_array("vec_data_out", [1],
+                           dtype=X.dtype,
+                           transient=True,
+                           storage=dace.dtypes.StorageType.FPGA_Registers)
+
+        vec_data_in = new_state.add_access("vec_data_in")
+        vec_data_out = new_state.add_access("vec_data_in")
+
+        # Unrolled map to compute the elementwise max
         inner_me, inner_mx = new_state.add_map(
             'inner_relu_map', dict(i="0:{}".format(vec_width)), unroll=True)
 
+        # read_tasklet = new_state.add_tasklet('read_task', ['in_con'], ['out_con'],
+        #                                 'out_con=in_con')
+        # write_tasklet = new_state.add_tasklet('write_task', ['in_con'], ['out_con'],
+        #                                      'out_con=in_con')
         tasklet = new_state.add_tasklet('relu_task', ['x_con'], ['y_con'],
                                         'y_con = max(0.0, x_con)')
         x_read = new_state.add_read("X")
         y_write = new_state.add_write("Y")
 
+        #unpack vector data
         new_state.add_memlet_path(
             x_read,
             outer_me,
+            vec_data_in,
+            memlet=dace.Memlet("X[{}]".format(
+                ",".join(['__i%d' % i for i in range(len(X.shape))]))))
+
+        # connect to tasklet
+        new_state.add_memlet_path(
+            vec_data_in,
             inner_me,
             tasklet,
             dst_conn='x_con',
-            memlet=dace.Memlet("X[{}, __i{}*{}+i]".format(
-                ",".join(['__i%d' % i for i in range(len(X.shape) - 1)]),
-                len(X.shape) - 1, vec_width)))
+            memlet=dace.Memlet("vec_data_in[i]"))
+
+        # pack
         new_state.add_memlet_path(
             tasklet,
             inner_mx,
+            vec_data_out,
+            src_conn='y_con',
+            memlet=dace.Memlet("vec_data_in[i]"))
+
+        #write out
+        new_state.add_memlet_path(
+            vec_data_out,
             outer_mx,
             y_write,
-            src_conn='y_con',
-            memlet=dace.Memlet("Y[{}, __i{}*{}+i]".format(
-                ",".join(['__i%d' % i for i in range(len(X.shape) - 1)]),
-                len(X.shape) - 1, vec_width)))
+            memlet=dace.Memlet("Y[{}]".format(
+                ",".join(['__i%d' % i for i in range(len(X.shape))]))))
         new_sdfg.fill_scope_connectors()
         new_sdfg.save('/tmp/relu.sdfg')
         return new_sdfg
