@@ -25,8 +25,8 @@ class Model(nn.Module):
 
 
     def forward(self, x):
-        x = self.fc1(x)
-        x = self.fc2(x)
+        # x = self.fc1(x)
+        # x = self.fc2(x)
         return self.fc3(x)
 
 
@@ -34,7 +34,7 @@ import daceml.onnx as donnx
 donnx.default_implementation = "pure"
 
 ptmodel = Model()
-x = torch.rand(1000, 256, dtype=torch.float32)
+x = torch.rand(1000, 84, dtype=torch.float32)
 
 dace_model = DaceModule(ptmodel)
 dace_output = dace_model(x)

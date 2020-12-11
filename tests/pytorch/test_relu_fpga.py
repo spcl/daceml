@@ -47,7 +47,7 @@ def vectorize_array_and_memlet(sdfg, array_name, type:dace.dtypes.typeclass):
     data.shape = data.shape[:-1] + (data.shape[-1] // vec_width,)
 
     # #adjust all the strides
-    for stride in data.strides[-1]:
+    for stride in data.strides[:-1]:
         if stride % vec_width != 0:
             raise ValueError("Stride of {} is not divisible by {}".format(data.name, vec_width))
 
