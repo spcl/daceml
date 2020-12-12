@@ -60,7 +60,7 @@ orig_sdfg.save('/tmp/out_expanded.sdfg')
 # Vectorize input and output container
 
 vec_type = dace.vector(dace.float32, vec_width)
-utils.vectorize_array_and_memlet(sdfg, "ONNX_input", vec_type)
+# utils.vectorize_array_and_memlet(sdfg, "ONNX_input", vec_type)
 utils.vectorize_array_and_memlet(sdfg, "ONNX_3", vec_type)
 
 ##################################
@@ -75,6 +75,7 @@ donnx.ONNXConv.default_implementation = "fpga"
 sdfg.expand_library_nodes()
 sdfg.save('/tmp/out_fpga_expanded.sdfg')
 dace_output_fpga = dace_model(torch.clone(x))
+dace_output_fpga=dace_output_fpga.reshape(dace_output.shape)
 
 print("Difference: ", np.linalg.norm(torch_output.detach().numpy()-dace_output_fpga)/dace_output_fpga.size)
 
