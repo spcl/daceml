@@ -40,7 +40,7 @@ def test_lenet(conv_impl):
     net = LeNet()
     dace_net = LeNet()
     dace_net.load_state_dict(net.state_dict())
-    dace_net = DaceModule(dace_net)
+    dace_net = DaceModule(dace_net, dummy_inputs=(torch.clone(input), ))
 
     torch_output = net(torch.clone(input))
     dace_output = dace_net(torch.clone(input))
