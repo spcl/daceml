@@ -28,48 +28,6 @@ def get_library_node_by_name(sdfg, name):
 
 
 
-def vectorize_array_and_memlet(sdfg, array_name, type:dace.dtypes.typeclass):
-    '''
-       Adjust the shape of a data container according to the vec width (only the last dimension)
-       together with the all the ingoin/outgoing memlets
-    '''
-    # find the array
-    data = sdfg.arrays[array_name]
-    if type == data.dtype:
-        return
-    #change the type
-    data.dtype = type
-
-    #adjust the shape
-    vec_width = type.veclen
-    if data.shape[-1] % vec_width != 0:
-        raise ValueError("Shape of {} is not divisible by {}".format(data.name, vec_width))
-    data.shape = data.shape[:-1] + (data.shape[-1] // vec_width,)
-
-    # #adjust all the strides
-    for stride in data.strides[:-1]:
-        if stride % vec_width != 0:
-            raise ValueError("Stride of {} is not divisible by {}".format(data.name, vec_width))
-
-    data.strides = tuple(ti//vec_width for ti in data.strides[:-1]) + (data.strides[-1],)
-
-
-    # Search for all the memlets
-    for state in sdfg.nodes():
-        for edge in state.edges():
-            if edge.data.data == array_name:
-                # get the range
-                start, stop, skip = edge.data.subset.ranges[-1]
-
-                # Let's be conservative for the moment
-
-                if start!=0 or skip!=1 or (stop+1) % vec_width != 0:
-                    raise ValueError("Memlet {} not able to convert its range".format(edge.data))
-
-                #update the range
-                new_stop = (stop+1)//vec_width-1
-                edge.data.subset.ranges[-1]=(start, new_stop, skip)
-
 
 
 
@@ -139,8 +97,8 @@ orig_sdfg.save('/tmp/out_expanded.sdfg')
 # find the input node
 vec_width = 4
 vec_type = dace.vector(dace.float32, vec_width)
-vectorize_array_and_memlet(sdfg, "ONNX_x", vec_type)
-vectorize_array_and_memlet(sdfg, "ONNX_1", vec_type)
+utils.vectorize_array_and_memlet(sdfg, "ONNX_x", vec_type)
+utils.vectorize_array_and_memlet(sdfg, "ONNX_1", vec_type)
 
 sdfg.apply_transformations([FPGATransformSDFG])
 sdfg.states()[0].location["is_FPGA_kernel"] = False
