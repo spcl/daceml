@@ -3,6 +3,7 @@ import numpy as np
 
 import daceml.onnx as donnx
 from daceml.pytorch import DaceModule
+from daceml import transformation
 
 import torch
 import torch.nn as nn
@@ -40,11 +41,15 @@ def test_lenet(conv_impl):
     net = LeNet()
     dace_net = LeNet()
     dace_net.load_state_dict(net.state_dict())
-    dace_net = DaceModule(dace_net)
+    dace_net = DaceModule(dace_net, dummy_inputs=(torch.clone(input), ))
 
     torch_output = net(torch.clone(input))
     dace_output = dace_net(torch.clone(input))
-    dace_net.sdfg.expand_library_nodes()
+
+    transformation.expand_library_nodes_except_reshape(dace_net.sdfg)
+    dace_net.sdfg.view()
+    dace_net.sdfg.apply_transformations_repeated(
+        [transformation.ReshapeElimination])
     dace_net.sdfg.view()
 
     diff = np.linalg.norm(torch_output.detach().numpy() - dace_output)
