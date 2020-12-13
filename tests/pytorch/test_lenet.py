@@ -1,6 +1,8 @@
 import pytest
 import numpy as np
 
+from dace import nodes
+
 import daceml.onnx as donnx
 from daceml.pytorch import DaceModule
 from daceml import transformation
@@ -8,6 +10,8 @@ from daceml import transformation
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from daceml.transformation.input_to_constant import forward_memlet_tree_with_nested
 
 
 class LeNet(nn.Module):
@@ -49,8 +53,38 @@ def test_lenet(conv_impl):
     transformation.expand_library_nodes_except_reshape(dace_net.sdfg)
     dace_net.sdfg.view()
     dace_net.sdfg.apply_transformations_repeated(
-        [transformation.ReshapeElimination])
+        [transformation.ReshapeElimination], print_report=True)
+    dace_net.sdfg.apply_transformations_repeated(
+        [transformation.InputToConstant], print_report=True)
     dace_net.sdfg.view()
+
+
 
     diff = np.linalg.norm(torch_output.detach().numpy() - dace_output)
     assert diff < 1e-5
+
+@pytest.mark.pure
+def test_lenet_input_toconstant():
+    input = torch.rand(8, 1, 32, 32, dtype=torch.float32)
+
+    net = LeNet()
+    dace_net = LeNet()
+    dace_net.load_state_dict(net.state_dict())
+    dace_net = DaceModule(dace_net, dummy_inputs=(torch.clone(input), ))
+    dace_net.sdfg.expand_library_nodes()
+
+    torch_output = net(torch.clone(input))
+    dace_output = dace_net(torch.clone(input))
+
+    state = dace_net.sdfg.nodes()[0]
+
+    access = [n for n in state.nodes() if isinstance(n, nodes.AccessNode) and n.data == "ONNX_inputDOT1"][0]
+
+    def print_tree(tree):
+        return "{} -> {}".format(tree.edge.src, tree.edge.dst) + "".join(
+            "\n |\n +- {}".format(print_tree(c)) for c in tree.children)
+
+    print(print_tree(forward_memlet_tree_with_nested(state, state.out_edges(access)[0])))
+
+
+
