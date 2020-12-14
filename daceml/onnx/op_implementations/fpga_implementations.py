@@ -448,7 +448,7 @@ class FPGAIm2ColConv(ONNXForward):
 
         # TODO: try to vectorize input
         # Use the vector on the Y
-        vec_width = Y.veclen
+
 
         #TODO deal with streams
 
@@ -490,7 +490,14 @@ class FPGAIm2ColConv(ONNXForward):
         new_sdfg.arrays["Y"].transient = False
 
         # GEMM Parameters
-
+        if node.name == "ONNX_Conv_0":
+            vec_width = Y.veclen
+            streamed_node = True
+            print("CONV streamed")
+        else:
+            streamed_node = False
+            print("CONV non streamed")
+            vec_width= math.gcd(16, output_size_x)
         #N = num_filters
         K = num_channels * filter_hx * filter_hy
         M = output_size_y * output_size_x
@@ -659,17 +666,18 @@ class FPGAIm2ColConv(ONNXForward):
                                       dst_conn="bias",
                                       memlet=dace.Memlet("B[n]"))
 
-            # Memlet to memory
+            if streamed_node = False:
+                # Memlet to memory
 
-            # state.add_memlet_path(copy__add_bias__tasklet,
-            #                       exit_map,
-            #                       mem,
-            #                       src_conn="out_con",
-            #                       memlet=dace.Memlet(
-            #                           "Y[b, n,x, y]"))
-
-            # Memlet to stream
-            state.add_memlet_path(copy__add_bias__tasklet,
+                state.add_memlet_path(copy__add_bias__tasklet,
+                                  exit_map,
+                                  mem,
+                                  src_conn="out_con",
+                                  memlet=dace.Memlet(
+                                      "Y[b, n,x, y]"))
+            else:
+                # Memlet to stream
+                state.add_memlet_path(copy__add_bias__tasklet,
                                   exit_map,
                                   mem,
                                   src_conn="out_con",
@@ -904,10 +912,12 @@ class FPGARelu(ONNXForward):
 
         # TODO deal with this. Right Now I'm doing it to
         # gently introduce streaming
-        if node.name == "ONNX_Relu_1" or node.name == "ONNX_Relu_4":
+        if node.name == "ONNX_Relu_1":
             streaming_node = True
+            print("RELU streamed ----")
         else:
             streaming_node = False
+            print("RELU NON streamed ----")
         X = in_desc_with_name(node, state, sdfg, "X")
         Y = out_desc_with_name(node, state, sdfg, "Y")
 
