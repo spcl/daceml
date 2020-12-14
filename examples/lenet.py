@@ -107,12 +107,8 @@ def eval_model(args, test_dataloader, model, device, single=False):
         sdfg.apply_transformations([FPGATransformSDFG])
         sdfg.apply_transformations_repeated([InlineSDFG])
         sdfg.expand_library_nodes()
-        print("OK")
-        sdfg.save('/tmp/out_pre.sdfg')
         sdfg.apply_transformations_repeated([InlineSDFG])
-        print("OK1")
         sdfg.apply_transformations_repeated([InputToConstant], print_report=True)
-        print("OK2")
         #
         # transformation.expand_library_nodes_except_reshape(sdfg)
         # sdfg.states()[0].nodes()[0].sdfg.apply_transformations_repeated(
