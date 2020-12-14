@@ -13,6 +13,7 @@ from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
 from daceml.transformation import InputToConstant
 import copy
 import dace
+from dace import nodes
 from daceml.util import utils
 from daceml import transformation
 
@@ -107,8 +108,19 @@ def eval_model(args, test_dataloader, model, device, single=False):
         sdfg.apply_transformations([FPGATransformSDFG])
         sdfg.apply_transformations_repeated([InlineSDFG])
         sdfg.expand_library_nodes()
+        print("OK")
+        sdfg.save('/tmp/out_pre.sdfg')
         sdfg.apply_transformations_repeated([InlineSDFG])
-        sdfg.apply_transformations_repeated([InputToConstant], print_report=True)
+        print("OK1")
+
+        access_nodes = [n for n, _ in sdfg.all_nodes_recursive()
+                        if isinstance(n, nodes.AccessNode) and n.data[:8] == "ONNX_fc3"]
+        for access_node in access_nodes:
+            InputToConstant.apply_to(sdfg, _access_node=access_node)
+
+        #sdfg.apply_transformations_repeated([InputToConstant], print_report=True)
+        #access
+        print("OK2")
         #
         # transformation.expand_library_nodes_except_reshape(sdfg)
         # sdfg.states()[0].nodes()[0].sdfg.apply_transformations_repeated(
@@ -257,6 +269,6 @@ if __name__ == '__main__':
     model.load_state_dict(torch.load("./data/weights.pt"))
 
     #eval_model(args, test_loader, model, 'cuda')
-    eval_model(args, test_loader, model, 'cpu', single=True)
-    eval_model(args, test_loader, model, 'dace', single=True)
+    # eval_model(args, test_loader, model, 'cpu', single=True)
+    # eval_model(args, test_loader, model, 'dace', single=True)
     eval_model(args, test_loader, model, 'fpga', single=True)
