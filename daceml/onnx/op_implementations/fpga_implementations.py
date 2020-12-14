@@ -902,6 +902,12 @@ class FPGARelu(ONNXForward):
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
+        # TODO deal with this. Right Now I'm doing it to
+        # gently introduce streaming
+        if node.name == "ONNX_Relu_1" or node.name == "ONNX_Relu_4":
+            streaming_node = True
+        else:
+            streaming_node = False
         X = in_desc_with_name(node, state, sdfg, "X")
         Y = out_desc_with_name(node, state, sdfg, "Y")
 
@@ -947,17 +953,16 @@ class FPGARelu(ONNXForward):
 
         #unpack vector data
         #memlet from memory
-
-        # new_state.add_memlet_path(x_read,
-        #                           outer_me,
-        #                           vec_data_in,
-        #                           memlet=dace.Memlet("X[{}]".format(",".join([
-        #                               '__i%d' % i for i in range(len(X.shape))
-        #                           ]))))
-
-        #memlet from stream
-
-        new_state.add_memlet_path(x_read,
+        if not streaming_node:
+            new_state.add_memlet_path(x_read,
+                                  outer_me,
+                                  vec_data_in,
+                                  memlet=dace.Memlet("X[{}]".format(",".join([
+                                      '__i%d' % i for i in range(len(X.shape))
+                                  ]))))
+        else:
+            #memlet from stream
+            new_state.add_memlet_path(x_read,
                                   outer_me,
                                   vec_data_in,
                                   memlet=dace.Memlet("X[0,0,0,0]"))
