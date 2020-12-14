@@ -11,10 +11,23 @@ import torch.nn.functional as F
 from torchvision import datasets, transforms
 from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
 from daceml.transformation import InputToConstant
+from dace.transformation.dataflow import streaming_memory as sm
 import copy
 import dace
 from daceml.util import utils
 from daceml import transformation
+
+
+def get_access_node_by_name(sdfg, name):
+
+    for node, state in sdfg.all_nodes_recursive():
+        if isinstance(node, dace.sdfg.nodes.AccessNode):
+            print(node.label)
+            if node.label == name:
+                return node, state
+
+    raise Exception("DataNode {} not found".format(name))
+
 
 def print_mnist_mean_and_std():
     train_dataset = datasets.MNIST('./data',
@@ -105,10 +118,20 @@ def eval_model(args, test_dataloader, model, device, single=False):
         model = DaceModule(model, dummy_inputs=dummy_input[0])
         sdfg = model.sdfg
         sdfg.apply_transformations([FPGATransformSDFG])
-        sdfg.apply_transformations_repeated([InlineSDFG])
+
+        sdfg.save('/tmp/out_fpga.sdfg')
         sdfg.expand_library_nodes()
         sdfg.apply_transformations_repeated([InlineSDFG])
-        sdfg.apply_transformations_repeated([InputToConstant], print_report=True)
+        # sdfg.apply_transformations_repeated([InputToConstant], print_report=True)
+
+
+        data, state = get_access_node_by_name(sdfg, "fpga_ONNX_11")
+        node_a = state.in_edges(data)[0].src
+        node_b = state.out_edges(data)[0].dst
+
+        # Streaming transformation
+        sm.StreamingComposition.apply_to(state.parent, first=node_a, access=data, second=node_b, verify=False,
+                                         options={'storage': dace.StorageType.FPGA_Local})
         #
         # transformation.expand_library_nodes_except_reshape(sdfg)
         # sdfg.states()[0].nodes()[0].sdfg.apply_transformations_repeated(
@@ -257,6 +280,6 @@ if __name__ == '__main__':
     model.load_state_dict(torch.load("./data/weights.pt"))
 
     #eval_model(args, test_loader, model, 'cuda')
-    eval_model(args, test_loader, model, 'cpu', single=True)
-    eval_model(args, test_loader, model, 'dace', single=True)
+    # eval_model(args, test_loader, model, 'cpu', single=True)
+    # eval_model(args, test_loader, model, 'dace', single=True)
     eval_model(args, test_loader, model, 'fpga', single=True)
