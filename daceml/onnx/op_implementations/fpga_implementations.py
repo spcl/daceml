@@ -1597,3 +1597,143 @@ if n1 <= p:
         new_sdfg.save("/tmp/gemm.sdfg")
         new_sdfg.validate()
         return new_sdfg
+
+@autoregister_params(op="Softmax", name="fpga")
+class PureSoftmax(ONNXForward):
+    @staticmethod
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[nodes.Node, SDFG]:
+        # FIRST ATTEMPT
+        # try to avoid max computation, this could have
+        # problems for numerical stability
+        # https://stackoverflow.com/questions/34968722/how-to-implement-the-softmax-function-in-python
+        # result = exp / sum
+
+        node.validate(sdfg, state)
+        inparr = in_desc_with_name(node, state, sdfg, "input")
+        outarr = out_desc_with_name(node, state, sdfg, "output")
+
+        axis = node.axis
+        if type(axis) is not int or not (-len(inparr.shape) <= axis < len(
+                inparr.shape)):
+            raise ValueError("expected axis to be an integer in range"
+                             " [-{}, {}), got {}".format(
+                                 len(inparr.shape), len(inparr.shape), axis))
+
+        if axis < 0:
+            axis += len(inparr.shape)
+        out_tmp_shape = inparr.shape
+        out_tmp_dtype = inparr.dtype
+
+        #ad hoc lenet implementation, needs to be generalized
+        assert(len(inparr.shape) == 2)
+
+        new_sdfg = dace.SDFG("fpga_softmax")
+        new_state = new_sdfg.add_state("compute")
+        new_sdfg.add_datadesc("input", copy.deepcopy(inparr))
+        new_sdfg.add_datadesc("output", copy.deepcopy(outarr))
+
+        # Add registers to store exp results
+        # NOTE: ok in lenet since we are not working with large input size
+        new_sdfg.add_array("exp_data", [inparr.shape[-1]],
+                           dtype=dace.float32,
+                           transient=True,
+                           storage=dace.dtypes.StorageType.FPGA_Registers)
+        new_sdfg.add_array("sum_data", [1],
+                           dtype=dace.float32,
+                           transient=True,
+                           storage=dace.dtypes.StorageType.FPGA_Registers)
+
+        ##################
+        # exp of all elements, store them into registers
+
+        # Create a two level maps: outermost is for each batch element
+        # Inside we will have two maps, one after the other, that computes
+        # the exp and the div
+
+        #batch map
+        batch_me, batch_mx = new_state.add_map("softmax_batch", dict(b="0:{}".format(inparr.shape[0])))
+
+        #exp map
+        exp_me, exp_mx = new_state.add_map("softmax_exp", dict(i="0:{}".format(inparr.shape[-1])))
+
+        #div map
+        div_me, div_mx = new_state.add_map("softmax_max", dict(i="0:{}".format(inparr.shape[-1])))
+
+        exp_tasklet = new_state.add_tasklet('exp_task', ['_in', '_in_sum'], ['_out', '_out_sum'],
+                                        '_exp = exp(_in)\n'
+                                        'prev_sum = _in_sum if i!=0 else float(0)\n'
+                                        '_out_sum = prev_sum + _exp\n'
+                                        '_out = _exp')
+        div_tasklet = new_state.add_tasklet('div_task', ['_in', '_sum'], ['_out'],
+                                            '_out = _in/_sum')
+
+        in_read = new_state.add_read("input")
+        out_write = new_state.add_write("output")
+        exp_data = new_state.add_access("exp_data")
+        sum_in = new_state.add_read("sum_data")
+        sum_accum = new_state.add_access("sum_data")
+
+        new_state.add_memlet_path(
+            in_read,
+            batch_me,
+            exp_me,
+            exp_tasklet,
+            dst_conn="_in",
+            memlet=dace.Memlet("input[b,i]")
+        )
+
+        new_state.add_memlet_path(
+            sum_in,
+            exp_me,
+            exp_tasklet,
+            dst_conn="_in_sum",
+            memlet=dace.Memlet("sum_data[0]")
+        )
+        new_state.add_memlet_path(
+            exp_tasklet,
+            exp_mx,
+            exp_data,
+            src_conn="_out",
+            memlet=dace.Memlet("exp_data[i]")
+        )
+        new_state.add_memlet_path(
+            exp_tasklet,
+            exp_mx,
+            sum_accum,
+            src_conn="_out_sum",
+            memlet=dace.Memlet("sum_data[0]")
+        )
+
+        ###### DIV
+
+        new_state.add_memlet_path(
+            exp_data,
+            div_me,
+            div_tasklet,
+            dst_conn="_in",
+            memlet=dace.Memlet("exp_data[i]")
+        )
+
+        new_state.add_memlet_path(
+            sum_accum,
+            div_me,
+            div_tasklet,
+            dst_conn="_sum",
+            memlet=dace.Memlet("sum_data[0]")
+        )
+        new_state.add_memlet_path(
+            div_tasklet,
+            div_mx,
+            batch_mx,
+            out_write,
+            src_conn="_out",
+            memlet=dace.Memlet("output[b, i]"), propagate=False
+        )
+
+        new_sdfg.fill_scope_connectors()
+        new_sdfg.save('/tmp/softmax.sdfg')
+        return new_sdfg
+
+
+
