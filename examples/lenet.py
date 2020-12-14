@@ -10,6 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import datasets, transforms
 from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
+from daceml.transformation import InputToConstant
 import copy
 import dace
 from daceml.util import utils
@@ -103,9 +104,16 @@ def eval_model(args, test_dataloader, model, device, single=False):
         model = DaceModule(model, dummy_inputs=dummy_input[0])
         sdfg = model.sdfg
         sdfg.apply_transformations([FPGATransformSDFG])
-        transformation.expand_library_nodes_except_reshape(sdfg)
-        sdfg.states()[0].nodes()[0].sdfg.apply_transformations_repeated(
-            [transformation.ReshapeElimination])
+        sdfg.expand_library_nodes()
+        print("OK")
+        # sdfg.apply_transformations_repeated([InlineSDFG])
+        print("OK1")
+        sdfg.apply_transformations_repeated([InputToConstant], print_report=True)
+        print("OK2")
+        #
+        # transformation.expand_library_nodes_except_reshape(sdfg)
+        # sdfg.states()[0].nodes()[0].sdfg.apply_transformations_repeated(
+        #     [transformation.ReshapeElimination])
         sdfg.states()[0].location["is_FPGA_kernel"] = False
         sdfg.states()[0].nodes()[0].sdfg.states()[0].location["is_FPGA_kernel"] = False
 
