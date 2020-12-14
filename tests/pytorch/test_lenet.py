@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from daceml.transformation.input_to_constant import forward_memlet_tree_with_nested
+from daceml.transformation.input_to_constant import forward_memlet_tree_with_nested_and_copies
 
 
 class LeNet(nn.Module):
@@ -84,7 +84,7 @@ def test_lenet_input_toconstant():
         return "{} -> {}".format(tree.edge.src, tree.edge.dst) + "".join(
             "\n |\n +- {}".format(print_tree(c)) for c in tree.children)
 
-    print(print_tree(forward_memlet_tree_with_nested(state, state.out_edges(access)[0])))
+    print(print_tree(forward_memlet_tree_with_nested_and_copies(state, state.out_edges(access)[0])))
 
 
 

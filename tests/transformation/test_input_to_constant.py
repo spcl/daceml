@@ -32,12 +32,12 @@ def test_input_to_constant():
     #
     sdfg: dace.SDFG = dace_net.sdfg
 
-    sdfg.expand_library_nodes()
-    sdfg.apply_transformations_repeated([InputToConstant], print_report=True)
+    # sdfg.expand_library_nodes()
+    # sdfg.apply_transformations_repeated([InputToConstant], print_report=True)
 
     torch_result = net(torch.clone(inp))
-    dace_result = dace_net(torch.clone(inp))
-    assert np.allclose(torch_result.detach().numpy(), dace_result)
+    # dace_result = dace_net(torch.clone(inp))
+    # assert np.allclose(torch_result.detach().numpy(), dace_result)
     donnx.ONNXGemm.default_implementation = "fpga"
     sdfg.save('/tmp/out.sdfg')
     sdfg = fpga_dace_net.sdfg
@@ -45,6 +45,7 @@ def test_input_to_constant():
 
     sdfg.expand_library_nodes()
     sdfg.apply_transformations_repeated([InputToConstant], print_report=True)
+    sdfg.view()
     sdfg.save('/tmp/out_fpga.sdfg')
     dace_output_fpga = fpga_dace_net(torch.clone(inp))
     assert np.allclose(torch_result.detach().numpy(), dace_output_fpga)
