@@ -9,8 +9,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import datasets, transforms
-from dace.transformation.interstate import FPGATransformSDFG
+from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
 import copy
+import dace
+from daceml.util import utils
+from daceml import transformation
 
 def print_mnist_mean_and_std():
     train_dataset = datasets.MNIST('./data',
@@ -83,7 +86,10 @@ def eval_model(args, test_dataloader, model, device, single=False):
         dummy_input = next(iter(test_dataloader))
         model = DaceModule(model, dummy_inputs=dummy_input[0])
         model.sdfg.save('/tmp/out.sdfg')
-        model.sdfg.expand_library_nodes()
+        # model.sdfg.expand_library_nodes()
+        transformation.expand_library_nodes_except_reshape(model.sdfg)
+        model.sdfg.apply_transformations_repeated(
+        [transformation.ReshapeElimination])
         model.sdfg.save('/tmp/out_expanded.sdfg')
         device = 'cpu'
     elif device == 'fpga':
@@ -97,12 +103,21 @@ def eval_model(args, test_dataloader, model, device, single=False):
 
         model = DaceModule(model, dummy_inputs=dummy_input[0])
         sdfg = model.sdfg
+
+
         sdfg.apply_transformations([FPGATransformSDFG])
+        transformation.expand_library_nodes_except_reshape(sdfg)
+        sdfg.apply_transformations_repeated(
+            [transformation.ReshapeElimination])
+      
         sdfg.states()[0].location["is_FPGA_kernel"] = False
         sdfg.states()[0].nodes()[0].sdfg.states()[0].location["is_FPGA_kernel"] = False
+
+        #################################
+        # Apply streaming transformation
+
+
         sdfg.save('/tmp/out_fpga.sdfg')
-        sdfg.expand_library_nodes()
-        sdfg.save('/tmp/out_fpga_expanded.sdfg')
         device = 'cpu'
     elif device == 'pytorch':
         model.to('cpu')
