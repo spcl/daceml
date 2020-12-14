@@ -47,6 +47,8 @@ def test_input_to_constant():
     sdfg.apply_transformations_repeated([InlineSDFG])
     sdfg.apply_transformations_repeated([InputToConstant], print_report=True)
     # sdfg.view()
+    # sdfg.states()[0].location["is_FPGA_kernel"] = False
+    # sdfg.states()[0].nodes()[0].sdfg.states()[0].location["is_FPGA_kernel"] = False
     sdfg.save('/tmp/out_fpga.sdfg')
     dace_output_fpga = fpga_dace_net(torch.clone(inp))
     assert np.allclose(torch_result.detach().numpy(), dace_output_fpga)

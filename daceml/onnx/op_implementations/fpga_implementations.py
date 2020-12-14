@@ -1598,6 +1598,68 @@ if n1 <= p:
         new_sdfg.validate()
         return new_sdfg
 
+@autoregister_params(op="Reshape", name="fpga")
+class PureReshape(ONNXForward):
+    @staticmethod
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+        node.validate(sdfg, state)
+        if (in_desc_with_name(node, state, sdfg, "data").dtype !=
+                out_desc_with_name(node, state, sdfg, "reshaped")):
+            raise ValueError(
+                "Expected input and output to have the same dtype.")
+
+        expansion = dace.SDFG("_reshape_expansion_")
+        expansion.add_datadesc(
+            "shape",
+            copy.deepcopy(in_desc_with_name(node, state, sdfg, "shape")))
+        indata=in_desc_with_name(node, state, sdfg, "data")
+        outdata = out_desc_with_name(node, state, sdfg, "reshaped")
+        expansion.add_datadesc(
+            "data", copy.deepcopy(indata))
+        expansion.add_datadesc(
+            "reshaped",
+            copy.deepcopy(outdata))
+        expansion.arrays["shape"].transient = False
+        expansion.arrays["data"].transient = False
+        expansion.arrays["reshaped"].transient = False
+        state = expansion.add_state()
+
+        #TODO
+        # ad hoc for lenet
+        assert(len(indata.shape) == 4)
+        assert(len(outdata.shape) == 2)
+        map_ranges = {
+            '__i%d' % i: '0:%s' % n
+            for i, n in enumerate(indata.shape)
+        }
+        me, mx = state.add_map("reshaping", map_ranges)
+        tasklet = state.add_tasklet('reshape_task', ['_in'], ['_out'],
+                                            '_out = _in')
+
+        data = state.add_read("data")
+        reshaped = state.add_write("reshaped")
+        state.add_memlet_path(
+            data,
+            me,
+            tasklet,
+            dst_conn="_in",
+            memlet=dace.Memlet("data[{}]".format(
+                ",".join(['__i%d' % i for i in range(len(indata.shape))]))))
+        state.add_memlet_path(
+            tasklet,
+            mx,
+            reshaped,
+            src_conn="_out",
+            memlet=dace.Memlet("reshaped[__i0, __i1*{} + __i2*{} +__i3 ]".format(indata.shape[2]*indata.shape[3], indata.shape[3]))
+        )
+        # memlet = expansion.make_array_memlet("data")
+        # memlet.allow_oob = True
+
+        # state.add_edge(data, None, reshaped, None, memlet)
+        expansion.fill_scope_connectors()
+        return expansion
+
 @autoregister_params(op="Softmax", name="fpga")
 class PureSoftmax(ONNXForward):
     @staticmethod

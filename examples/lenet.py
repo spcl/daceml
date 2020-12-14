@@ -100,13 +100,16 @@ def eval_model(args, test_dataloader, model, device, single=False):
         donnx.ONNXMaxPool.default_implementation = "fpga"
         donnx.ONNXGemm.default_implementation = "fpga"
         donnx.ONNXConv.default_implementation = 'fpga'
+        donnx.ONNXReshape.default_implementation = 'fpga'
 
         model = DaceModule(model, dummy_inputs=dummy_input[0])
         sdfg = model.sdfg
         sdfg.apply_transformations([FPGATransformSDFG])
+        sdfg.apply_transformations_repeated([InlineSDFG])
         sdfg.expand_library_nodes()
         print("OK")
-        # sdfg.apply_transformations_repeated([InlineSDFG])
+        sdfg.save('/tmp/out_pre.sdfg')
+        sdfg.apply_transformations_repeated([InlineSDFG])
         print("OK1")
         sdfg.apply_transformations_repeated([InputToConstant], print_report=True)
         print("OK2")
@@ -114,8 +117,8 @@ def eval_model(args, test_dataloader, model, device, single=False):
         # transformation.expand_library_nodes_except_reshape(sdfg)
         # sdfg.states()[0].nodes()[0].sdfg.apply_transformations_repeated(
         #     [transformation.ReshapeElimination])
-        sdfg.states()[0].location["is_FPGA_kernel"] = False
-        sdfg.states()[0].nodes()[0].sdfg.states()[0].location["is_FPGA_kernel"] = False
+        # sdfg.states()[0].location["is_FPGA_kernel"] = False
+        # sdfg.states()[0].nodes()[0].sdfg.states()[0].location["is_FPGA_kernel"] = False
 
         sdfg.save('/tmp/out_fpga.sdfg')
         device = 'cpu'
