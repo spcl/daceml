@@ -27,8 +27,8 @@ def test_input_to_constant():
     #
     sdfg: dace.SDFG = dace_net.sdfg
     sdfg.expand_library_nodes()
-    sdfg.apply_strict_transformations()
-    sdfg.apply_transformations_repeated([InputToConstant])
+    sdfg.apply_transformations_repeated([InputToConstant], print_report=True)
+    sdfg.view()
 
     torch_result = net(torch.clone(inp))
     dace_result = dace_net(torch.clone(inp))
