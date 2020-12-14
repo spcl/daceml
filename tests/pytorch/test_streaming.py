@@ -20,6 +20,7 @@ import copy
 from daceml.util import utils
 from dace.transformation.dataflow import streaming_memory as sm
 from dace.transformation.dataflow import PruneConnectors
+from dace.transformation.interstate import InlineSDFG
 
 
 
@@ -110,20 +111,21 @@ utils.vectorize_array_and_memlet(sdfg, "ONNX_4", vec_type)
 # Apply transformations
 
 sdfg.apply_transformations([FPGATransformSDFG])
-sdfg.states()[0].location["is_FPGA_kernel"]=False
+# sdfg.states()[0].location["is_FPGA_kernel"]=False
 # sdfg.states()[0].nodes()[0].sdfg.states()[0].location["is_FPGA_kernel"]=False
 sdfg.save('/tmp/out_fpga.sdfg')
 
 sdfg.expand_library_nodes()
+sdfg.apply_transformations_repeated([InlineSDFG])
 sdfg.save('/tmp/out_fpga_expanded_pre.sdfg')
 
 # get the access node to transform, its predecessor and successor
-data , state= get_access_node_by_name(sdfg,"__ONNX_3_out")
-node_a =  sdfg.states()[0].nodes()[0].sdfg.states()[0].in_edges(data)[0].src
-node_b =  sdfg.states()[0].nodes()[0].sdfg.states()[0].out_edges(data)[0].dst
+data , state= get_access_node_by_name(sdfg,"fpga_ONNX_3")
+node_a = state.in_edges(data)[0].src
+node_b = state.out_edges(data)[0].dst
 
 # Streaming transformation
-sm.StreamingComposition.apply_to(state.parent, first=node_a, access=data,second=node_b, verify=False, options={'storage': dace.StorageType.FPGA_Local})
+sm.StreamingComposition.apply_to(state.parent, first=node_a, access=data, second=node_b, verify=False, options={'storage': dace.StorageType.FPGA_Local})
 # ret =  sdfg.apply_transformations_repeated(
 #         sm.StreamingMemory, dict(storage=dace.StorageType.FPGA_Local))
 # Remove unused connectors
