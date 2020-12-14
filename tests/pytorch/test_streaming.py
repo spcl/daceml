@@ -18,11 +18,37 @@ from daceml.pytorch import DaceModule, dace_module
 import copy
 
 from daceml.util import utils
+from dace.transformation.dataflow import streaming_memory as sm
+from dace.transformation.dataflow import PruneConnectors
+
+
+
+def get_access_node_by_name(sdfg, name):
+
+    for node, state in sdfg.all_nodes_recursive():
+        if isinstance(node, dace.sdfg.nodes.AccessNode):
+            print(node.label)
+            if node.label == name:
+                return node, state
+
+    raise Exception("DataNode {} not found".format(name))
+
 def get_library_node_by_name(sdfg, name):
 
     for node, _ in sdfg.all_nodes_recursive():
         if isinstance(node, dace.sdfg.nodes.LibraryNode):
+            print(node.name)
             if node.name == name:
+                return node
+
+    raise Exception("LibNode {} not found".format(name))
+
+def get_sdfg_by_name(sdfg, name):
+
+    for node, _ in sdfg.all_nodes_recursive():
+        if isinstance(node, dace.sdfg.nodes.NestedSDFG):
+            print(node.label)
+            if node.label == name:
                 return node
 
     raise Exception("LibNode {} not found".format(name))
@@ -44,8 +70,6 @@ donnx.ONNXConv.default_implementation = 'im2col'
 
 ptmodel = Model()
 
-# numpy_array = np.arange(0, 1*2*4*4, dtype=np.float32).reshape(1,2,4,4)
-# x = torch.from_numpy(numpy_array)
 x = torch.rand(100, 1, 28, 28)
 # x = torch.ones(1, 1, 4, 4)
 
@@ -58,7 +82,7 @@ dace_model.sdfg.save('/tmp/out.sdfg')
 
 assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
 
-
+############################################################
 # Transform to FPGA
 #
 sdfg = dace_model.sdfg
@@ -67,31 +91,50 @@ orig_sdfg.expand_library_nodes()
 orig_sdfg.save('/tmp/out_expanded.sdfg')
 #
 donnx.ONNXConv.default_implementation = "fpga"
+donnx.ONNXRelu.default_implementation = "fpga"
 
+
+##################################
+# Vectorize input and output container
+vec_width = 4
+
+vec_type = dace.vector(dace.float32, vec_width)
+# utils.vectorize_array_and_memlet(sdfg, "ONNX_input", vec_type)
+
+#vectorize output of Conv
+utils.vectorize_array_and_memlet(sdfg, "ONNX_3", vec_type)
+#vectorize output of Relu
+utils.vectorize_array_and_memlet(sdfg, "ONNX_4", vec_type)
+
+###################################
+# Apply transformations
 
 sdfg.apply_transformations([FPGATransformSDFG])
 sdfg.states()[0].location["is_FPGA_kernel"]=False
-sdfg.states()[0].nodes()[0].sdfg.states()[0].location["is_FPGA_kernel"]=False
+# sdfg.states()[0].nodes()[0].sdfg.states()[0].location["is_FPGA_kernel"]=False
 sdfg.save('/tmp/out_fpga.sdfg')
-##################################
-# Vectorize container between the two Nodes
-
-# find the node
-vec_width = 4
-relu_node = get_library_node_by_name(sdfg, "ONNX_Relu_1")
-data=utils.in_desc_with_name(relu_node, sdfg.states()[0].nodes()[0].sdfg.states()[0], sdfg.states()[0].nodes()[0].sdfg, "X")
-vec_type = dace.vector(dace.float32, vec_width)
-data.dtype = vec_type
-#adjust shape
-prev_shape = data.shape
-prev_shape =  prev_shape[:-1] + (prev_shape[-1]//vec_width,)
-data.shape = prev_shape
-import pdb
-pdb.set_trace()
 
 sdfg.expand_library_nodes()
+sdfg.save('/tmp/out_fpga_expanded_pre.sdfg')
+
+# get the access node to transform, its predecessor and successor
+data , state= get_access_node_by_name(sdfg,"__ONNX_3_out")
+node_a =  sdfg.states()[0].nodes()[0].sdfg.states()[0].in_edges(data)[0].src
+node_b =  sdfg.states()[0].nodes()[0].sdfg.states()[0].out_edges(data)[0].dst
+
+# Streaming transformation
+sm.StreamingComposition.apply_to(state.parent, first=node_a, access=data,second=node_b, verify=False, options={'storage': dace.StorageType.FPGA_Local})
+# ret =  sdfg.apply_transformations_repeated(
+#         sm.StreamingMemory, dict(storage=dace.StorageType.FPGA_Local))
+# Remove unused connectors
+sdfg.apply_transformations_repeated(PruneConnectors)
+
+
 sdfg.save('/tmp/out_fpga_expanded.sdfg')
 dace_output_fpga = dace_model(torch.clone(x))
+
+#reshape if vec_width is different than 1
+dace_output_fpga= dace_output_fpga.reshape(dace_output.shape)
 
 print("Difference: ", np.linalg.norm(torch_output.detach().numpy()-dace_output_fpga)/dace_output_fpga.size)
 

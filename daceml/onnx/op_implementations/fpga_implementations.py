@@ -659,12 +659,22 @@ class FPGAIm2ColConv(ONNXForward):
                                       dst_conn="bias",
                                       memlet=dace.Memlet("B[n]"))
 
+            # Memlet to memory
+
+            # state.add_memlet_path(copy__add_bias__tasklet,
+            #                       exit_map,
+            #                       mem,
+            #                       src_conn="out_con",
+            #                       memlet=dace.Memlet(
+            #                           "Y[b, n,x, y]"))
+
+            # Memlet to stream
             state.add_memlet_path(copy__add_bias__tasklet,
                                   exit_map,
                                   mem,
                                   src_conn="out_con",
                                   memlet=dace.Memlet(
-                                      "Y[b, n,x, y]"))
+                                      "Y[0,0,0,0]"))
 
         def make_compute(sdfg, state, vec_width=1):
             vec_type = dace.vector(dace.float32, vec_width)
@@ -871,7 +881,7 @@ if n1 <= p:
         new_sdfg.fill_scope_connectors()
         # Specialize the new sdfg, by using the input shapes
         new_sdfg.save("/tmp/conv.sdfg")
-        new_sdfg.validate()
+        # new_sdfg.validate()
         return new_sdfg
 
 
@@ -884,8 +894,8 @@ class FPGARelu(ONNXForward):
         Y = out_desc_with_name(node, state, sdfg, "Y")
 
         # Input veclen must be equal to the output veclen
-        if X.veclen != Y.veclen:
-            return False
+        # if X.veclen != Y.veclen:
+        #     return False
         return True
 
     @staticmethod
@@ -906,6 +916,8 @@ class FPGARelu(ONNXForward):
         new_sdfg.add_datadesc("X", copy.deepcopy(X))
         new_sdfg.add_datadesc("Y", copy.deepcopy(Y))
 
+        new_sdfg.arrays["X"].transient=False
+        new_sdfg.arrays["Y"].transient=False
         outer_me, outer_mx = new_state.add_map('relu_map', map_ranges)
 
         new_sdfg.add_array("vec_data_in", [vec_width],
@@ -934,12 +946,21 @@ class FPGARelu(ONNXForward):
         y_write = new_state.add_write("Y")
 
         #unpack vector data
+        #memlet from memory
+
+        # new_state.add_memlet_path(x_read,
+        #                           outer_me,
+        #                           vec_data_in,
+        #                           memlet=dace.Memlet("X[{}]".format(",".join([
+        #                               '__i%d' % i for i in range(len(X.shape))
+        #                           ]))))
+
+        #memlet from stream
+
         new_state.add_memlet_path(x_read,
                                   outer_me,
                                   vec_data_in,
-                                  memlet=dace.Memlet("X[{}]".format(",".join([
-                                      '__i%d' % i for i in range(len(X.shape))
-                                  ]))))
+                                  memlet=dace.Memlet("X[0,0,0,0]"))
 
         # connect to tasklet
         new_state.add_memlet_path(vec_data_in,
