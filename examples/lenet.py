@@ -86,7 +86,6 @@ def eval_model(args, test_dataloader, model, device, single=False):
         dummy_input = next(iter(test_dataloader))
         model = DaceModule(model, dummy_inputs=dummy_input[0])
         model.sdfg.save('/tmp/out.sdfg')
-        # model.sdfg.expand_library_nodes()
         transformation.expand_library_nodes_except_reshape(model.sdfg)
         model.sdfg.apply_transformations_repeated(
         [transformation.ReshapeElimination])
@@ -103,19 +102,12 @@ def eval_model(args, test_dataloader, model, device, single=False):
 
         model = DaceModule(model, dummy_inputs=dummy_input[0])
         sdfg = model.sdfg
-
-
         sdfg.apply_transformations([FPGATransformSDFG])
         transformation.expand_library_nodes_except_reshape(sdfg)
-        sdfg.apply_transformations_repeated(
+        sdfg.states()[0].nodes()[0].sdfg.apply_transformations_repeated(
             [transformation.ReshapeElimination])
-      
         sdfg.states()[0].location["is_FPGA_kernel"] = False
         sdfg.states()[0].nodes()[0].sdfg.states()[0].location["is_FPGA_kernel"] = False
-
-        #################################
-        # Apply streaming transformation
-
 
         sdfg.save('/tmp/out_fpga.sdfg')
         device = 'cpu'
