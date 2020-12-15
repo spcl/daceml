@@ -154,20 +154,12 @@ def eval_model(args, test_dataloader, model, device, single=False):
 
         # ###################################################################
         # # Input to constant
-        # # Attention: this should not interfer with the rest
-        access_nodes = [n for n, _ in sdfg.all_nodes_recursive()
-                        if isinstance(n, nodes.AccessNode) and (n.data[:7] == "ONNX_fc" or n.data[:7] == "ONNX_co" )]
-        for access_node in access_nodes:
-            InputToConstant.apply_to(sdfg, _access_node=access_node)
-
+        sdfg.apply_transformations_repeated([InputToConstant], print_report=True)
 
         sdfg.save('/tmp/out_fpga.sdfg')
-        # sdfg.apply_transformations_repeated([InputToConstant], print_report=True)
-
-
         #######################################################################
         # Streaming
-        # TODO: factorize
+        # TODO: factorize code
 
         # Conv0 -> Relu1
         data, state = get_access_node_by_name(sdfg, "fpga_ONNX_11")
