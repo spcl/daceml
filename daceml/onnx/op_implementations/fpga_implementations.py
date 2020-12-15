@@ -914,8 +914,7 @@ class FPGARelu(ONNXForward):
         # TODO deal with this. Right Now I'm doing it to
         # gently introduce streaming
         vec_width = X.veclen
-        # if node.name == "ONNX_Relu_1" or node.name == "ONNX_Relu_3":
-        if node.name == "ONNX_Relu_3":
+        if node.name in["ONNX_Relu_1", "ONNX_Relu_3", "ONNX_Relu_9", "ONNX_Relu_11"]:
             streaming_node = True
             # Use the vector on the X
             print("RELU streamed ----")
@@ -1422,6 +1421,8 @@ class FPGAGemm(ONNXForward):
             # Terrible hack to deal with different vec size between C and Y
             if C.veclen != Y.veclen:
                 deal_with_misread = True
+            else:
+                deal_with_misread = False
 
             pipe = state.add_read("C_pipe")
             mem_read = state.add_read("C")

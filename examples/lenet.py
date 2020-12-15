@@ -147,7 +147,14 @@ def eval_model(args, test_dataloader, model, device, single=False):
         utils.vectorize_array_and_memlet(sdfg, "fpga_ONNX_15", vec_type)
 
         # Also the first GEMM can be vect by 8
-        # Also the corresponding Bias need to be vectorized
+        # but the corresponding BIAS is not vectorized to not break input to consntat
+        # TODO: fix that
+        # vectorize output of Gemm8
+        utils.vectorize_array_and_memlet(sdfg, "fpga_ONNX_19", vec_type)
+
+        # GEMM 10 is instead vectorized by 4
+        vec_type4 = dace.vector(dace.float32, 4)
+        utils.vectorize_array_and_memlet(sdfg, "fpga_ONNX_21", vec_type4)
 
         ###################################
         sdfg.save('/tmp/out_vectorized.sdfg')
@@ -199,6 +206,21 @@ def eval_model(args, test_dataloader, model, device, single=False):
         # Streaming transformation
         sm.StreamingComposition.apply_to(state.parent, first=node_a, access=data, second=node_b, verify=False,
                                          options={'storage': dace.StorageType.FPGA_Local})
+
+        # GEMM_8 -> Relu 9
+        data, state = get_access_node_by_name(sdfg, "fpga_ONNX_19")
+        node_a = state.in_edges(data)[0].src
+        node_b = state.out_edges(data)[0].dst
+        sm.StreamingComposition.apply_to(state.parent, first=node_a, access=data, second=node_b, verify=False,
+                                         options={'storage': dace.StorageType.FPGA_Local})
+
+        # GEMM 10-> Relu 11
+        data, state = get_access_node_by_name(sdfg, "fpga_ONNX_21")
+        node_a = state.in_edges(data)[0].src
+        node_b = state.out_edges(data)[0].dst
+        sm.StreamingComposition.apply_to(state.parent, first=node_a, access=data, second=node_b, verify=False,
+                                         options={'storage': dace.StorageType.FPGA_Local})
+
 
         ######################################
         # Prune connectors
