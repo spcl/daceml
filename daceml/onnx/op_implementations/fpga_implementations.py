@@ -449,7 +449,6 @@ class FPGAIm2ColConv(ONNXForward):
         # TODO: try to vectorize input
         # Use the vector on the Y
 
-
         #TODO deal with streams
 
         try:
@@ -496,7 +495,7 @@ class FPGAIm2ColConv(ONNXForward):
             print("CONV streamed ", vec_width)
         else:
             streamed_node = False
-            vec_width= math.gcd(16, output_size_x)
+            vec_width = math.gcd(16, output_size_x)
             print("CONV non streamed, vec_width")
         #N = num_filters
         K = num_channels * filter_hx * filter_hy
@@ -561,8 +560,8 @@ class FPGAIm2ColConv(ONNXForward):
                     "hx": "0:{}".format(filter_hx),
                     "hy": "0:{}".format(filter_hy),
                     "x": "0:{}".format(output_size_x),
-                    "y0": "0:{}/{}".format(
-                        output_size_x, vec_width),  #TODO vectorize read
+                    "y0": "0:{}/{}".format(output_size_x,
+                                           vec_width),  #TODO vectorize read
                 },
                 schedule=dace.ScheduleType.FPGA_Device)
 
@@ -658,7 +657,6 @@ class FPGAIm2ColConv(ONNXForward):
                                   dst_conn="in_con",
                                   memlet=dace.Memlet("Y_pipe[{}-1]".format(P)))
 
-
             if add_bias is True:
                 state.add_memlet_path(B,
                                       entry_map,
@@ -670,19 +668,17 @@ class FPGAIm2ColConv(ONNXForward):
                 # Memlet to memory
 
                 state.add_memlet_path(copy__add_bias__tasklet,
-                                  exit_map,
-                                  mem,
-                                  src_conn="out_con",
-                                  memlet=dace.Memlet(
-                                      "Y[b, n,x, y]"))
+                                      exit_map,
+                                      mem,
+                                      src_conn="out_con",
+                                      memlet=dace.Memlet("Y[b, n,x, y]"))
             else:
                 # Memlet to stream
                 state.add_memlet_path(copy__add_bias__tasklet,
-                                  exit_map,
-                                  mem,
-                                  src_conn="out_con",
-                                  memlet=dace.Memlet(
-                                      "Y[0,0,0,0]"))
+                                      exit_map,
+                                      mem,
+                                      src_conn="out_con",
+                                      memlet=dace.Memlet("Y[0,0,0,0]"))
 
         def make_compute(sdfg, state, vec_width=1):
             vec_type = dace.vector(dace.float32, vec_width)
@@ -730,10 +726,12 @@ class FPGAIm2ColConv(ONNXForward):
             W_reg = state.add_write("W_reg")
 
             # For C result we are going to use vectorized data type
-            sdfg.add_array("Y_buffer", [M], #M already accounts for vec width
-                           dtype=vec_type,
-                           transient=True,
-                           storage=dace.dtypes.StorageType.FPGA_Local)
+            sdfg.add_array(
+                "Y_buffer",
+                [M],  #M already accounts for vec width
+                dtype=vec_type,
+                transient=True,
+                storage=dace.dtypes.StorageType.FPGA_Local)
             Y_buffer_in = state.add_read("Y_buffer")
             Y_buffer_out = state.add_write("Y_buffer")
 
@@ -916,16 +914,21 @@ class FPGARelu(ONNXForward):
         # TODO deal with this. Right Now I'm doing it to
         # gently introduce streaming
         vec_width = X.veclen
-        if node.name == "ONNX_Relu_1" or node.name == "ONNX_Relu_3":
+        # if node.name == "ONNX_Relu_1" or node.name == "ONNX_Relu_3":
+        if node.name == "ONNX_Relu_3":
             streaming_node = True
             # Use the vector on the X
             print("RELU streamed ----")
         else:
             streaming_node = False
-
             print("RELU NON streamed ----")
 
-
+        if X.veclen != Y.veclen:
+            # we will need to copy the data out accordingly
+            # NOTE: for the moment, tested with Y veclen = 1
+            vec_width_mismatch = True
+        else:
+            vec_width_mismatch = False
 
         # Build map ranges: one loop per dimension
         map_ranges = {'__i%d' % i: '0:%s' % n for i, n in enumerate(X.shape)}
@@ -936,8 +939,8 @@ class FPGARelu(ONNXForward):
         new_sdfg.add_datadesc("X", copy.deepcopy(X))
         new_sdfg.add_datadesc("Y", copy.deepcopy(Y))
 
-        new_sdfg.arrays["X"].transient=False
-        new_sdfg.arrays["Y"].transient=False
+        new_sdfg.arrays["X"].transient = False
+        new_sdfg.arrays["Y"].transient = False
         outer_me, outer_mx = new_state.add_map('relu_map', map_ranges)
 
         new_sdfg.add_array("vec_data_in", [vec_width],
@@ -968,12 +971,12 @@ class FPGARelu(ONNXForward):
         #unpack vector data
         #memlet from memory
         if not streaming_node:
-            new_state.add_memlet_path(x_read,
-                                      outer_me,
-                                      vec_data_in,
-                                      memlet=dace.Memlet("X[{}]".format(",".join([
-                                          '__i%d' % i for i in range(len(X.shape))
-                                      ]))))
+            new_state.add_memlet_path(
+                x_read,
+                outer_me,
+                vec_data_in,
+                memlet=dace.Memlet("X[{}]".format(",".join(
+                    ['__i%d' % i for i in range(len(X.shape))]))))
         else:
             #memlet from stream
             new_state.add_memlet_path(x_read,
@@ -995,13 +998,39 @@ class FPGARelu(ONNXForward):
                                   src_conn='y_con',
                                   memlet=dace.Memlet("vec_data_in[i]"))
 
-        #write out
-        new_state.add_memlet_path(vec_data_out,
-                                  outer_mx,
-                                  y_write,
-                                  memlet=dace.Memlet("Y[{}]".format(",".join([
-                                      '__i%d' % i for i in range(len(X.shape))
-                                  ]))))
+        # if there is a mismatch between input and output veclen (e.g. GEMM->Relu in Lenet)
+        # we need an extra loop here
+
+        if vec_width_mismatch:
+            #TODO: right now this handle the case Y.veclen==1
+            assert (Y.veclen == 1)
+            write_out_me, write_out_mx = new_state.add_map(
+                'relu_write_out_map', dict(i="0:{}".format(vec_width)))
+            tasklet = new_state.add_tasklet('read_tasklet', ['_in'], ['_out'],
+                                            code="_out = _in")
+            # write out
+            new_state.add_memlet_path(vec_data_out,
+                                      write_out_me,
+                                      tasklet,
+                                      dst_conn="_in",
+                                      memlet=dace.Memlet("vec_data_in[i]"))
+            # TODO: special case for GEMM->Relu, do the right memlet
+            new_state.add_memlet_path(
+                tasklet,
+                write_out_mx,
+                outer_mx,
+                y_write,
+                src_conn="_out",
+                memlet=dace.Memlet("Y[__i0, __i1*{}+i]".format(vec_width)))
+
+        else:
+            #write out
+            new_state.add_memlet_path(
+                vec_data_out,
+                outer_mx,
+                y_write,
+                memlet=dace.Memlet("Y[{}]".format(",".join(
+                    ['__i%d' % i for i in range(len(X.shape))]))))
         new_sdfg.fill_scope_connectors()
         new_sdfg.save('/tmp/relu.sdfg')
         return new_sdfg
@@ -1059,7 +1088,6 @@ class FPGAMaxPool2D(ONNXForward):
         Y = out_desc_with_name(node, state, sdfg, "Y")
         vec_width = X.veclen
 
-
         image_dims = len(X.shape) - 2
         batch_size = X.shape[0]
         num_channels = X.shape[1]
@@ -1082,8 +1110,8 @@ class FPGAMaxPool2D(ONNXForward):
         new_sdfg.arrays["Y"].transient = False
 
         #shift register. Note that this contains plain data types
-        shift_register_size = input_size_width * vec_width* (filter_height - 1) + (
-            filter_width - 1) + 1
+        shift_register_size = input_size_width * vec_width * (
+            filter_height - 1) + (filter_width - 1) + 1
 
         #TODO: use X dtype
         new_sdfg.add_array("shift_register", [shift_register_size],
@@ -1113,10 +1141,8 @@ class FPGAMaxPool2D(ONNXForward):
                  in_x="0:{}".format(input_size_width)))
 
         # if vec_width >1 this will deal with it
-        vect_me, vect_mx = new_state.add_map(
-            'vect_pool_map',
-            dict(w="0:{}".format(vec_width))
-        )
+        vect_me, vect_mx = new_state.add_map('vect_pool_map',
+                                             dict(w="0:{}".format(vec_width)))
 
         # the inner map computes the pooling
         inner_me, inner_mx = new_state.add_map(
@@ -1140,7 +1166,8 @@ class FPGAMaxPool2D(ONNXForward):
             "max_out = float(max(max_in, image_in))\n"
             "if hy == {} - 1 and hx == {} -1 and  in_y % {} == {} - 1 and (in_x *{}+w) % {} == {} -1: output = max_out"
             .format(dtypes.min_value(Y.dtype), filter_height, filter_width,
-                    filter_height, filter_height, vec_width, filter_height, filter_width))
+                    filter_height, filter_height, vec_width, filter_height,
+                    filter_width))
 
         shift_register = new_state.add_access("shift_register")
 
@@ -1164,22 +1191,22 @@ class FPGAMaxPool2D(ONNXForward):
         #     memlet=dace.Memlet("vec_data[0]")
         # )
 
-        new_state.add_memlet_path(
-            read_X,
-            outer_me,
-            vec_data,
-            dst_conn="_in",
-            memlet=dace.Memlet("X[b, c, in_y, in_x]"))
+        new_state.add_memlet_path(read_X,
+                                  outer_me,
+                                  vec_data,
+                                  dst_conn="_in",
+                                  memlet=dace.Memlet("X[b, c, in_y, in_x]"))
 
         # memlet: from input image to shift register
-        to_shift_register_memlet = dace.Memlet("vec_data[w]", other_subset="{}".format(shift_register_size -1))
+        to_shift_register_memlet = dace.Memlet(
+            "vec_data[w]", other_subset="{}".format(shift_register_size - 1))
         # explicitely set oob otherwise is not taken
         to_shift_register_memlet.allow_oob = True
-        new_state.add_memlet_path(
-            vec_data,
-            vect_me,
-            shift_register,
-            memlet=to_shift_register_memlet, propagate=False)
+        new_state.add_memlet_path(vec_data,
+                                  vect_me,
+                                  shift_register,
+                                  memlet=to_shift_register_memlet,
+                                  propagate=False)
 
         # To create the shift register outside the map, add an empty memlet path
         # shift_register_write = new_state.add_write("shift_register")
@@ -1194,20 +1221,19 @@ class FPGAMaxPool2D(ONNXForward):
         #                           shift_register_write,
         #                           memlet=dace.Memlet())
         new_state.add_memlet_path(shift_register_read,
-                                  outer_me, memlet=dace.Memlet())
+                                  outer_me,
+                                  memlet=dace.Memlet())
         # new_state.add_memlet_path(outer_mx, shift_register_write, memlet=dace.Memlet())
-
-
 
         # memlet from shift register to max tasklet
         # NOTE: vec width
-        new_state.add_memlet_path(
-            shift_register,
-            inner_me,
-            compute_tasklet,
-            dst_conn="image_in",
-            memlet=dace.Memlet(
-                "shift_register[hy*{}+hx]".format(input_size_width*vec_width)))
+        new_state.add_memlet_path(shift_register,
+                                  inner_me,
+                                  compute_tasklet,
+                                  dst_conn="image_in",
+                                  memlet=dace.Memlet(
+                                      "shift_register[hy*{}+hx]".format(
+                                          input_size_width * vec_width)))
 
         #memlets for max
         new_state.add_memlet_path(read_max_res,
@@ -1224,9 +1250,7 @@ class FPGAMaxPool2D(ONNXForward):
                                   src_conn="max_out",
                                   memlet=dace.Memlet("max_res[0]"))
         #empty memlet
-        new_state.add_memlet_path(write_max_res,
-                                  vect_mx,
-                                  memlet=dace.Memlet())
+        new_state.add_memlet_path(write_max_res, vect_mx, memlet=dace.Memlet())
         #Attention, the storing location must take into account that the input was vectorized
         y_memlet = dace.Memlet("Y[b,c, in_y//{}, (in_x*{}+w)//{}]".format(
             filter_height, vec_width, filter_width),
@@ -1245,6 +1269,7 @@ class FPGAMaxPool2D(ONNXForward):
         new_sdfg.fill_scope_connectors()
         new_sdfg.save("/tmp/maxpool.sdfg")
         return new_sdfg
+
 
 @autoregister_params(op="Gemm", name="fpga")
 class FPGAGemm(ONNXForward):
@@ -1282,9 +1307,18 @@ class FPGAGemm(ONNXForward):
 
         N = A.shape[0]
         K = A.shape[1]
-        M = C.shape[0]
+        # for the sake of optimization, the input C is non vectorized
+        # while the output Y can be vectorized
+        M_C = C.shape[0]
+        M_Y = Y.shape[1]
         P = math.gcd(N, 16)  # Num PEs
-        vec_width = math.gcd(M, 8)
+        vec_width = Y.veclen
+        if node.name == "ONNX_Gemm_8":
+            streamed_node = True
+            print("{} streamed".format(node.name))
+        else:
+            streamed_node = False
+            print("{} non streamed".format(node.name))
 
         ####################################################
         # Build the SDFG: starting point: gemm_fpga_systolic vectorized sample
@@ -1327,7 +1361,7 @@ class FPGAGemm(ONNXForward):
             entry, exit = state.add_map("read_B", {
                 "n": "0:{}/{}".format(N, P),
                 "m": "0:{}".format(K),
-                "k0": "0:{}/{}".format(M, vec_width)
+                "k0": "0:{}/{}".format(M_C, vec_width)
             },
                                         schedule=dace.ScheduleType.FPGA_Device)
 
@@ -1385,73 +1419,145 @@ class FPGAGemm(ONNXForward):
             # For doing so we first store it into a local buffer and then we write it in memory
             # as gear boxing works on local data only (not global memory)
 
+            # Terrible hack to deal with different vec size between C and Y
+            if C.veclen != Y.veclen:
+                deal_with_misread = True
+
             pipe = state.add_read("C_pipe")
             mem_read = state.add_read("C")
             mem = state.add_write("Y")
 
             entry_map, exit_map = state.add_map(
-                "write_C", {
+                "write_C",
+                {
                     "n": "0:{}".format(N),
-                    "m0": "0:{}/{}".format(M, vec_width)
+                    "m": "0:{}".format(M_Y)  #consider also vectorization
                 },
                 schedule=dace.ScheduleType.FPGA_Device)
 
-            write_map_entry, write_map_exit = state.add_map(
-                "unrolled_write_C", {"m1": "0:{}".format(vec_width)},
-                schedule=dace.ScheduleType.FPGA_Device,
-                unroll=True)
-
-            # local storage to accumulate data
-            sdfg.add_array('vec_data_C',
-                           shape=[vec_width],
-                           dtype=dace.float32,
-                           transient=True,
-                           storage=dace.dtypes.StorageType.FPGA_Registers)
-
-            vect_data = state.add_access("vec_data_C")
+            #
+            # # local storage to accumulate data
+            # sdfg.add_array('vec_data_C',
+            #                shape=[vec_width],
+            #                dtype=dace.float32,
+            #                transient=True,
+            #                storage=dace.dtypes.StorageType.FPGA_Registers)
+            #
+            # vect_data = state.add_access("vec_data_C")
 
             # then we transfer them to the output stream
-            copy_in_tasklet = state.add_tasklet('copy_from_stream_C',
-                                                {'in_con'}, {'out_con'},
-                                                'out_con = in_con')
+            # copy_in_tasklet = state.add_tasklet('copy_from_stream_C',
+            #                                     {'in_con'}, {'out_con'},
+            #                                     'out_con = in_con')
 
-            state.add_memlet_path(pipe,
-                                  entry_map,
-                                  copy_in_tasklet,
-                                  dst_conn="in_con",
-                                  memlet=dace.Memlet("C_pipe[{}-1]".format(P)))
-            # this will trigger gear boxing
-            state.add_memlet_path(copy_in_tasklet,
-                                  vect_data,
-                                  src_conn="out_con",
-                                  memlet=dace.Memlet("vec_data_C"))
+            # state.add_memlet_path(pipe,
+            #                       entry_map,
+            #                       copy_in_tasklet,
+            #                       dst_conn="in_con",
+            #                       memlet=dace.Memlet("C_pipe[{}-1]".format(P)))
+            # # this will trigger gear boxing
+            # state.add_memlet_path(copy_in_tasklet,
+            #                       vect_data,
+            #                       src_conn="out_con",
+            #                       memlet=dace.Memlet("vec_data_C"))
 
             # then we copy that to memory
-            tasklet = state.add_tasklet("write_C", {"from_kernel", "prev_c"},
-                                        {"to_memory"},
-                                        "to_memory = from_kernel + prev_c")
-            state.add_memlet_path(vect_data,
-                                  write_map_entry,
-                                  tasklet,
-                                  dst_conn="from_kernel",
-                                  memlet=dace.Memlet("vec_data_C[m1]"))
-            # pay attention if C has a single dimension (could be the case of batch =1)
-            state.add_memlet_path(mem_read,
-                                  entry_map,
-                                  write_map_entry,
-                                  tasklet,
-                                  dst_conn="prev_c",
-                                  memlet=dace.Memlet("C[{}m0*{}+m1]".format(
-                                      "n, " if len(C.shape) == 2 else "",
-                                      vec_width)))
 
-            state.add_memlet_path(tasklet,
-                                  write_map_exit,
-                                  exit_map,
-                                  mem,
-                                  src_conn="to_memory",
-                                  memlet=dace.Memlet(
-                                      "Y[n, m0*{}+m1]".format(vec_width)))
+            if deal_with_misread:
+                add_map_entry, add_map_exit = state.add_map(
+                    "add_C", {"m1": "0:{}".format(vec_width)},
+                    schedule=dace.ScheduleType.FPGA_Device,
+                    unroll=True)
+                # local storage to accumulate data
+                sdfg.add_array('vec_data_C',
+                               shape=[vec_width],
+                               dtype=dace.float32,
+                               transient=True,
+                               storage=dace.dtypes.StorageType.FPGA_Registers)
+
+                vect_data = state.add_access("vec_data_C")
+                # local storage to accumulate data
+                sdfg.add_array('vec_res',
+                               shape=[vec_width],
+                               dtype=dace.float32,
+                               transient=True,
+                               storage=dace.dtypes.StorageType.FPGA_Registers)
+                vect_res = state.add_access("vec_res")
+
+                # then we transfer them to the output stream
+                copy_in_tasklet = state.add_tasklet('copy_from_stream_C',
+                                                    {'in_con'}, {'out_con'},
+                                                    'out_con = in_con')
+
+                state.add_memlet_path(pipe,
+                                      entry_map,
+                                      copy_in_tasklet,
+                                      dst_conn="in_con",
+                                      memlet=dace.Memlet(
+                                          "C_pipe[{}-1]".format(P)))
+                # this will trigger gear boxing
+                state.add_memlet_path(copy_in_tasklet,
+                                      vect_data,
+                                      src_conn="out_con",
+                                      memlet=dace.Memlet("vec_data_C"))
+
+                # add C
+                add_C_tasklet = state.add_tasklet('add_C_tasklet',
+                                                  {'in_con', 'prev_c'},
+                                                  {'out_con'},
+                                                  'out_con = in_con + prev_c')
+                state.add_memlet_path(vect_data,
+                                      add_map_entry,
+                                      add_C_tasklet,
+                                      dst_conn="in_con",
+                                      memlet=dace.Memlet("vec_data_C[m1]"))
+                state.add_memlet_path(mem_read,
+                                      entry_map,
+                                      add_map_entry,
+                                      add_C_tasklet,
+                                      dst_conn="prev_c",
+                                      memlet=dace.Memlet(
+                                          "C[m*{}+m1]".format(vec_width)))
+
+                # write out
+                state.add_memlet_path(add_C_tasklet,
+                                      add_map_exit,
+                                      vect_res,
+                                      src_conn="out_con",
+                                      memlet=dace.Memlet("vec_res[m1]"))
+                state.add_memlet_path(vect_res,
+                                      exit_map,
+                                      mem,
+                                      memlet=dace.Memlet("Y[n,m]"))
+
+
+            else:
+                tasklet = state.add_tasklet(
+                    "write_C", {"from_kernel", "prev_c"}, {"to_memory"},
+                    "to_memory = from_kernel + prev_c")
+                state.add_memlet_path(pipe,
+                                      entry_map,
+                                      tasklet,
+                                      dst_conn="from_kernel",
+                                      memlet=dace.Memlet(
+                                          "C_pipe[{}-1]".format(P)))
+                state.add_memlet_path(mem_read,
+                                      entry_map,
+                                      tasklet,
+                                      dst_conn="prev_c",
+                                      memlet=dace.Memlet("C[m]"))
+                state.add_memlet_path(tasklet,
+                                      exit_map,
+                                      mem,
+                                      src_conn="to_memory",
+                                      memlet=dace.Memlet("Y[n, m]"))
+
+            # state.add_memlet_path(vect_data,
+            #                       write_map_entry,
+            #                       tasklet,
+            #                       dst_conn="from_kernel",
+            #                       memlet=dace.Memlet("vec_data_C[m1]"))
+            # pay attention if C has a single dimension (could be the case of batch =1)
 
         def make_compute(sdfg, state, vec_width=1):
 
@@ -1478,12 +1584,13 @@ class FPGAGemm(ONNXForward):
             # As we are using vectorized data types for B, we have to consider it into these
             # two maps
             entry_m, exit_m = state.add_map(
-                "m", {"m": "0:{}/{}".format(M, vec_width)},
+                "m", {"m": "0:{}".format(M_Y, )},
                 schedule=dace.ScheduleType.FPGA_Device)
             entry_c, exit_c = state.add_map(
-                "write_C", {
+                "write_C",
+                {
                     "n1": "0:{}".format(P),
-                    "m": "0:{}/{}".format(M, vec_width)
+                    "m": "0:{}".format(M_Y)  # consider vectorization
                 },
                 schedule=dace.ScheduleType.FPGA_Device)
 
@@ -1495,7 +1602,7 @@ class FPGAGemm(ONNXForward):
             A_reg = state.add_write("A_reg")
 
             # For C result we are going to use vectorized data type
-            sdfg.add_array("C_buffer", [M / vec_width],
+            sdfg.add_array("C_buffer", [M_Y],
                            dtype=vec_type,
                            transient=True,
                            storage=dace.dtypes.StorageType.FPGA_Local)
@@ -1657,6 +1764,7 @@ if n1 <= p:
         new_sdfg.validate()
         return new_sdfg
 
+
 @autoregister_params(op="Reshape", name="fpga")
 class PureReshape(ONNXForward):
     @staticmethod
@@ -1672,13 +1780,10 @@ class PureReshape(ONNXForward):
         expansion.add_datadesc(
             "shape",
             copy.deepcopy(in_desc_with_name(node, state, sdfg, "shape")))
-        indata=in_desc_with_name(node, state, sdfg, "data")
+        indata = in_desc_with_name(node, state, sdfg, "data")
         outdata = out_desc_with_name(node, state, sdfg, "reshaped")
-        expansion.add_datadesc(
-            "data", copy.deepcopy(indata))
-        expansion.add_datadesc(
-            "reshaped",
-            copy.deepcopy(outdata))
+        expansion.add_datadesc("data", copy.deepcopy(indata))
+        expansion.add_datadesc("reshaped", copy.deepcopy(outdata))
         expansion.arrays["shape"].transient = False
         expansion.arrays["data"].transient = False
         expansion.arrays["reshaped"].transient = False
@@ -1686,38 +1791,40 @@ class PureReshape(ONNXForward):
 
         #TODO
         # ad hoc for lenet
-        assert(len(indata.shape) == 4)
-        assert(len(outdata.shape) == 2)
+        assert (len(indata.shape) == 4)
+        assert (len(outdata.shape) == 2)
         map_ranges = {
             '__i%d' % i: '0:%s' % n
             for i, n in enumerate(indata.shape)
         }
         me, mx = state.add_map("reshaping", map_ranges)
         tasklet = state.add_tasklet('reshape_task', ['_in'], ['_out'],
-                                            '_out = _in')
+                                    '_out = _in')
 
         data = state.add_read("data")
         reshaped = state.add_write("reshaped")
-        state.add_memlet_path(
-            data,
-            me,
-            tasklet,
-            dst_conn="_in",
-            memlet=dace.Memlet("data[{}]".format(
-                ",".join(['__i%d' % i for i in range(len(indata.shape))]))))
+        state.add_memlet_path(data,
+                              me,
+                              tasklet,
+                              dst_conn="_in",
+                              memlet=dace.Memlet("data[{}]".format(",".join([
+                                  '__i%d' % i for i in range(len(indata.shape))
+                              ]))))
         state.add_memlet_path(
             tasklet,
             mx,
             reshaped,
             src_conn="_out",
-            memlet=dace.Memlet("reshaped[__i0, __i1*{} + __i2*{} +__i3 ]".format(indata.shape[2]*indata.shape[3], indata.shape[3]))
-        )
+            memlet=dace.Memlet(
+                "reshaped[__i0, __i1*{} + __i2*{} +__i3 ]".format(
+                    indata.shape[2] * indata.shape[3], indata.shape[3])))
         # memlet = expansion.make_array_memlet("data")
         # memlet.allow_oob = True
 
         # state.add_edge(data, None, reshaped, None, memlet)
         expansion.fill_scope_connectors()
         return expansion
+
 
 @autoregister_params(op="Softmax", name="fpga")
 class PureSoftmax(ONNXForward):
@@ -1747,7 +1854,7 @@ class PureSoftmax(ONNXForward):
         out_tmp_dtype = inparr.dtype
 
         #ad hoc lenet implementation, needs to be generalized
-        assert(len(inparr.shape) == 2)
+        assert (len(inparr.shape) == 2)
 
         new_sdfg = dace.SDFG("fpga_softmax")
         new_state = new_sdfg.add_state("compute")
@@ -1773,22 +1880,28 @@ class PureSoftmax(ONNXForward):
         # the exp and the div
 
         #batch map
-        batch_me, batch_mx = new_state.add_map("softmax_batch", dict(b="0:{}".format(inparr.shape[0])))
+        batch_me, batch_mx = new_state.add_map(
+            "softmax_batch", dict(b="0:{}".format(inparr.shape[0])))
 
         #exp map
-        exp_me, exp_mx = new_state.add_map("softmax_exp", dict(i="0:{}".format(inparr.shape[-1])))
+        exp_me, exp_mx = new_state.add_map(
+            "softmax_exp", dict(i="0:{}".format(inparr.shape[-1])))
 
         #div map
-        div_me, div_mx = new_state.add_map("softmax_max", dict(i="0:{}".format(inparr.shape[-1])))
+        div_me, div_mx = new_state.add_map(
+            "softmax_max", dict(i="0:{}".format(inparr.shape[-1])))
 
-        exp_tasklet = new_state.add_tasklet('exp_task', ['_in', '_in_sum'], ['_out', '_out_sum'],
-                                        '_exp = float(0)\n' #for type inference
-                                        '_exp = exp(_in)\n'
-                                        'prev_sum = _in_sum if i!=0 else float(0)\n'
-                                        '_out_sum = prev_sum + _exp\n'
-                                        '_out = _exp')
-        div_tasklet = new_state.add_tasklet('div_task', ['_in', '_sum'], ['_out'],
-                                            '_out = _in/_sum')
+        exp_tasklet = new_state.add_tasklet(
+            'exp_task',
+            ['_in', '_in_sum'],
+            ['_out', '_out_sum'],
+            '_exp = float(0)\n'  #for type inference
+            '_exp = exp(_in)\n'
+            'prev_sum = _in_sum if i!=0 else float(0)\n'
+            '_out_sum = prev_sum + _exp\n'
+            '_out = _exp')
+        div_tasklet = new_state.add_tasklet('div_task', ['_in', '_sum'],
+                                            ['_out'], '_out = _in/_sum')
 
         in_read = new_state.add_read("input")
         out_write = new_state.add_write("output")
@@ -1796,71 +1909,51 @@ class PureSoftmax(ONNXForward):
         sum_in = new_state.add_access("sum_data")
         sum_accum = new_state.add_access("sum_data")
 
-        new_state.add_memlet_path(
-            in_read,
-            batch_me,
-            exp_me,
-            exp_tasklet,
-            dst_conn="_in",
-            memlet=dace.Memlet("input[b,i]")
-        )
+        new_state.add_memlet_path(in_read,
+                                  batch_me,
+                                  exp_me,
+                                  exp_tasklet,
+                                  dst_conn="_in",
+                                  memlet=dace.Memlet("input[b,i]"))
 
-        new_state.add_memlet_path(
-            sum_in,
-            exp_me,
-            exp_tasklet,
-            dst_conn="_in_sum",
-            memlet=dace.Memlet("sum_data[0]")
-        )
-        new_state.add_memlet_path(
-            batch_me,
-            sum_in,
-            memlet=dace.Memlet()
-        )
-        new_state.add_memlet_path(
-            exp_tasklet,
-            exp_mx,
-            exp_data,
-            src_conn="_out",
-            memlet=dace.Memlet("exp_data[i]")
-        )
-        new_state.add_memlet_path(
-            exp_tasklet,
-            exp_mx,
-            sum_accum,
-            src_conn="_out_sum",
-            memlet=dace.Memlet("sum_data[0]")
-        )
+        new_state.add_memlet_path(sum_in,
+                                  exp_me,
+                                  exp_tasklet,
+                                  dst_conn="_in_sum",
+                                  memlet=dace.Memlet("sum_data[0]"))
+        new_state.add_memlet_path(batch_me, sum_in, memlet=dace.Memlet())
+        new_state.add_memlet_path(exp_tasklet,
+                                  exp_mx,
+                                  exp_data,
+                                  src_conn="_out",
+                                  memlet=dace.Memlet("exp_data[i]"))
+        new_state.add_memlet_path(exp_tasklet,
+                                  exp_mx,
+                                  sum_accum,
+                                  src_conn="_out_sum",
+                                  memlet=dace.Memlet("sum_data[0]"))
 
         ###### DIV
 
-        new_state.add_memlet_path(
-            exp_data,
-            div_me,
-            div_tasklet,
-            dst_conn="_in",
-            memlet=dace.Memlet("exp_data[i]")
-        )
+        new_state.add_memlet_path(exp_data,
+                                  div_me,
+                                  div_tasklet,
+                                  dst_conn="_in",
+                                  memlet=dace.Memlet("exp_data[i]"))
 
-        new_state.add_memlet_path(
-            sum_accum,
-            div_me,
-            div_tasklet,
-            dst_conn="_sum",
-            memlet=dace.Memlet("sum_data[0]")
-        )
-        new_state.add_memlet_path(
-            div_tasklet,
-            div_mx,
-            batch_mx,
-            out_write,
-            src_conn="_out",
-            memlet=dace.Memlet("output[b, i]"), propagate=False
-        )
+        new_state.add_memlet_path(sum_accum,
+                                  div_me,
+                                  div_tasklet,
+                                  dst_conn="_sum",
+                                  memlet=dace.Memlet("sum_data[0]"))
+        new_state.add_memlet_path(div_tasklet,
+                                  div_mx,
+                                  batch_mx,
+                                  out_write,
+                                  src_conn="_out",
+                                  memlet=dace.Memlet("output[b, i]"),
+                                  propagate=False)
 
         new_sdfg.fill_scope_connectors()
         new_sdfg.save('/tmp/softmax.sdfg')
         return new_sdfg
-
-
-

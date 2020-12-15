@@ -146,6 +146,9 @@ def eval_model(args, test_dataloader, model, device, single=False):
         # vectorize output of Relu4
         utils.vectorize_array_and_memlet(sdfg, "fpga_ONNX_15", vec_type)
 
+        # Also the first GEMM can be vect by 8
+        # Also the corresponding Bias need to be vectorized
+
         ###################################
         sdfg.save('/tmp/out_vectorized.sdfg')
         sdfg.expand_library_nodes()
