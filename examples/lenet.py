@@ -12,8 +12,10 @@ from torchvision import datasets, transforms
 from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
 from daceml.transformation import InputToConstant
 from dace.transformation.dataflow import streaming_memory as sm
+from dace.transformation.dataflow import PruneConnectors
 import copy
 import dace
+from dace import nodes
 from daceml.util import utils
 from daceml import transformation
 
@@ -22,7 +24,6 @@ def get_access_node_by_name(sdfg, name):
 
     for node, state in sdfg.all_nodes_recursive():
         if isinstance(node, dace.sdfg.nodes.AccessNode):
-            print(node.label)
             if node.label == name:
                 return node, state
 
@@ -117,7 +118,16 @@ def eval_model(args, test_dataloader, model, device, single=False):
 
         model = DaceModule(model, dummy_inputs=dummy_input[0])
         sdfg = model.sdfg
-        sdfg.save('/tmp/out.sdfg')
+        sdfg.apply_transformations([FPGATransformSDFG])
+        sdfg.save('/tmp/out_pre.sdfg')
+        sdfg.apply_transformations_repeated([InlineSDFG])
+
+        # The rational for applying the streaming transformation is the following:
+        # - we first change data containers
+        # - then we expand the lib nodes: note that the nodes needs input/output shapes
+        #       and their expansion should consider that in some cases the memlet are for streams
+        #       TODO: see if this can be avoided
+
 
         ##################################
         # Vectorize input and output container
@@ -127,24 +137,38 @@ def eval_model(args, test_dataloader, model, device, single=False):
         # utils.vectorize_array_and_memlet(sdfg, "ONNX_input", vec_type)
 
         # vectorize output of Conv0
-        utils.vectorize_array_and_memlet(sdfg, "ONNX_11", vec_type)
+        utils.vectorize_array_and_memlet(sdfg, "fpga_ONNX_11", vec_type)
         # vectorize output of Relu1
-        utils.vectorize_array_and_memlet(sdfg, "ONNX_12", vec_type)
+        utils.vectorize_array_and_memlet(sdfg, "fpga_ONNX_12", vec_type)
         # vectorize output of Conv3
-        utils.vectorize_array_and_memlet(sdfg, "ONNX_14", vec_type)
+        utils.vectorize_array_and_memlet(sdfg, "fpga_ONNX_14", vec_type)
         # vectorize output of Relu4
-        utils.vectorize_array_and_memlet(sdfg, "ONNX_15", vec_type)
+        utils.vectorize_array_and_memlet(sdfg, "fpga_ONNX_15", vec_type)
 
         ###################################
-
-        sdfg.apply_transformations([FPGATransformSDFG])
-
-        sdfg.save('/tmp/out_fpga.sdfg')
+        sdfg.save('/tmp/out_vectorized.sdfg')
         sdfg.expand_library_nodes()
         sdfg.apply_transformations_repeated([InlineSDFG])
+
+
+        # ###################################################################
+        # # Input to constant
+        # # Attention: this should not interfer with the rest
+        access_nodes = [n for n, _ in sdfg.all_nodes_recursive()
+                        if isinstance(n, nodes.AccessNode) and (n.data[:7] == "ONNX_fc" or n.data[:7] == "ONNX_co" )]
+        for access_node in access_nodes:
+            InputToConstant.apply_to(sdfg, _access_node=access_node)
+
+
+        sdfg.save('/tmp/out_fpga.sdfg')
         # sdfg.apply_transformations_repeated([InputToConstant], print_report=True)
 
 
+        #######################################################################
+        # Streaming
+        # TODO: factorize
+
+        # Conv0 -> Relu1
         data, state = get_access_node_by_name(sdfg, "fpga_ONNX_11")
         node_a = state.in_edges(data)[0].src
         node_b = state.out_edges(data)[0].dst
@@ -153,6 +177,16 @@ def eval_model(args, test_dataloader, model, device, single=False):
         sm.StreamingComposition.apply_to(state.parent, first=node_a, access=data, second=node_b, verify=False,
                                          options={'storage': dace.StorageType.FPGA_Local})
 
+        # Relu1-> MaxPool2
+        data, state = get_access_node_by_name(sdfg, "fpga_ONNX_12")
+        node_a = state.in_edges(data)[0].src
+        node_b = state.out_edges(data)[0].dst
+
+        # Streaming transformation
+        sm.StreamingComposition.apply_to(state.parent, first=node_a, access=data, second=node_b, verify=False,
+                                         options={'storage': dace.StorageType.FPGA_Local})
+
+        #Conv3 -> Relu4
         data, state = get_access_node_by_name(sdfg, "fpga_ONNX_14")
         node_a = state.in_edges(data)[0].src
         node_b = state.out_edges(data)[0].dst
@@ -161,14 +195,20 @@ def eval_model(args, test_dataloader, model, device, single=False):
         sm.StreamingComposition.apply_to(state.parent, first=node_a, access=data, second=node_b, verify=False,
                                          options={'storage': dace.StorageType.FPGA_Local})
 
-        #
-        # transformation.expand_library_nodes_except_reshape(sdfg)
-        # sdfg.states()[0].nodes()[0].sdfg.apply_transformations_repeated(
-        #     [transformation.ReshapeElimination])
-        # sdfg.states()[0].location["is_FPGA_kernel"] = False
-        # sdfg.states()[0].nodes()[0].sdfg.states()[0].location["is_FPGA_kernel"] = False
+        # Relu4 -> MaxPool5
+        data, state = get_access_node_by_name(sdfg, "fpga_ONNX_15")
+        node_a = state.in_edges(data)[0].src
+        node_b = state.out_edges(data)[0].dst
 
-        sdfg.save('/tmp/out_fpga_expanded.sdfg')
+        # Streaming transformation
+        sm.StreamingComposition.apply_to(state.parent, first=node_a, access=data, second=node_b, verify=False,
+                                         options={'storage': dace.StorageType.FPGA_Local})
+
+        ######################################
+        # Prune connectors
+        sdfg.apply_transformations_repeated(PruneConnectors)
+
+        sdfg.save('/tmp/out_fpga.sdfg')
         device = 'cpu'
     elif device == 'pytorch':
         model.to('cpu')
