@@ -1781,6 +1781,7 @@ class PureSoftmax(ONNXForward):
         div_me, div_mx = new_state.add_map("softmax_max", dict(i="0:{}".format(inparr.shape[-1])))
 
         exp_tasklet = new_state.add_tasklet('exp_task', ['_in', '_in_sum'], ['_out', '_out_sum'],
+                                        '_exp = float(0)\n' #for type inference
                                         '_exp = exp(_in)\n'
                                         'prev_sum = _in_sum if i!=0 else float(0)\n'
                                         '_out_sum = prev_sum + _exp\n'
