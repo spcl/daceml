@@ -106,7 +106,7 @@ def eval_model(args, test_dataloader, model, device, single=False):
         model = DaceModule(model, dummy_inputs=dummy_input[0])
         sdfg = model.sdfg
         sdfg.apply_transformations([FPGATransformSDFG])
-        sdfg.apply_transformations_repeated([InlineSDFG])
+        # sdfg.apply_transformations_repeated([InlineSDFG])
         sdfg.expand_library_nodes()
         print("OK")
         sdfg.save('/tmp/out_pre.sdfg')
@@ -114,17 +114,10 @@ def eval_model(args, test_dataloader, model, device, single=False):
         print("OK1")
 
         access_nodes = [n for n, _ in sdfg.all_nodes_recursive()
-                        if isinstance(n, nodes.AccessNode) and n.data[:8] == "ONNX_fc3"]
+                        if isinstance(n, nodes.AccessNode) and (n.data[:7] == "ONNX_fc" or n.data[:7] == "ONNX_co" )]
         for access_node in access_nodes:
             InputToConstant.apply_to(sdfg, _access_node=access_node)
 
-        #sdfg.apply_transformations_repeated([InputToConstant], print_report=True)
-        #access
-        print("OK2")
-        #
-        # transformation.expand_library_nodes_except_reshape(sdfg)
-        # sdfg.states()[0].nodes()[0].sdfg.apply_transformations_repeated(
-        #     [transformation.ReshapeElimination])
         # sdfg.states()[0].location["is_FPGA_kernel"] = False
         # sdfg.states()[0].nodes()[0].sdfg.states()[0].location["is_FPGA_kernel"] = False
 
