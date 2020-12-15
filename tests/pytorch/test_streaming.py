@@ -61,7 +61,7 @@ class Model(nn.Module):
         self.conv1 = nn.Conv2d(1, 6, 5)
 
     def forward(self, x):
-        x =F.relu(self.conv1(x))
+        x = F.max_pool2d(F.relu(self.conv1(x)), 2)
         return x
 
 
@@ -93,6 +93,7 @@ orig_sdfg.save('/tmp/out_expanded.sdfg')
 #
 donnx.ONNXConv.default_implementation = "fpga"
 donnx.ONNXRelu.default_implementation = "fpga"
+donnx.ONNXMaxPool.default_implementation = "fpga"
 
 
 ##################################
@@ -126,6 +127,16 @@ node_b = state.out_edges(data)[0].dst
 
 # Streaming transformation
 sm.StreamingComposition.apply_to(state.parent, first=node_a, access=data, second=node_b, verify=False, options={'storage': dace.StorageType.FPGA_Local})
+
+
+# get the access node to transform, its predecessor and successor
+data , state= get_access_node_by_name(sdfg,"fpga_ONNX_4")
+node_a = state.in_edges(data)[0].src
+node_b = state.out_edges(data)[0].dst
+sm.StreamingComposition.apply_to(state.parent, first=node_a, access=data, second=node_b, verify=False, options={'storage': dace.StorageType.FPGA_Local})
+
+
+
 # ret =  sdfg.apply_transformations_repeated(
 #         sm.StreamingMemory, dict(storage=dace.StorageType.FPGA_Local))
 # Remove unused connectors

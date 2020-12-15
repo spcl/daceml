@@ -490,14 +490,14 @@ class FPGAIm2ColConv(ONNXForward):
         new_sdfg.arrays["Y"].transient = False
 
         # GEMM Parameters
-        if node.name == "ONNX_Conv_0":
+        if node.name == "ONNX_Conv_0" or node.name == "ONNX_Conv_3":
             vec_width = Y.veclen
             streamed_node = True
-            print("CONV streamed")
+            print("CONV streamed ", vec_width)
         else:
             streamed_node = False
-            print("CONV non streamed")
             vec_width= math.gcd(16, output_size_x)
+            print("CONV non streamed, vec_width")
         #N = num_filters
         K = num_channels * filter_hx * filter_hy
         M = output_size_y * output_size_x
@@ -666,7 +666,7 @@ class FPGAIm2ColConv(ONNXForward):
                                       dst_conn="bias",
                                       memlet=dace.Memlet("B[n]"))
 
-            if streamed_node = False:
+            if streamed_node == False:
                 # Memlet to memory
 
                 state.add_memlet_path(copy__add_bias__tasklet,
@@ -910,19 +910,23 @@ class FPGARelu(ONNXForward):
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
-        # TODO deal with this. Right Now I'm doing it to
-        # gently introduce streaming
-        if node.name == "ONNX_Relu_1":
-            streaming_node = True
-            print("RELU streamed ----")
-        else:
-            streaming_node = False
-            print("RELU NON streamed ----")
         X = in_desc_with_name(node, state, sdfg, "X")
         Y = out_desc_with_name(node, state, sdfg, "Y")
 
-        # Use the vector on the X
+        # TODO deal with this. Right Now I'm doing it to
+        # gently introduce streaming
         vec_width = X.veclen
+        if node.name == "ONNX_Relu_1" or node.name == "ONNX_Relu_3":
+            streaming_node = True
+            # Use the vector on the X
+            print("RELU streamed ----")
+        else:
+            streaming_node = False
+
+            print("RELU NON streamed ----")
+
+
+
         # Build map ranges: one loop per dimension
         map_ranges = {'__i%d' % i: '0:%s' % n for i, n in enumerate(X.shape)}
 
@@ -965,17 +969,17 @@ class FPGARelu(ONNXForward):
         #memlet from memory
         if not streaming_node:
             new_state.add_memlet_path(x_read,
-                                  outer_me,
-                                  vec_data_in,
-                                  memlet=dace.Memlet("X[{}]".format(",".join([
-                                      '__i%d' % i for i in range(len(X.shape))
-                                  ]))))
+                                      outer_me,
+                                      vec_data_in,
+                                      memlet=dace.Memlet("X[{}]".format(",".join([
+                                          '__i%d' % i for i in range(len(X.shape))
+                                      ]))))
         else:
             #memlet from stream
             new_state.add_memlet_path(x_read,
-                                  outer_me,
-                                  vec_data_in,
-                                  memlet=dace.Memlet("X[0,0,0,0]"))
+                                      outer_me,
+                                      vec_data_in,
+                                      memlet=dace.Memlet("X[0,0,0,0]"))
 
         # connect to tasklet
         new_state.add_memlet_path(vec_data_in,
@@ -1053,6 +1057,9 @@ class FPGAMaxPool2D(ONNXForward):
 
         X = in_desc_with_name(node, state, sdfg, "X")
         Y = out_desc_with_name(node, state, sdfg, "Y")
+        vec_width = X.veclen
+
+        print("Max pool vw: ", vec_width)
 
         image_dims = len(X.shape) - 2
         batch_size = X.shape[0]
@@ -1075,20 +1082,29 @@ class FPGAMaxPool2D(ONNXForward):
         new_sdfg.arrays["X"].transient = False
         new_sdfg.arrays["Y"].transient = False
 
-        #shift register
-        shift_register_size = input_size_width * (filter_height - 1) + (
+        #shift register. Note that this contains plain data types
+        shift_register_size = input_size_width * vec_width* (filter_height - 1) + (
             filter_width - 1) + 1
+
         new_sdfg.add_array("shift_register", [shift_register_size],
-                           X.dtype,
+                           X.dtype.vtype,
                            storage=dace.StorageType.FPGA_ShiftRegister,
                            transient=True)
         # variable for reduction
         new_sdfg.add_array("max_res", [1],
-                           X.dtype,
+                           X.dtype.vtype,
                            storage=dace.StorageType.FPGA_Registers,
                            transient=True)
+        new_sdfg.add_array('vec_data',
+                           shape=[vec_width],
+                           dtype=dace.float32,
+                           transient=True,
+                           storage=dace.dtypes.StorageType.FPGA_Registers)
+        # temporary storage for unpacked vector data type
+
         # the outer map loops over every entry in the input array
         # (useful also in the case of streaming input, we can't skip data
+        # Note that `input_size_width` accounts for vectorziation
         outer_me, outer_mx = new_state.add_map(
             'outer_pool_map',
             dict(b="0:{}".format(batch_size),
@@ -1096,8 +1112,11 @@ class FPGAMaxPool2D(ONNXForward):
                  in_y="0:{}".format(input_size_height),
                  in_x="0:{}".format(input_size_width)))
 
-        # TODO: use the pipeline?
-        # TODO: che draining if the input is a stream (in case add a conditional read)
+        # if vec_width >1 this will deal with it
+        vect_me, vect_mx = new_state.add_map(
+            'vect_pool_map',
+            dict(w="0:{}".format(vec_width))
+        )
 
         # the inner map computes the pooling
         inner_me, inner_mx = new_state.add_map(
@@ -1105,6 +1124,9 @@ class FPGAMaxPool2D(ONNXForward):
             dict(hy="0:{}".format(filter_height),
                  hx="0:{}".format(filter_width)),
             unroll=True)
+
+        # read data into vec data
+        # tasklet = new_state.add_tasklet('read_tasklet', ['_in'], ['_out'], code="_out = _in")
 
         # compute the maximum: we can compute always, but we can write the result only
         # according to the slide and at the end of the filter loops
@@ -1125,26 +1147,56 @@ class FPGAMaxPool2D(ONNXForward):
         write_Y = new_state.add_write("Y")
         read_max_res = new_state.add_access("max_res")
         write_max_res = new_state.add_write("max_res")
+        vec_data = new_state.add_access("vec_data")
 
-        # memlet: from input image to shift register
+        # memlet: from input image to vec data
+        # new_state.add_memlet_path(
+        #     read_X,
+        #     outer_me,
+        #     tasklet,
+        #     dst_conn="_in",
+        #     memlet=dace.Memlet("X[b, c, in_y, in_x]"))
+        # new_state.add_memlet_path(
+        #     tasklet,
+        #     vec_data,
+        #     src_conn="_out",
+        #     memlet=dace.Memlet("vec_data[0]")
+        # )
+
         new_state.add_memlet_path(
             read_X,
             outer_me,
+            vec_data,
+            dst_conn="_in",
+            memlet=dace.Memlet("X[b, c, in_y, in_x]"))
+
+        # memlet: from input image to shift register
+        to_shift_register_memlet = dace.Memlet("vec_data[w]", other_subset="{}".format(shift_register_size -1))
+        # explicitely set oob otherwise is not taken
+        to_shift_register_memlet.allow_oob = True
+        new_state.add_memlet_path(
+            vec_data,
+            vect_me,
             shift_register,
-            memlet=dace.Memlet("X[b, c, in_y, in_x]",
-                               other_subset="{}".format(shift_register_size -
-                                                        1)))
+            memlet=to_shift_register_memlet, propagate=False)
 
         # To create the shift register outside the map, add an empty memlet path
-        shift_register_write = new_state.add_write("shift_register")
+        # shift_register_write = new_state.add_write("shift_register")
         shift_register_read = new_state.add_read("shift_register")
+        # new_state.add_memlet_path(shift_register_read,
+        #                           outer_me,
+        #                           # vect_me,
+        #                           inner_me,
+        #                           inner_mx,
+        #                           # vect_mx,
+        #                           outer_mx,
+        #                           shift_register_write,
+        #                           memlet=dace.Memlet())
         new_state.add_memlet_path(shift_register_read,
-                                  outer_me,
-                                  inner_me,
-                                  inner_mx,
-                                  outer_mx,
-                                  shift_register_write,
-                                  memlet=dace.Memlet())
+                                  outer_me, memlet=dace.Memlet())
+        # new_state.add_memlet_path(outer_mx, shift_register_write, memlet=dace.Memlet())
+
+
 
         # memlet from shift register to max tasklet
         new_state.add_memlet_path(
@@ -1162,7 +1214,7 @@ class FPGAMaxPool2D(ONNXForward):
                                   dst_conn="max_in",
                                   memlet=dace.Memlet("max_res[0]"))
         #empty memlet
-        new_state.add_memlet_path(outer_me, read_max_res, memlet=dace.Memlet())
+        new_state.add_memlet_path(vect_me, read_max_res, memlet=dace.Memlet())
 
         new_state.add_memlet_path(compute_tasklet,
                                   inner_mx,
@@ -1171,7 +1223,7 @@ class FPGAMaxPool2D(ONNXForward):
                                   memlet=dace.Memlet("max_res[0]"))
         #empty memlet
         new_state.add_memlet_path(write_max_res,
-                                  outer_mx,
+                                  vect_mx,
                                   memlet=dace.Memlet())
 
         y_memlet = dace.Memlet("Y[b,c, in_y//{}, in_x//{}]".format(
@@ -1181,6 +1233,7 @@ class FPGAMaxPool2D(ONNXForward):
         # Attention: use propagate=False otherwise it does not validate
         new_state.add_memlet_path(compute_tasklet,
                                   inner_mx,
+                                  vect_mx,
                                   outer_mx,
                                   write_Y,
                                   src_conn="output",
@@ -1190,7 +1243,6 @@ class FPGAMaxPool2D(ONNXForward):
         new_sdfg.fill_scope_connectors()
         new_sdfg.save("/tmp/maxpool.sdfg")
         return new_sdfg
-
 
 @autoregister_params(op="Gemm", name="fpga")
 class FPGAGemm(ONNXForward):
