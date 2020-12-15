@@ -1059,7 +1059,6 @@ class FPGAMaxPool2D(ONNXForward):
         Y = out_desc_with_name(node, state, sdfg, "Y")
         vec_width = X.veclen
 
-        print("Max pool vw: ", vec_width)
 
         image_dims = len(X.shape) - 2
         batch_size = X.shape[0]
@@ -1130,6 +1129,7 @@ class FPGAMaxPool2D(ONNXForward):
 
         # compute the maximum: we can compute always, but we can write the result only
         # according to the slide and at the end of the filter loops
+        # NOTE: in_x could reflect the fact that it is vctorized
         compute_tasklet = new_state.add_tasklet(
             "compute_entry",
             inputs={"image_in", "max_in"},
@@ -1137,9 +1137,9 @@ class FPGAMaxPool2D(ONNXForward):
             #code="output = image_in"
             code="if hx == 0 and hy == 0: max_in = {}\n"  #init
             "max_out = float(max(max_in, image_in))\n"
-            "if hy == {} - 1 and hx == {} -1 and  in_y % {} == {} - 1 and in_x % {} == {} -1: output = max_out"
+            "if hy == {} - 1 and hx == {} -1 and  in_y % {} == {} - 1 and (in_x *{}+w) % {} == {} -1: output = max_out"
             .format(dtypes.min_value(Y.dtype), filter_height, filter_width,
-                    filter_height, filter_height, filter_height, filter_width))
+                    filter_height, filter_height, vec_width, filter_height, filter_width))
 
         shift_register = new_state.add_access("shift_register")
 
@@ -1199,13 +1199,14 @@ class FPGAMaxPool2D(ONNXForward):
 
 
         # memlet from shift register to max tasklet
+        # NOTE: vec width
         new_state.add_memlet_path(
             shift_register,
             inner_me,
             compute_tasklet,
             dst_conn="image_in",
             memlet=dace.Memlet(
-                "shift_register[hy*{}+hx]".format(input_size_width)))
+                "shift_register[hy*{}+hx]".format(input_size_width*vec_width)))
 
         #memlets for max
         new_state.add_memlet_path(read_max_res,
@@ -1225,9 +1226,9 @@ class FPGAMaxPool2D(ONNXForward):
         new_state.add_memlet_path(write_max_res,
                                   vect_mx,
                                   memlet=dace.Memlet())
-
-        y_memlet = dace.Memlet("Y[b,c, in_y//{}, in_x//{}]".format(
-            filter_height, filter_width),
+        #Attention, the storing location must take into account that the input was vectorized
+        y_memlet = dace.Memlet("Y[b,c, in_y//{}, (in_x*{}+w)//{}]".format(
+            filter_height, vec_width, filter_width),
                                dynamic=True)
         #dynamic memlet (to access only when needed) from compute tasklet to out image
         # Attention: use propagate=False otherwise it does not validate

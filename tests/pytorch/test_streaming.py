@@ -28,7 +28,7 @@ def get_access_node_by_name(sdfg, name):
 
     for node, state in sdfg.all_nodes_recursive():
         if isinstance(node, dace.sdfg.nodes.AccessNode):
-            print(node.label)
+            # print(node.label)
             if node.label == name:
                 return node, state
 
@@ -62,6 +62,7 @@ class Model(nn.Module):
 
     def forward(self, x):
         x = F.max_pool2d(F.relu(self.conv1(x)), 2)
+        # x = F.relu(self.conv1(x))
         return x
 
 
@@ -71,7 +72,7 @@ donnx.ONNXConv.default_implementation = 'im2col'
 
 ptmodel = Model()
 
-x = torch.rand(100, 1, 28, 28)
+x = torch.rand(100, 1, 28,28)
 # x = torch.ones(1, 1, 4, 4)
 
 dace_model = DaceModule(ptmodel)
@@ -98,7 +99,7 @@ donnx.ONNXMaxPool.default_implementation = "fpga"
 
 ##################################
 # Vectorize input and output container
-vec_width = 4
+vec_width = 8
 
 vec_type = dace.vector(dace.float32, vec_width)
 # utils.vectorize_array_and_memlet(sdfg, "ONNX_input", vec_type)
