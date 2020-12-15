@@ -117,6 +117,26 @@ def eval_model(args, test_dataloader, model, device, single=False):
 
         model = DaceModule(model, dummy_inputs=dummy_input[0])
         sdfg = model.sdfg
+        sdfg.save('/tmp/out.sdfg')
+
+        ##################################
+        # Vectorize input and output container
+        vec_width = 8
+
+        vec_type = dace.vector(dace.float32, vec_width)
+        # utils.vectorize_array_and_memlet(sdfg, "ONNX_input", vec_type)
+
+        # vectorize output of Conv0
+        utils.vectorize_array_and_memlet(sdfg, "ONNX_11", vec_type)
+        # vectorize output of Relu1
+        utils.vectorize_array_and_memlet(sdfg, "ONNX_12", vec_type)
+        # vectorize output of Conv3
+        utils.vectorize_array_and_memlet(sdfg, "ONNX_14", vec_type)
+        # vectorize output of Relu4
+        utils.vectorize_array_and_memlet(sdfg, "ONNX_15", vec_type)
+
+        ###################################
+
         sdfg.apply_transformations([FPGATransformSDFG])
 
         sdfg.save('/tmp/out_fpga.sdfg')
@@ -132,6 +152,15 @@ def eval_model(args, test_dataloader, model, device, single=False):
         # Streaming transformation
         sm.StreamingComposition.apply_to(state.parent, first=node_a, access=data, second=node_b, verify=False,
                                          options={'storage': dace.StorageType.FPGA_Local})
+
+        data, state = get_access_node_by_name(sdfg, "fpga_ONNX_14")
+        node_a = state.in_edges(data)[0].src
+        node_b = state.out_edges(data)[0].dst
+
+        # Streaming transformation
+        sm.StreamingComposition.apply_to(state.parent, first=node_a, access=data, second=node_b, verify=False,
+                                         options={'storage': dace.StorageType.FPGA_Local})
+
         #
         # transformation.expand_library_nodes_except_reshape(sdfg)
         # sdfg.states()[0].nodes()[0].sdfg.apply_transformations_repeated(
@@ -139,7 +168,7 @@ def eval_model(args, test_dataloader, model, device, single=False):
         # sdfg.states()[0].location["is_FPGA_kernel"] = False
         # sdfg.states()[0].nodes()[0].sdfg.states()[0].location["is_FPGA_kernel"] = False
 
-        sdfg.save('/tmp/out_fpga.sdfg')
+        sdfg.save('/tmp/out_fpga_expanded.sdfg')
         device = 'cpu'
     elif device == 'pytorch':
         model.to('cpu')
