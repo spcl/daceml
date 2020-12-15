@@ -914,14 +914,14 @@ class FPGARelu(ONNXForward):
         # TODO deal with this. Right Now I'm doing it to
         # gently introduce streaming
         vec_width = X.veclen
-        if node.name in["ONNX_Relu_1", "ONNX_Relu_3", "ONNX_Relu_9", "ONNX_Relu_11"]:
-            streaming_node = True
-            # Use the vector on the X
-            print("RELU streamed ----")
-        else:
-            streaming_node = False
-            print("RELU NON streamed ----")
-
+        # if node.name in["ONNX_Relu_1", "ONNX_Relu_3", "ONNX_Relu_9", "ONNX_Relu_11"]:
+        #     streaming_node = True
+        #     # Use the vector on the X
+        #     print("RELU streamed ----")
+        # else:
+        #     streaming_node = False
+        #     print("RELU NON streamed ----")
+        streaming_node=False
         if X.veclen != Y.veclen:
             # we will need to copy the data out accordingly
             # NOTE: for the moment, tested with Y veclen = 1
