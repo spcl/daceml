@@ -1909,6 +1909,8 @@ class PureSoftmax(ONNXForward):
         exp_data = new_state.add_access("exp_data")
         sum_in = new_state.add_access("sum_data")
         sum_accum = new_state.add_access("sum_data")
+        init_tasklet = new_state.add_tasklet('init_task', [],
+                                            ['_out'], '_out = float(0)')
 
         new_state.add_memlet_path(in_read,
                                   batch_me,
@@ -1917,12 +1919,18 @@ class PureSoftmax(ONNXForward):
                                   dst_conn="_in",
                                   memlet=dace.Memlet("input[b,i]"))
 
+        new_state.add_memlet_path(init_tasklet,
+                                  sum_in,
+                                  src_conn="_out",
+                                  memlet = dace.Memlet("sum_data[0]"))
+
+
         new_state.add_memlet_path(sum_in,
                                   exp_me,
                                   exp_tasklet,
                                   dst_conn="_in_sum",
                                   memlet=dace.Memlet("sum_data[0]"))
-        new_state.add_memlet_path(batch_me, sum_in, memlet=dace.Memlet())
+        new_state.add_memlet_path(batch_me, init_tasklet, memlet=dace.Memlet())
         new_state.add_memlet_path(exp_tasklet,
                                   exp_mx,
                                   exp_data,
