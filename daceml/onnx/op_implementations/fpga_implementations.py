@@ -1085,13 +1085,14 @@ class FPGAMaxPool2D(ONNXForward):
         shift_register_size = input_size_width * vec_width* (filter_height - 1) + (
             filter_width - 1) + 1
 
+        #TODO: use X dtype
         new_sdfg.add_array("shift_register", [shift_register_size],
-                           X.dtype.vtype,
+                           dace.float32,
                            storage=dace.StorageType.FPGA_ShiftRegister,
                            transient=True)
         # variable for reduction
         new_sdfg.add_array("max_res", [1],
-                           X.dtype.vtype,
+                           dace.float32,
                            storage=dace.StorageType.FPGA_Registers,
                            transient=True)
         new_sdfg.add_array('vec_data',
@@ -1792,7 +1793,7 @@ class PureSoftmax(ONNXForward):
         in_read = new_state.add_read("input")
         out_write = new_state.add_write("output")
         exp_data = new_state.add_access("exp_data")
-        sum_in = new_state.add_read("sum_data")
+        sum_in = new_state.add_access("sum_data")
         sum_accum = new_state.add_access("sum_data")
 
         new_state.add_memlet_path(
@@ -1810,6 +1811,11 @@ class PureSoftmax(ONNXForward):
             exp_tasklet,
             dst_conn="_in_sum",
             memlet=dace.Memlet("sum_data[0]")
+        )
+        new_state.add_memlet_path(
+            batch_me,
+            sum_in,
+            memlet=dace.Memlet()
         )
         new_state.add_memlet_path(
             exp_tasklet,
