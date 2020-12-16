@@ -96,7 +96,13 @@ class TestLeNet(nn.Module):
 
 def eval_model(args, test_dataloader, model, device, single=False):
     model.eval()
-    if device == 'dace':
+
+    if device == 'pytorch':
+        model.to('cpu')
+        device = 'cpu'
+
+
+    elif device == 'dace':
         model.to('cpu')
         dummy_input = next(iter(test_dataloader))
         model = DaceModule(model, dummy_inputs=dummy_input[0])
@@ -369,4 +375,5 @@ if __name__ == '__main__':
     #eval_model(args, test_loader, model, 'cuda')
     # eval_model(args, test_loader, model, 'cpu', single=True)
     # eval_model(args, test_loader, model, 'dace', single=True)
+    eval_model(args, test_loader, model, 'pytorch', single=True)
     eval_model(args, test_loader, model, 'fpga', single=True)
