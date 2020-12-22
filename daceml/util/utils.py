@@ -81,7 +81,7 @@ def vectorize_array_and_memlet(sdfg, array_name, type: dtypes.typeclass):
     vec_width = type.veclen
     if data.shape[-1] % vec_width != 0:
         raise ValueError("Shape of {} is not divisible by {}".format(
-            data.name, vec_width))
+            data, vec_width))
     data.shape = data.shape[:-1] + (data.shape[-1] // vec_width, )
 
     # #adjust all the strides

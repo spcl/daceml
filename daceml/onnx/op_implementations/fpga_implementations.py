@@ -489,14 +489,12 @@ class FPGAIm2ColConv(ONNXForward):
         new_sdfg.arrays["Y"].transient = False
 
         # GEMM Parameters
-        if node.name == "ONNX_Conv_0" or node.name == "ONNX_Conv_3":
-            vec_width = Y.veclen
-            streamed_node = True
-            print("CONV streamed ", vec_width)
-        else:
-            streamed_node = False
-            vec_width = math.gcd(16, output_size_x)
-            print("CONV non streamed, vec_width")
+        vec_width = Y.veclen
+
+        # TODO: accept parametric?
+
+
+        #if Y.veclen !=1 else math.gcd(16, output_size_x)
         #N = num_filters
         K = num_channels * filter_hx * filter_hy
         M = output_size_y * output_size_x
@@ -664,21 +662,14 @@ class FPGAIm2ColConv(ONNXForward):
                                       dst_conn="bias",
                                       memlet=dace.Memlet("B[n]"))
 
-            if streamed_node == False:
-                # Memlet to memory
+            # Memlet to memory
 
-                state.add_memlet_path(copy__add_bias__tasklet,
-                                      exit_map,
-                                      mem,
-                                      src_conn="out_con",
-                                      memlet=dace.Memlet("Y[b, n,x, y]"))
-            else:
-                # Memlet to stream
-                state.add_memlet_path(copy__add_bias__tasklet,
-                                      exit_map,
-                                      mem,
-                                      src_conn="out_con",
-                                      memlet=dace.Memlet("Y[0,0,0,0]"))
+            state.add_memlet_path(copy__add_bias__tasklet,
+                                  exit_map,
+                                  mem,
+                                  src_conn="out_con",
+                                  memlet=dace.Memlet("Y[b, n, x, y]"))
+
 
         def make_compute(sdfg, state, vec_width=1):
             vec_type = dace.vector(dace.float32, vec_width)
@@ -1252,8 +1243,7 @@ class FPGAMaxPool2D(ONNXForward):
         new_state.add_memlet_path(write_max_res, vect_mx, memlet=dace.Memlet())
         #Attention, the storing location must take into account that the input was vectorized
         y_memlet = dace.Memlet("Y[b,c, in_y//{}, (in_x*{}+w)//{}]".format(
-            filter_height, vec_width, filter_width),
-                               dynamic=True)
+            filter_height, vec_width, filter_width))
         #dynamic memlet (to access only when needed) from compute tasklet to out image
         # Attention: use propagate=False otherwise it does not validate
         new_state.add_memlet_path(compute_tasklet,
@@ -1263,7 +1253,7 @@ class FPGAMaxPool2D(ONNXForward):
                                   write_Y,
                                   src_conn="output",
                                   memlet=y_memlet,
-                                  propagate=False)
+                                  propagate=True)
 
         new_sdfg.fill_scope_connectors()
         new_sdfg.save("/tmp/maxpool.sdfg")
