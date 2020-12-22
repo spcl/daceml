@@ -21,6 +21,7 @@ from daceml.util import utils
 from dace.transformation.dataflow import streaming_memory as sm
 from dace.transformation.dataflow import PruneConnectors
 from dace.transformation.interstate import InlineSDFG
+from daceml.transformation import InputToConstant
 
 
 
@@ -89,13 +90,14 @@ assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
 #
 sdfg = dace_model.sdfg
 orig_sdfg = copy.deepcopy(sdfg)
-orig_sdfg.expand_library_nodes()
+# orig_sdfg.expand_library_nodes()
 orig_sdfg.save('/tmp/out_expanded.sdfg')
 #
 donnx.ONNXConv.default_implementation = "fpga"
 donnx.ONNXRelu.default_implementation = "fpga"
 donnx.ONNXMaxPool.default_implementation = "fpga"
-
+sdfg.apply_transformations([FPGATransformSDFG])
+sdfg.apply_transformations_repeated([InlineSDFG])
 
 ##################################
 # Vectorize input and output container
@@ -105,9 +107,19 @@ vec_type = dace.vector(dace.float32, vec_width)
 # utils.vectorize_array_and_memlet(sdfg, "ONNX_input", vec_type)
 
 #vectorize output of Conv
-utils.vectorize_array_and_memlet(sdfg, "ONNX_3", vec_type)
+utils.vectorize_array_and_memlet(sdfg, "fpga_ONNX_3", vec_type)
 #vectorize output of Relu
-utils.vectorize_array_and_memlet(sdfg, "ONNX_4", vec_type)
+utils.vectorize_array_and_memlet(sdfg, "fpga_ONNX_4", vec_type)
+
+sdfg.expand_library_nodes()
+
+sdfg.apply_transformations_repeated([InlineSDFG])
+
+
+# ###################################################################
+# # Input to constant
+sdfg.apply_transformations_repeated([InputToConstant], print_report=True)
+
 
 ###################################
 # Apply transformations
