@@ -5,6 +5,7 @@ from typing import Iterator, Tuple, List, Dict, Type
 import dace
 import dace.sdfg.nodes as nd
 import dace.frontend.common.op_repository as dace_op_repo
+from dace.frontend.python.newast import ProgramVisitor
 import onnx
 from dace import SDFG, SDFGState, dtypes, data
 from dace.properties import Property, ListProperty
@@ -402,7 +403,7 @@ class ONNXOp(nd.LibraryNode):
 def register_op_repo_replacement(cls: Type[ONNXOp], cls_name: str,
                                  dace_schema: ONNXSchema):
     @dace_op_repo.replaces("daceml.onnx.{}".format(cls_name))
-    def op_repo_replacement(sdfg: SDFG, state: SDFGState, **kwargs):
+    def op_repo_replacement(pv: ProgramVisitor, sdfg: SDFG, state: SDFGState, **kwargs):
         attrs = {
             name: value
             for name, value in kwargs.items() if name in dace_schema.attributes
