@@ -72,6 +72,8 @@ class ONNXRuntime:
     cmake_link_flags = []
     cmake_files = []
     dependencies = []
+    state_fields = []
+
 
     headers = [
         "../include/dace_onnx.h",
@@ -109,6 +111,7 @@ class ONNXRuntimeCUDA:
     cmake_link_flags = []
     cmake_files = []
     dependencies = [ONNXRuntime]
+    state_fields = []
 
     headers = [
         "../include/dace_onnx_cuda.h",
