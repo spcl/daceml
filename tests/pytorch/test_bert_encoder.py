@@ -60,14 +60,24 @@ def test_bert_encoder(gpu, apply_strict):
 
     softmax_sdfg: dace_sdfg.SDFG = softmax_state.parent
 
+    # eliminate trivial map dimensions
+    from dace.transformation.dataflow.trivial_map_elimination import TrivialMapElimination
+    from dace.transformation.dataflow.trivial_map_range_elimination import TrivialMapRangeElimination
+
+    softmax_state.parent.apply_transformations_repeated([TrivialMapElimination, TrivialMapRangeElimination],
+                                                        validate_all=True, print_report=True)
+
+    dace_model.sdfg.save('attn3.sdfg')
+    print('attn3.sdfg')
+
     # nest all maps into states
 
     from dace.transformation.dataflow.nest_maps import NestMaps
 
     softmax_sdfg.apply_transformations_repeated([NestMaps], validate_all=True, print_report=True)
 
-    dace_model.sdfg.save('attn3.sdfg')
-    print('attn3.sdfg')
+    dace_model.sdfg.save('attn4.sdfg')
+    print('attn4.sdfg')
 
     # nest access nodes into maps
 
@@ -78,29 +88,38 @@ def test_bert_encoder(gpu, apply_strict):
     softmax_sdfg.apply_transformations_repeated([
         NestExitAccessNode, NestEntryAccessNode, RemoveUnusedAccessNode], validate_all=True, print_report=True)
 
-    dace_model.sdfg.save('attn4.sdfg')
-    print('attn4.sdfg')
+    dace_model.sdfg.save('attn5.sdfg')
+    print('attn5.sdfg')
 
     from dace.transformation.dataflow.nested_sdfg_fusion import NestedSDFGFusion
 
     softmax_sdfg.apply_transformations_repeated([NestedSDFGFusion], validate_all=True, print_report=True)
 
-    dace_model.sdfg.save('attn5.sdfg')
-    print('attn5.sdfg')
+    dace_model.sdfg.save('attn6.sdfg')
+    print('attn6.sdfg')
 
     from dace.transformation.dataflow.clean_connectors import CleanNestedSDFGConnectors
 
     softmax_sdfg.apply_transformations_repeated([CleanNestedSDFGConnectors], validate_all=True, print_report=True)
 
-    dace_model.sdfg.save('attn6.sdfg')
-    print('attn6.sdfg')
+    dace_model.sdfg.save('attn7.sdfg')
+    print('attn7.sdfg')
 
     from dace.transformation.dataflow.clean_connectors import NestTransients
 
     softmax_sdfg.apply_transformations_repeated([NestTransients], validate_all=True, print_report=True)
 
-    dace_model.sdfg.save('attn7.sdfg')
-    print('attn7.sdfg')
+    dace_model.sdfg.save('attn8.sdfg')
+    print('attn8.sdfg')
+
+    from dace.transformation.dataflow.nest_maps import NestMapContent
+
+    softmax_sdfg.apply_transformations_repeated([NestMapContent], validate_all=True, print_report=True)
+
+    dace_model.sdfg.save('attn9.sdfg')
+    print('attn9.sdfg')
+
+    from dace.transformation.interstate.nested_map_fusion import NestedMapFusion
 
     # # fuse maps in softmax
     #
