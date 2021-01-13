@@ -1047,16 +1047,18 @@ if m>={}:
                             transient=True,
                             shape=(P + 1, ),
                             storage=dace.dtypes.StorageType.FPGA_Local,
-                            buffer_size=str(P))
+                            buffer_size=P+2)
         new_sdfg.add_stream("im2col_pipe",
                             vec_type,
                             transient=True,
                             shape=(P + 1, ),
+                            buffer_size=P + 2,
                             storage=dace.dtypes.StorageType.FPGA_Local)
         new_sdfg.add_stream("Y_pipe",
                             vec_type,
                             transient=True,
                             shape=(P + 1, ),
+                            buffer_size=P + 2,
                             storage=dace.dtypes.StorageType.FPGA_Local)
 
         make_read_W(new_state)
