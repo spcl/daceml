@@ -402,7 +402,7 @@ class ONNXOp(nd.LibraryNode):
 def register_op_repo_replacement(cls: Type[ONNXOp], cls_name: str,
                                  dace_schema: ONNXSchema):
     @dace_op_repo.replaces("daceml.onnx.{}".format(cls_name))
-    def op_repo_replacement(sdfg: SDFG, state: SDFGState, **kwargs):
+    def op_repo_replacement(TODO_remove_this, sdfg: SDFG, state: SDFGState, **kwargs):
         attrs = {
             name: value
             for name, value in kwargs.items() if name in dace_schema.attributes
