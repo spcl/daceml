@@ -493,12 +493,11 @@ class FPGAIm2ColConv(ONNXForward):
 
         # TODO: accept parametric?
 
-
         #if Y.veclen !=1 else math.gcd(16, output_size_x)
         #N = num_filters
 
         K = num_channels * filter_hx * filter_hy
-        M = output_size_y * output_size_x # note that this accounts also for vectorized data types
+        M = output_size_y * output_size_x  # note that this accounts also for vectorized data types
         P = num_filters  # Num PEs  #TODO parametric
 
         def make_read_W(state):
@@ -671,7 +670,6 @@ class FPGAIm2ColConv(ONNXForward):
                                   src_conn="out_con",
                                   memlet=dace.Memlet("Y[b, n, x, y]"))
 
-
         def make_compute(sdfg, state, vec_width=1):
             vec_type = dace.vector(dace.float32, vec_width)
             W_pipe_in = state.add_read("W_pipe")
@@ -691,12 +689,20 @@ class FPGAIm2ColConv(ONNXForward):
             #   The entire draining takes P * M clock cycles
             # - the last results are drained with an ad-hoc drain phase
             # The feeding of A is done in the first P cycle of the innermost map
-            entry_pipeline, exit_pipeline = state.add_pipeline("compute_and_drain", {
-                "b": "0:{}".format(batch_size),
-                "n0": "0:{}/{}".format(num_filters, P),
-                "k": "0:{}".format(K),
-                "m": "0:{}+{}".format(M, P)  # The +P is needed for the feeding: can it be eliminated?
-            }, drain_size=P * M, drain_overlap=False, schedule=dace.ScheduleType.FPGA_Device)
+            entry_pipeline, exit_pipeline = state.add_pipeline(
+                "compute_and_drain",
+                {
+                    "b": "0:{}".format(batch_size),
+                    "n0": "0:{}/{}".format(num_filters, P),
+                    "k": "0:{}".format(K),
+                    "m": "0:{}+{}".format(
+                        M, P
+                    )  # The +P is needed for the feeding: can it be eliminated?
+                },
+                drain_size=P * M,
+                drain_overlap=False,
+                additional_variables={'m_drain': 0, 'k_drain': 0},
+                schedule=dace.ScheduleType.FPGA_Device)
 
             # entry_n0, exit_n0 = state.add_map(
             #     "batch_n0", {
@@ -766,14 +772,16 @@ if m < {} and not {}:
     if m == {} - p - 1:
         w_reg = w_buf
     if p < {} - 1:
-        w_out = w_buf""".format(P, entry_pipeline.pipeline.drain_condition(), P, P))
+        w_out = w_buf""".format(P, entry_pipeline.pipeline.drain_condition(),
+                                P, P))
 
             # Memlet to the conditional feed tasklet. Notice that these are dynamic to
             # perform reads/write to steams only when really needed
             state.add_memlet_path(W_pipe_in,
                                   entry_pipeline,
                                   read_w_tasklet,
-                                  memlet=dace.Memlet("W_pipe[p]", dynamic=True),
+                                  memlet=dace.Memlet("W_pipe[p]",
+                                                     dynamic=True),
                                   dst_conn="w_in")
             state.add_memlet_path(read_w_tasklet,
                                   W_buf,
@@ -786,7 +794,8 @@ if m < {} and not {}:
             state.add_memlet_path(buffer_and_forward_w_tasklet,
                                   exit_pipeline,
                                   W_pipe_out,
-                                  memlet=dace.Memlet("W_pipe[p + 1]", dynamic=True),
+                                  memlet=dace.Memlet("W_pipe[p + 1]",
+                                                     dynamic=True),
                                   src_conn="w_out")
             state.add_memlet_path(buffer_and_forward_w_tasklet,
                                   W_reg,
@@ -804,14 +813,19 @@ if m < {} and not {}:
             buffer_im2col_tasklet = state.add_tasklet(
                 "buffer_im2col", {"im2col_in"}, {"im2col_reg"}, """\
 if m >= {} and not {}:
-    im2col_reg = im2col_in""".format(P, entry_pipeline.pipeline.drain_condition()))
+    im2col_reg = im2col_in""".format(
+                    P, entry_pipeline.pipeline.drain_condition()))
 
             state.add_memlet_path(im2col_pipe_in,
                                   entry_pipeline,
                                   buffer_im2col_tasklet,
-                                  memlet=dace.Memlet("im2col_pipe[p]", dynamic=True),
+                                  memlet=dace.Memlet("im2col_pipe[p]",
+                                                     dynamic=True),
                                   dst_conn="im2col_in")
-            state.add_memlet_path(buffer_im2col_tasklet, im2col_reg, memlet=dace.Memlet("im2col_reg[0]", dynamic=True),
+            state.add_memlet_path(buffer_im2col_tasklet,
+                                  im2col_reg,
+                                  memlet=dace.Memlet("im2col_reg[0]",
+                                                     dynamic=True),
                                   src_conn="im2col_reg")
 
             # DRAIN: attention, this must be  theoretically done before starting to compute the result for the next tile
@@ -827,38 +841,51 @@ if m >= {} and not {}:
             # Hack: we have to add explicitly the increase of m and k while in the draining phase,
             # as this is not done automatically by the pipeline scope
             write_y_tasklet = state.add_tasklet(
-                "write_y", {"buffer_in", "forward_in"}, {"y_pipe_out" }, """\
-if ((b>0  or n0 > 0)  and k <=p and m <{})  or {}:
-    y_pipe_out = forward_in if p > 0 and k > 0 else buffer_in
-if {}:
-    m = m+1
-    if m=={}:
-        m = 0
-        k = k+1""".format(M, entry_pipeline.pipeline.drain_condition(),
-                          entry_pipeline.pipeline.drain_condition(), M))
+                "write_y", {"buffer_in", "forward_in"}, {"y_pipe_out"}, f"""\
+if ((b>0  or n0 > 0)  and k_drain <=p and m_drain <{M})  or {entry_pipeline.pipeline.drain_condition()}:
+    y_pipe_out = forward_in if p > 0 and k_drain > 0 else buffer_in
+if not {entry_pipeline.pipeline.drain_condition()}:\n\t
+    if m_drain >= {P} + {M} -1:
+        m_drain = 0
+        if k_drain >= {K} - 1:
+            k_drain = 0
+        else:
+            k_drain = k_drain +1
+    else:
+        m_drain = m_drain + 1
+else:
+    if m_drain >=  {M} -1:
+        m_drain = 0
+        k_drain = k_drain + 1
+    else:
+        m_drain = m_drain + 1
+    """
+)
             # add allow oob for this memlet
-            Y_buffer_to_write_y_memlet =  dace.Memlet("Y_buffer[m]", dynamic=True)
-            Y_buffer_to_write_y_memlet.allow_oob = True
             state.add_memlet_path(Y_buffer_in,
                                   entry_pipeline,
                                   write_y_tasklet,
-                                  memlet=Y_buffer_to_write_y_memlet,
+                                  memlet=dace.Memlet("Y_buffer[m_drain]",
+                                                     dynamic=True, allow_oob=True),
                                   dst_conn="buffer_in")
             state.add_memlet_path(Y_pipe_in,
                                   entry_pipeline,
                                   write_y_tasklet,
-                                  memlet=dace.Memlet("Y_pipe[p-1]", dynamic=True),
+                                  memlet=dace.Memlet("Y_pipe[p-1]",
+                                                     dynamic=True),
                                   dst_conn="forward_in")
             state.add_memlet_path(write_y_tasklet,
                                   exit_pipeline,
                                   Y_pipe_out,
-                                  memlet=dace.Memlet("Y_pipe[p]", dynamic=True),
+                                  memlet=dace.Memlet("Y_pipe[p]",
+                                                     dynamic=True),
                                   src_conn="y_pipe_out")
 
             # COMPUTE
             # Compute and forward B: this is done if we are not in the init phase of the pipeline
             compute_tasklet = state.add_tasklet(
-                "multiply_add", {"w_in", "im2col_in", "y_in"}, {"im2col_out", "y_out"}, """\
+                "multiply_add", {"w_in", "im2col_in", "y_in"},
+                {"im2col_out", "y_out"}, """\
 if m>={}:
     y_prev = 0 if k == 0 else y_in 
     y_out = y_prev + w_in * im2col_in
@@ -870,11 +897,16 @@ if m>={}:
                                   dst_conn="w_in",
                                   memlet=dace.Memlet("W_reg[0]"))
             # B to/from compute tasklet
-            state.add_memlet_path(im2col_reg, compute_tasklet, memlet=dace.Memlet("im2col_reg[0]", dynamic=True), dst_conn="im2col_in")
+            state.add_memlet_path(im2col_reg,
+                                  compute_tasklet,
+                                  memlet=dace.Memlet("im2col_reg[0]",
+                                                     dynamic=True),
+                                  dst_conn="im2col_in")
             state.add_memlet_path(compute_tasklet,
                                   exit_pipeline,
                                   im2col_pipe_out,
-                                  memlet=dace.Memlet("im2col_pipe[p + 1]", dynamic=True),
+                                  memlet=dace.Memlet("im2col_pipe[p + 1]",
+                                                     dynamic=True),
                                   src_conn="im2col_out")
             Y_buffer_to_compute_y_in = dace.Memlet("Y_buffer[m-{}]".format(P))
             Y_buffer_to_compute_y_in.allow_oob = True
@@ -883,81 +915,84 @@ if m>={}:
                                   compute_tasklet,
                                   dst_conn="y_in",
                                   memlet=Y_buffer_to_compute_y_in)
-            state.add_memlet_path(compute_tasklet,
-                                  Y_buffer_out,
-                                  memlet=dace.Memlet("Y_buffer[m-{}]".format(P), dynamic=True),
-                                  src_conn="y_out")
-            state.add_memlet_path(Y_buffer_out, exit_pipeline, memlet=dace.Memlet())
+            state.add_memlet_path(
+                compute_tasklet,
+                Y_buffer_out,
+                memlet=dace.Memlet("Y_buffer[m-{}]".format(P), dynamic=True),
+                src_conn="y_out")
+            state.add_memlet_path(Y_buffer_out,
+                                  exit_pipeline,
+                                  memlet=dace.Memlet())
 
-#             # Compute and forward B
-#             compute_tasklet = state.add_tasklet(
-#                 "multiply_add", {"w_in", "im2col_in", "y_in"},
-#                 {"im2col_out", "y_out"}, """\
-# y_prev = 0 if k == 0 else y_in
-# y_out = y_prev + w_in * im2col_in
-# if p < {P} - 1:
-#     im2col_out = im2col_in""".format(P=P))
-#
-#             state.add_memlet_path(W_reg,
-#                                   entry_m,
-#                                   compute_tasklet,
-#                                   dst_conn="w_in",
-#                                   memlet=dace.Memlet("W_reg[0]"))
-#             state.add_memlet_path(im2col_pipe_in,
-#                                   entry_n0,
-#                                   entry_k,
-#                                   entry_m,
-#                                   compute_tasklet,
-#                                   memlet=dace.Memlet("im2col_pipe[p]",
-#                                                      dynamic=False),
-#                                   dst_conn="im2col_in")
-#             state.add_memlet_path(compute_tasklet,
-#                                   exit_m,
-#                                   exit_k,
-#                                   exit_n0,
-#                                   im2col_pipe_out,
-#                                   memlet=dace.Memlet("im2col_pipe[p + 1]",
-#                                                      dynamic=True),
-#                                   src_conn="im2col_out")
-#             state.add_memlet_path(Y_buffer_in,
-#                                   entry_k,
-#                                   entry_m,
-#                                   compute_tasklet,
-#                                   dst_conn="y_in",
-#                                   memlet=dace.Memlet("Y_buffer[m]"))
-#             state.add_memlet_path(entry_n0, Y_buffer_in, memlet=dace.Memlet())
-#             state.add_memlet_path(compute_tasklet,
-#                                   exit_m,
-#                                   exit_k,
-#                                   Y_buffer_out,
-#                                   src_conn="y_out",
-#                                   memlet=dace.Memlet("Y_buffer[m]"))
-#             state.add_memlet_path(Y_buffer_out, exit_n0, memlet=dace.Memlet())
-# DRAIN
-#             write_y_tasklet = state.add_tasklet(
-#                 "write_y", {"buffer_in", "forward_in"}, {"y_out"}, """\
-# if n1 <= p:
-#     y_out = forward_in if p > 0 and n1 > 0 else buffer_in""")
-#             state.add_memlet_path(Y_buffer_out,
-#                                   entry_y,
-#                                   write_y_tasklet,
-#                                   memlet=dace.Memlet("Y_buffer[m]",
-#                                                      dynamic=True),
-#                                   dst_conn="buffer_in")
-#             state.add_memlet_path(Y_pipe_in,
-#                                   entry_n0,
-#                                   entry_y,
-#                                   write_y_tasklet,
-#                                   memlet=dace.Memlet("Y_pipe[p-1]",
-#                                                      dynamic=True),
-#                                   dst_conn="forward_in")
-#             state.add_memlet_path(write_y_tasklet,
-#                                   exit_y,
-#                                   exit_n0,
-#                                   Y_pipe_out,
-#                                   src_conn="y_out",
-#                                   memlet=dace.Memlet("Y_pipe[p]",
-#                                                      dynamic=True))
+            #             # Compute and forward B
+            #             compute_tasklet = state.add_tasklet(
+            #                 "multiply_add", {"w_in", "im2col_in", "y_in"},
+            #                 {"im2col_out", "y_out"}, """\
+            # y_prev = 0 if k == 0 else y_in
+            # y_out = y_prev + w_in * im2col_in
+            # if p < {P} - 1:
+            #     im2col_out = im2col_in""".format(P=P))
+            #
+            #             state.add_memlet_path(W_reg,
+            #                                   entry_m,
+            #                                   compute_tasklet,
+            #                                   dst_conn="w_in",
+            #                                   memlet=dace.Memlet("W_reg[0]"))
+            #             state.add_memlet_path(im2col_pipe_in,
+            #                                   entry_n0,
+            #                                   entry_k,
+            #                                   entry_m,
+            #                                   compute_tasklet,
+            #                                   memlet=dace.Memlet("im2col_pipe[p]",
+            #                                                      dynamic=False),
+            #                                   dst_conn="im2col_in")
+            #             state.add_memlet_path(compute_tasklet,
+            #                                   exit_m,
+            #                                   exit_k,
+            #                                   exit_n0,
+            #                                   im2col_pipe_out,
+            #                                   memlet=dace.Memlet("im2col_pipe[p + 1]",
+            #                                                      dynamic=True),
+            #                                   src_conn="im2col_out")
+            #             state.add_memlet_path(Y_buffer_in,
+            #                                   entry_k,
+            #                                   entry_m,
+            #                                   compute_tasklet,
+            #                                   dst_conn="y_in",
+            #                                   memlet=dace.Memlet("Y_buffer[m]"))
+            #             state.add_memlet_path(entry_n0, Y_buffer_in, memlet=dace.Memlet())
+            #             state.add_memlet_path(compute_tasklet,
+            #                                   exit_m,
+            #                                   exit_k,
+            #                                   Y_buffer_out,
+            #                                   src_conn="y_out",
+            #                                   memlet=dace.Memlet("Y_buffer[m]"))
+            #             state.add_memlet_path(Y_buffer_out, exit_n0, memlet=dace.Memlet())
+            # DRAIN
+            #             write_y_tasklet = state.add_tasklet(
+            #                 "write_y", {"buffer_in", "forward_in"}, {"y_out"}, """\
+            # if n1 <= p:
+            #     y_out = forward_in if p > 0 and n1 > 0 else buffer_in""")
+            #             state.add_memlet_path(Y_buffer_out,
+            #                                   entry_y,
+            #                                   write_y_tasklet,
+            #                                   memlet=dace.Memlet("Y_buffer[m]",
+            #                                                      dynamic=True),
+            #                                   dst_conn="buffer_in")
+            #             state.add_memlet_path(Y_pipe_in,
+            #                                   entry_n0,
+            #                                   entry_y,
+            #                                   write_y_tasklet,
+            #                                   memlet=dace.Memlet("Y_pipe[p-1]",
+            #                                                      dynamic=True),
+            #                                   dst_conn="forward_in")
+            #             state.add_memlet_path(write_y_tasklet,
+            #                                   exit_y,
+            #                                   exit_n0,
+            #                                   Y_pipe_out,
+            #                                   src_conn="y_out",
+            #                                   memlet=dace.Memlet("Y_pipe[p]",
+            #                                                      dynamic=True))
 
             # Unroll processing elements
             compute_entry, compute_exit = state.add_map(
@@ -987,12 +1022,22 @@ if m>={}:
 
             # Add empty memlet to define the registers at the right place
             im2col_init = state.add_access("im2col_reg")
-            state.add_memlet_path(compute_entry, im2col_init, memlet=dace.Memlet())
-            state.add_memlet_path(im2col_init, entry_pipeline, memlet=dace.Memlet())
-            state.add_memlet_path(compute_entry, Y_buffer_in, memlet=dace.Memlet())
+            state.add_memlet_path(compute_entry,
+                                  im2col_init,
+                                  memlet=dace.Memlet())
+            state.add_memlet_path(im2col_init,
+                                  entry_pipeline,
+                                  memlet=dace.Memlet())
+            state.add_memlet_path(compute_entry,
+                                  Y_buffer_in,
+                                  memlet=dace.Memlet())
             W_reg_init = state.add_write("W_reg")
-            state.add_memlet_path(compute_entry, W_reg_init, memlet=dace.Memlet())
-            state.add_memlet_path(W_reg_init, entry_pipeline, memlet=dace.Memlet())
+            state.add_memlet_path(compute_entry,
+                                  W_reg_init,
+                                  memlet=dace.Memlet())
+            state.add_memlet_path(W_reg_init,
+                                  entry_pipeline,
+                                  memlet=dace.Memlet())
 
         # build the compute State
         vec_type = dace.vector(dace.float32, vec_width)
@@ -1056,7 +1101,7 @@ class FPGARelu(ONNXForward):
         # else:
         #     streaming_node = False
         #     print("RELU NON streamed ----")
-        streaming_node=False
+        streaming_node = False
         if X.veclen != Y.veclen:
             # we will need to copy the data out accordingly
             # NOTE: for the moment, tested with Y veclen = 1
@@ -1665,7 +1710,6 @@ class FPGAGemm(ONNXForward):
                                       mem,
                                       memlet=dace.Memlet("Y[n,m]"))
 
-
             else:
                 tasklet = state.add_tasklet(
                     "write_C", {"from_kernel", "prev_c"}, {"to_memory"},
@@ -2043,8 +2087,8 @@ class PureSoftmax(ONNXForward):
         exp_data = new_state.add_access("exp_data")
         sum_in = new_state.add_access("sum_data")
         sum_accum = new_state.add_access("sum_data")
-        init_tasklet = new_state.add_tasklet('init_task', [],
-                                            ['_out'], '_out = float(0)')
+        init_tasklet = new_state.add_tasklet('init_task', [], ['_out'],
+                                             '_out = float(0)')
 
         new_state.add_memlet_path(in_read,
                                   batch_me,
@@ -2056,8 +2100,7 @@ class PureSoftmax(ONNXForward):
         new_state.add_memlet_path(init_tasklet,
                                   sum_in,
                                   src_conn="_out",
-                                  memlet = dace.Memlet("sum_data[0]"))
-
+                                  memlet=dace.Memlet("sum_data[0]"))
 
         new_state.add_memlet_path(sum_in,
                                   exp_me,
