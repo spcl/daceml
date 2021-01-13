@@ -126,6 +126,13 @@ def test_bert_encoder(gpu, apply_strict):
     dace_model.sdfg.save('attn10.sdfg')
     print('attn10.sdfg')
 
+    from dace.transformation.interstate.warp_all_reduce_detection import WarpAllReduceDetection
+
+    softmax_sdfg.apply_transformations([WarpAllReduceDetection], validate=False, validate_all=False, print_report=True)
+
+    dace_model.sdfg.save('attn11.sdfg')
+    print('attn11.sdfg')
+
     # # fuse maps in softmax
     #
     # from dace.transformation.pattern_matching import enumerate_matches
