@@ -128,7 +128,7 @@ def test_bert_encoder(gpu, apply_strict):
 
     from dace.transformation.interstate.warp_all_reduce_detection import WarpAllReduceDetection
 
-    softmax_sdfg.apply_transformations([WarpAllReduceDetection], validate=False, validate_all=False, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([WarpAllReduceDetection], validate_all=True, print_report=True)
 
     dace_model.sdfg.save('attn11.sdfg')
     print('attn11.sdfg')
