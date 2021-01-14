@@ -499,7 +499,6 @@ class FPGAIm2ColConv(ONNXForward):
         K = num_channels * filter_hx * filter_hy
         M = output_size_y * output_size_x  # note that this accounts also for vectorized data types
         P = num_filters  # Num PEs  #TODO parametric
-
         def make_read_W(state):
             # this will read the weights, organized as a matrix of size
             # num_filters x (num_channels * filter_hx * filter_hy)
@@ -743,6 +742,11 @@ class FPGAIm2ColConv(ONNXForward):
             W_reg = state.add_write("W_reg")
             W_buf = state.add_write("W_buf")
 
+            sdfg.add_scalar("fake_dep",
+                            dtype=dace.int32,
+                            transient=True,
+                            storage=dace.dtypes.StorageType.FPGA_Registers)
+            fake_dep = state.add_access("fake_dep")
             # For Y result we are going to use vectorized data type
             sdfg.add_array(
                 "Y_buffer",
@@ -841,7 +845,7 @@ if m >= {} and not {}:
             # Hack: we have to add explicitly the increase of m and k while in the draining phase,
             # as this is not done automatically by the pipeline scope
             write_y_tasklet = state.add_tasklet(
-                "write_y", {"buffer_in", "forward_in"}, {"y_pipe_out"}, f"""\
+                "write_y", {"buffer_in", "forward_in"}, {"y_pipe_out", "fake_dep_out"}, f"""\
 if ((b>0  or n0 > 0)  and k_drain <=p and m_drain <{M})  or {entry_pipeline.pipeline.drain_condition()}:
     y_pipe_out = forward_in if p > 0 and k_drain > 0 else buffer_in
 if not {entry_pipeline.pipeline.drain_condition()}:\n\t
@@ -859,6 +863,7 @@ else:
         k_drain = k_drain + 1
     else:
         m_drain = m_drain + 1
+fake_dep_out=0
     """
 )
             # add allow oob for this memlet
@@ -884,7 +889,7 @@ else:
             # COMPUTE
             # Compute and forward B: this is done if we are not in the init phase of the pipeline
             compute_tasklet = state.add_tasklet(
-                "multiply_add", {"w_in", "im2col_in", "y_in"},
+                "multiply_add", {"w_in", "im2col_in", "y_in", "fake_dep_in"},
                 {"im2col_out", "y_out"}, """\
 if m>={}:
     y_prev = 0 if k == 0 else y_in 
@@ -1019,7 +1024,10 @@ if m>={}:
             state.add_memlet_path(Y_pipe_out,
                                   compute_exit,
                                   memlet=dace.memlet.Memlet())
-
+            state.add_memlet_path(write_y_tasklet, fake_dep, src_conn="fake_dep_out",
+                                  memlet=dace.memlet.Memlet("fake_dep[0]", dynamic=True))
+            state.add_memlet_path(fake_dep, compute_tasklet, dst_conn="fake_dep_in",
+                                  memlet=dace.memlet.Memlet("fake_dep[0]", dynamic=True))
             # Add empty memlet to define the registers at the right place
             im2col_init = state.add_access("im2col_reg")
             state.add_memlet_path(compute_entry,
