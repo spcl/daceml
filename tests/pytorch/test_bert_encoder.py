@@ -133,6 +133,13 @@ def test_bert_encoder(gpu, apply_strict):
     dace_model.sdfg.save('attn11.sdfg')
     print('attn11.sdfg')
 
+    from dace.transformation.dataflow.clean_connectors import CleanNestedWrites
+
+    softmax_sdfg.apply_transformations_repeated([CleanNestedWrites], validate_all=True, print_report=True)
+
+    dace_model.sdfg.save('attn12.sdfg')
+    print('attn12.sdfg')
+
     # # fuse maps in softmax
     #
     # from dace.transformation.pattern_matching import enumerate_matches
