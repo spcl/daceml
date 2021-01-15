@@ -116,7 +116,7 @@ def run(input_to_constant):
     # Second Conv in Lenet
     evaluate(6, 16, 5, 8, (1000, 6, 12, 12), input_to_constant, False)
     # First Conv in lenet
-    # evaluate(1, 6, 5, 1, (1000, 1, 28, 28), input_to_constant, False)
+    # evaluate(1, 6, 5, 8, (1000, 1, 28, 28), input_to_constant, False)
 
 
 def test(input_to_constant):
