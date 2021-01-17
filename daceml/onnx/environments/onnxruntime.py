@@ -71,7 +71,7 @@ class ONNXRuntime:
     cmake_compile_flags = []
     cmake_link_flags = []
     cmake_files = []
-    state_fields = [] # TODO: Add __ort_api
+    state_fields = []  # TODO: Add __ort_api
     dependencies = []
 
     headers = [
