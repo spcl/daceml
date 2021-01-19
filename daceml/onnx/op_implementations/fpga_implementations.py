@@ -1455,7 +1455,6 @@ class FPGAMaxPool2D(ONNXForward):
         new_sdfg.save("/tmp/maxpool.sdfg")
         return new_sdfg
 
-
 @autoregister_params(op="Gemm", name="fpga")
 class FPGAGemm(ONNXForward):
     @staticmethod
@@ -1498,6 +1497,12 @@ class FPGAGemm(ONNXForward):
         M_Y = Y.shape[1]
         P = math.gcd(N, 16)  # Num PEs
         vec_width = Y.veclen
+        if node.name == "ONNX_Gemm_8":
+            streamed_node = True
+            print("{} streamed".format(node.name))
+        else:
+            streamed_node = False
+            print("{} non streamed".format(node.name))
 
         ####################################################
         # Build the SDFG: starting point: gemm_fpga_systolic vectorized sample
@@ -1528,7 +1533,7 @@ class FPGAGemm(ONNXForward):
                                   exit,
                                   pipe,
                                   src_conn="to_kernel",
-                                  memlet=dace.Memlet("A_pipe[{} - n1 - 1]".format(P)))
+                                  memlet=dace.Memlet("A_pipe[0]"))
 
         def make_read_B(state, sdfg, vec_width=1):
 
@@ -1749,45 +1754,30 @@ class FPGAGemm(ONNXForward):
             C_pipe_in = state.add_read("C_pipe")
             C_pipe_out = state.add_write("C_pipe")
 
-            entry_pipeline, exit_pipeline = state.add_pipeline(
-                "gemm_compute_and_drain",
-                {
-                    "n0": "0:{}/{}".format(N,P),
-                    "k": "0:{}".format(K),
-                    "m": "0:{}".format(
-                        M_Y
-                    )
+            entry_n0, exit_n0 = state.add_map(
+                "n0", {
+                    "n0": "0:{}/{}".format(N, P),
                 },
-                drain_size=P * M_Y,
-                drain_overlap=False,
-                additional_iterators={'m_drain': 0, 'k_drain': 0, 'to_compute': 0, 'to_drain': -1},
+                schedule=dace.ScheduleType.FPGA_Device)
+            entry_k, exit_k = state.add_map(
+                "k", {"k": "0:{}".format(K)},
+                schedule=dace.ScheduleType.FPGA_Device)
+            entry_a, exit_a = state.add_map(
+                "buffer_A", {"n1": "0:{}".format(P)},
                 schedule=dace.ScheduleType.FPGA_Device)
 
-
-            # entry_n0, exit_n0 = state.add_map(
-            #     "n0", {
-            #         "n0": "0:{}/{}".format(N, P),
-            #     },
-            #     schedule=dace.ScheduleType.FPGA_Device)
-            # entry_k, exit_k = state.add_map(
-            #     "k", {"k": "0:{}".format(K)},
-            #     schedule=dace.ScheduleType.FPGA_Device)
-            # entry_a, exit_a = state.add_map(
-            #     "buffer_A", {"n1": "0:{}".format(P)},
-            #     schedule=dace.ScheduleType.FPGA_Device)
-            #
-            # # As we are using vectorized data types for B, we have to consider it into these
-            # # two maps
-            # entry_m, exit_m = state.add_map(
-            #     "m", {"m": "0:{}".format(M_Y, )},
-            #     schedule=dace.ScheduleType.FPGA_Device)
-            # entry_c, exit_c = state.add_map(
-            #     "write_C",
-            #     {
-            #         "n1": "0:{}".format(P),
-            #         "m": "0:{}".format(M_Y)  # consider vectorization
-            #     },
-            #     schedule=dace.ScheduleType.FPGA_Device)
+            # As we are using vectorized data types for B, we have to consider it into these
+            # two maps
+            entry_m, exit_m = state.add_map(
+                "m", {"m": "0:{}".format(M_Y, )},
+                schedule=dace.ScheduleType.FPGA_Device)
+            entry_c, exit_c = state.add_map(
+                "write_C",
+                {
+                    "n1": "0:{}".format(P),
+                    "m": "0:{}".format(M_Y)  # consider vectorization
+                },
+                schedule=dace.ScheduleType.FPGA_Device)
 
             # Instantiate buffers
             sdfg.add_scalar("A_reg",
@@ -1797,63 +1787,41 @@ class FPGAGemm(ONNXForward):
             A_reg = state.add_write("A_reg")
 
             # For C result we are going to use vectorized data type
-            sdfg.add_array("C_buffer", [2, M_Y],
+            sdfg.add_array("C_buffer", [M_Y],
                            dtype=vec_type,
                            transient=True,
                            storage=dace.dtypes.StorageType.FPGA_Local)
-            sdfg.add_array("C_reg",
-                           shape=[1],
-                           dtype=vec_type,
-                           transient=True,
-                           storage=dace.dtypes.StorageType.FPGA_Registers)
             C_buffer_in = state.add_read("C_buffer")
             C_buffer_out = state.add_write("C_buffer")
 
-            # FEED A
+            # every PE: reads input data, buffer the data assigned to it, forwards the data
             buffer_a_tasklet = state.add_tasklet(
-                "buffer_a", {"a_in"}, {"a_reg"}, """\
-if m == 0 and not {}:
+                "buffer_a", {"a_in"}, {"a_reg", "a_out"}, """\
+if n1 == {P} - p - 1:
     a_reg = a_in
-            """.format(entry_pipeline.pipeline.drain_condition()))
-
+if p < {P} - 1:
+    a_out = a_in""".format(P=P))
             state.add_memlet_path(A_pipe_in,
-                                  entry_pipeline,
+                                  entry_n0,
+                                  entry_k,
+                                  entry_a,
                                   buffer_a_tasklet,
-                                  memlet=dace.Memlet("A_pipe[p]", dynamic=True),
+                                  memlet=dace.Memlet("A_pipe[p]",
+                                                     dynamic=False),
                                   dst_conn="a_in")
             state.add_memlet_path(buffer_a_tasklet,
+                                  exit_a,
                                   A_reg,
                                   memlet=dace.Memlet("A_reg[0]", dynamic=True),
                                   src_conn="a_reg")
-
-            # every PE: reads input data, buffer the data assigned to it, forwards the data
-#             buffer_a_tasklet = state.add_tasklet(
-#                 "buffer_a", {"a_in"}, {"a_reg", "a_out"}, """\
-# if n1 == {P} - p - 1:
-#     a_reg = a_in
-# if p < {P} - 1:
-#     a_out = a_in""".format(P=P))
-#             state.add_memlet_path(A_pipe_in,
-#                                   entry_n0,
-#                                   entry_k,
-#                                   entry_a,
-#                                   buffer_a_tasklet,
-#                                   memlet=dace.Memlet("A_pipe[p]",
-#                                                      dynamic=False),
-#                                   dst_conn="a_in")
-#             state.add_memlet_path(buffer_a_tasklet,
-#                                   exit_a,
-#                                   A_reg,
-#                                   memlet=dace.Memlet("A_reg[0]", dynamic=True),
-#                                   src_conn="a_reg")
-#             state.add_memlet_path(buffer_a_tasklet,
-#                                   exit_a,
-#                                   exit_k,
-#                                   exit_n0,
-#                                   A_pipe_out,
-#                                   memlet=dace.Memlet("A_pipe[p + 1]",
-#                                                      dynamic=True),
-#                                   src_conn="a_out")
+            state.add_memlet_path(buffer_a_tasklet,
+                                  exit_a,
+                                  exit_k,
+                                  exit_n0,
+                                  A_pipe_out,
+                                  memlet=dace.Memlet("A_pipe[p + 1]",
+                                                     dynamic=True),
+                                  src_conn="a_out")
             # Compute and forward B
             compute_tasklet = state.add_tasklet(
                 "multiply_add", {"a_in", "b_in", "c_in"}, {"b_out", "c_out"},
