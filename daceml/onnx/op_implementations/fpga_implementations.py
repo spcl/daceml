@@ -1805,7 +1805,7 @@ if m == 0:
                                   entry_m,
                                   buffer_a_tasklet,
                                   memlet=dace.Memlet("A_pipe[p]",
-                                                     dynamic=False),
+                                                     dynamic=True),
                                   dst_conn="a_in")
             state.add_memlet_path(buffer_a_tasklet,
                                   A_reg,
