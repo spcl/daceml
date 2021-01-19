@@ -1533,7 +1533,7 @@ class FPGAGemm(ONNXForward):
                                   exit,
                                   pipe,
                                   src_conn="to_kernel",
-                                  memlet=dace.Memlet("A_pipe[0]"))
+                                  memlet=dace.Memlet("A_pipe[{} - n1 - 1]".format(P)))
 
         def make_read_B(state, sdfg, vec_width=1):
 
@@ -1762,9 +1762,9 @@ class FPGAGemm(ONNXForward):
             entry_k, exit_k = state.add_map(
                 "k", {"k": "0:{}".format(K)},
                 schedule=dace.ScheduleType.FPGA_Device)
-            entry_a, exit_a = state.add_map(
-                "buffer_A", {"n1": "0:{}".format(P)},
-                schedule=dace.ScheduleType.FPGA_Device)
+            # entry_a, exit_a = state.add_map(
+            #     "buffer_A", {"n1": "0:{}".format(P)},
+            #     schedule=dace.ScheduleType.FPGA_Device)
 
             # As we are using vectorized data types for B, we have to consider it into these
             # two maps
@@ -1796,32 +1796,29 @@ class FPGAGemm(ONNXForward):
 
             # every PE: reads input data, buffer the data assigned to it, forwards the data
             buffer_a_tasklet = state.add_tasklet(
-                "buffer_a", {"a_in"}, {"a_reg", "a_out"}, """\
-if n1 == {P} - p - 1:
-    a_reg = a_in
-if p < {P} - 1:
-    a_out = a_in""".format(P=P))
+                "buffer_a", {"a_in"}, {"a_reg", }, """\
+if m == 0:
+    a_reg = a_in""")
             state.add_memlet_path(A_pipe_in,
                                   entry_n0,
                                   entry_k,
-                                  entry_a,
+                                  entry_m,
                                   buffer_a_tasklet,
                                   memlet=dace.Memlet("A_pipe[p]",
                                                      dynamic=False),
                                   dst_conn="a_in")
             state.add_memlet_path(buffer_a_tasklet,
-                                  exit_a,
                                   A_reg,
                                   memlet=dace.Memlet("A_reg[0]", dynamic=True),
                                   src_conn="a_reg")
-            state.add_memlet_path(buffer_a_tasklet,
-                                  exit_a,
-                                  exit_k,
-                                  exit_n0,
-                                  A_pipe_out,
-                                  memlet=dace.Memlet("A_pipe[p + 1]",
-                                                     dynamic=True),
-                                  src_conn="a_out")
+            # state.add_memlet_path(buffer_a_tasklet,
+            #                       exit_a,
+            #                       exit_k,
+            #                       exit_n0,
+            #                       A_pipe_out,
+            #                       memlet=dace.Memlet("A_pipe[p + 1]",
+            #                                          dynamic=True),
+            #                       src_conn="a_out")
             # Compute and forward B
             compute_tasklet = state.add_tasklet(
                 "multiply_add", {"a_in", "b_in", "c_in"}, {"b_out", "c_out"},
@@ -1832,7 +1829,6 @@ if p < {P} - 1:
     b_out = b_in""".format(P=P))
 
             state.add_memlet_path(A_reg,
-                                  entry_m,
                                   compute_tasklet,
                                   dst_conn="a_in",
                                   memlet=dace.Memlet("A_reg[0]"))
@@ -1917,6 +1913,14 @@ if n1 <= p:
             state.add_memlet_path(C_pipe_out,
                                   compute_exit,
                                   memlet=dace.memlet.Memlet())
+            A_reg_init = state.add_access("A_reg")
+            state.add_memlet_path(entry_n0,
+                                  A_reg_init,
+                                  memlet=dace.memlet.Memlet())
+            state.add_memlet_path(A_reg_init,
+                                  entry_k,
+                                  memlet=dace.memlet.Memlet())
+
 
         # build the compute State
         vec_type = dace.vector(dace.float32, vec_width)
