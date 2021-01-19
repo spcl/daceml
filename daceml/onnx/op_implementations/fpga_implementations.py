@@ -1928,7 +1928,7 @@ if n1 <= p:
         new_sdfg.add_stream("A_pipe",
                             dace.float32,
                             transient=True,
-                            shape=(P + 1, ),
+                            shape=(P, ),
                             storage=dace.dtypes.StorageType.FPGA_Local,
                             buffer_size=str(P))
         new_sdfg.add_stream("B_pipe",
