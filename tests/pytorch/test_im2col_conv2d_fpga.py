@@ -28,11 +28,15 @@ donnx.ONNXConv.default_implementation = 'im2col'
 
 
 class Model(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size):
+    def __init__(self, in_channels, out_channels, kernel_size, input_to_constant):
         super(Model, self).__init__()
         self.conv = nn.Conv2d(in_channels=in_channels,
                               out_channels=out_channels,
                               kernel_size=kernel_size)
+        if input_to_constant:
+            #fix the weight otherwise everytime they are randomized
+            self.conv.weight.data.fill_(0.1)
+            self.conv.bias.data.fill_(1)
 
     def forward(self, x):
         return self.conv(x)
@@ -52,7 +56,7 @@ def evaluate(in_channels,
     :return: returns if the result is correct
     '''
     # create pytorch model
-    ptmodel = Model(in_channels, out_channels, kernel_size)
+    ptmodel = Model(in_channels, out_channels, kernel_size, input_to_constant)
 
     #create data
     x = torch.rand(data_shape)
@@ -68,16 +72,16 @@ def evaluate(in_channels,
         dace_model.sdfg.save('/tmp/out.sdfg')
 
     sdfg = dace_model.sdfg
-
     ###################################################
     # Transform for FPGA and Inline
     donnx.ONNXConv.default_implementation = "fpga"
     sdfg.apply_transformations([FPGATransformSDFG])
     sdfg.apply_transformations_repeated([InlineSDFG])
-
+    sdfg.save("/tmp/out.sdfg")
     ##################################
     # Vectorize input and output container
     vec_type = dace.vector(dace.float32, vec_width)
+    # utils.vectorize_array_and_memlet(sdfg, "fpga_ONNX_input", vec_type)
     utils.vectorize_array_and_memlet(sdfg, "fpga_ONNX_3", vec_type)
 
     ###################################
@@ -113,11 +117,9 @@ def run(input_to_constant):
     Execute the program, in hardware if required, with a fixed input size
     :return:
     '''
-    # Second Conv in Lenet
     evaluate(6, 16, 5, 8, (1000, 6, 12, 12), input_to_constant, False)
-    # First Conv in lenet
-    # evaluate(1, 6, 5, 8, (1000, 1, 28, 28), input_to_constant, False)
-
+    #second conv
+    #evaluate(1, 6, 5, 8, (1000, 1, 28, 28), input_to_constant, False)
 
 def test(input_to_constant):
     '''
