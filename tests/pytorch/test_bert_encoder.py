@@ -126,19 +126,26 @@ def test_bert_encoder(gpu, apply_strict):
     dace_model.sdfg.save('attn10.sdfg')
     print('attn10.sdfg')
 
+    from dace.transformation.dataflow.clean_connectors import UnifyInOutNestedSDFGConnectors
+
+    softmax_sdfg.apply_transformations_repeated([UnifyInOutNestedSDFGConnectors], validate_all=True, print_report=True)
+
+    dace_model.sdfg.save('attn11.sdfg')
+    print('attn11.sdfg')
+
     from dace.transformation.interstate.warp_all_reduce_detection import WarpAllReduceDetection
 
     softmax_sdfg.apply_transformations_repeated([WarpAllReduceDetection], validate_all=True, print_report=True)
 
-    dace_model.sdfg.save('attn11.sdfg')
-    print('attn11.sdfg')
+    dace_model.sdfg.save('attn12.sdfg')
+    print('attn12.sdfg')
 
     from dace.transformation.dataflow.clean_connectors import CleanNestedWrites
 
     softmax_sdfg.apply_transformations_repeated([CleanNestedWrites], validate_all=True, print_report=True)
 
-    dace_model.sdfg.save('attn12.sdfg')
-    print('attn12.sdfg')
+    dace_model.sdfg.save('attn13.sdfg')
+    print('attn13.sdfg')
 
     # # fuse maps in softmax
     #
