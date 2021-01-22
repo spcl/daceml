@@ -147,6 +147,21 @@ def test_bert_encoder(gpu, apply_strict):
     dace_model.sdfg.save('attn13.sdfg')
     print('attn13.sdfg')
 
+    from dace.transformation.interstate.remove_unused_states import RemoveUnusedStates
+
+    softmax_sdfg.apply_transformations_repeated([RemoveUnusedStates], validate_all=True, print_report=True)
+
+    dace_model.sdfg.save('attn14.sdfg')
+    print('attn14.sdfg')
+
+    from dace.transformation.dataflow import PruneConnectors
+
+    softmax_sdfg.apply_transformations_repeated(
+        [PruneConnectors, RemoveDanglingAccessNodes], validate_all=True, print_report=True)
+
+    dace_model.sdfg.save('attn15.sdfg')
+    print('attn15.sdfg')
+
     # # fuse maps in softmax
     #
     # from dace.transformation.pattern_matching import enumerate_matches
