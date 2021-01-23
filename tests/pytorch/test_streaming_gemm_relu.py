@@ -23,6 +23,7 @@ from daceml.util import utils
 from dace.transformation.dataflow import streaming_memory as sm
 from dace.transformation.dataflow import PruneConnectors
 from dace.transformation.interstate import InlineSDFG
+from daceml.transformation import InputToConstant
 
 
 
@@ -73,8 +74,7 @@ donnx.ONNXConv.default_implementation = 'im2col'
 
 ptmodel = Model()
 
-x = torch.rand(100, 256)
-# x = torch.ones(1, 1, 4, 4)
+x = torch.rand(1000, 256)
 
 dace_model = DaceModule(ptmodel)
 dace_output = dace_model(x)
@@ -100,15 +100,9 @@ donnx.ONNXMaxPool.default_implementation = "fpga"
 
 ##################################
 # Vectorize input and output container
-vec_width = 2
+vec_width = 8
 
 vec_type = dace.vector(dace.float32, vec_width)
-# utils.vectorize_array_and_memlet(sdfg, "ONNX_input", vec_type)
-
-# Vectorize output B of Gemm
-# This one is non vectorized: this because will be set as constant
-# otherwise we will have problems
-# utils.vectorize_array_and_memlet(sdfg, "ONNX_fc1DOTweight", vec_type)
 
 #vectorize output of Gemm
 utils.vectorize_array_and_memlet(sdfg, "ONNX_3", vec_type)
@@ -127,10 +121,14 @@ sdfg.save('/tmp/out_fpga.sdfg')
 sdfg.expand_library_nodes()
 sdfg.save('/tmp/out_fpga_expanded_pre.sdfg')
 sdfg.apply_transformations_repeated([InlineSDFG])
+sdfg.apply_transformations_repeated([InputToConstant],
+                                    print_report=True)
+
+
 sdfg.save('/tmp/out_fpga_expanded_pre.sdfg')
 
 # get the access node to transform, its predecessor and successor
-data , state= get_access_node_by_name(sdfg,"fpga_ONNX_3")
+data , state= get_access_node_by_name(sdfg, "fpga_ONNX_3")
 node_a = state.in_edges(data)[0].src
 node_b = state.out_edges(data)[0].dst
 
