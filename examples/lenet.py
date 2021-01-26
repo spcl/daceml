@@ -173,61 +173,20 @@ def eval_model(args, test_dataloader, model, device, single=False):
         sdfg.apply_transformations_repeated([InputToConstant], print_report=True)
 
         sdfg.save('/tmp/out_fpga.sdfg')
+
+
         #######################################################################
-        # Streaming
+        # Streaming Composition
         # TODO: factorize code
-
-        # Conv0 -> Relu1
-        data, state = get_access_node_by_name(sdfg, "fpga_ONNX_11")
-        node_a = state.in_edges(data)[0].src
-        node_b = state.out_edges(data)[0].dst
-
-        # Streaming transformation
-        sm.StreamingComposition.apply_to(state.parent, first=node_a, access=data, second=node_b, verify=False,
-                                         options={'storage': dace.StorageType.FPGA_Local})
-
-        # Relu1-> MaxPool2
-        data, state = get_access_node_by_name(sdfg, "fpga_ONNX_12")
-        node_a = state.in_edges(data)[0].src
-        node_b = state.out_edges(data)[0].dst
-
-        # Streaming transformation
-        sm.StreamingComposition.apply_to(state.parent, first=node_a, access=data, second=node_b, verify=False,
-                                         options={'storage': dace.StorageType.FPGA_Local})
-
-        #Conv3 -> Relu4
-        data, state = get_access_node_by_name(sdfg, "fpga_ONNX_14")
-        node_a = state.in_edges(data)[0].src
-        node_b = state.out_edges(data)[0].dst
-
-        # Streaming transformation
-        sm.StreamingComposition.apply_to(state.parent, first=node_a, access=data, second=node_b, verify=False,
-                                         options={'storage': dace.StorageType.FPGA_Local})
-
-        # Relu4 -> MaxPool5
-        data, state = get_access_node_by_name(sdfg, "fpga_ONNX_15")
-        node_a = state.in_edges(data)[0].src
-        node_b = state.out_edges(data)[0].dst
-
-        # Streaming transformation
-        sm.StreamingComposition.apply_to(state.parent, first=node_a, access=data, second=node_b, verify=False,
-                                         options={'storage': dace.StorageType.FPGA_Local})
-
-        # GEMM_8 -> Relu 9
-        data, state = get_access_node_by_name(sdfg, "fpga_ONNX_19")
-        node_a = state.in_edges(data)[0].src
-        node_b = state.out_edges(data)[0].dst
-        sm.StreamingComposition.apply_to(state.parent, first=node_a, access=data, second=node_b, verify=False,
-                                         options={'storage': dace.StorageType.FPGA_Local})
-
-        # GEMM 10-> Relu 11
-        data, state = get_access_node_by_name(sdfg, "fpga_ONNX_21")
-        node_a = state.in_edges(data)[0].src
-        node_b = state.out_edges(data)[0].dst
-        sm.StreamingComposition.apply_to(state.parent, first=node_a, access=data, second=node_b, verify=False,
-                                         options={'storage': dace.StorageType.FPGA_Local})
-
-
+        # This will apply it to
+        # - Conv0 -> Relu1
+        # - Relu1-> MaxPool2
+        # - Conv3 -> Relu4
+        # - Relu4 -> MaxPool5
+        # - GEMM_8 -> Relu 9
+        # - GEMM 10-> Relu 11
+        # - GEMM 12 -> Softmax13
+        sdfg.apply_transformations_repeated([InlineSDFG, sm.StreamingComposition], [{}, {"storage": dace.StorageType.FPGA_Local}])
         ######################################
         # Prune connectors
         sdfg.apply_transformations_repeated(PruneConnectors)
