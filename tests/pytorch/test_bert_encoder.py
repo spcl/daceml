@@ -162,6 +162,13 @@ def test_bert_encoder(gpu, apply_strict):
     dace_model.sdfg.save('attn15.sdfg')
     print('attn15.sdfg')
 
+    from dace.transformation.dataflow.constant_propagation import ConstantPropagation
+
+    softmax_sdfg.apply_transformations_repeated([ConstantPropagation], validate_all=True, print_report=True)
+
+    dace_model.sdfg.save('attn16.sdfg')
+    print('attn16.sdfg')
+
     # # fuse maps in softmax
     #
     # from dace.transformation.pattern_matching import enumerate_matches
