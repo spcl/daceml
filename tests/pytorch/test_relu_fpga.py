@@ -2,7 +2,7 @@
 
 # TODO: conform to pytest syntax if needed
 
-from dace.transformation.interstate import FPGATransformSDFG
+from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
 
 import torch
 import torch.nn as nn
@@ -14,6 +14,7 @@ import daceml.onnx as donnx
 from daceml.pytorch import DaceModule, dace_module
 import copy
 import dace
+import argparse
 from daceml.util import utils
 def get_library_node_by_name(sdfg, name):
 
@@ -64,57 +65,62 @@ class Model(nn.Module):
     def forward(self, x):
         return F.relu(x)
 
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("W", type=int, nargs="?", default=1, help="Vectorization width")
 
-import daceml.onnx as donnx
-donnx.default_implementation = "pure"
+    args = vars(parser.parse_args())
 
-ptmodel = Model()
+    vec_width = args["W"]
+    import daceml.onnx as donnx
+    donnx.default_implementation = "pure"
 
-data_shape = (10,4,32,32)
-# I don't get why does not takes a tuple as input
-x = torch.FloatTensor(10,4,32,32).random_(-5, 5)
+    ptmodel = Model()
 
-dace_model = DaceModule(ptmodel)
-dace_output = dace_model(x)
+    data_shape = (1000,4,32,32)
+    # x = torch.FloatTensor(1000,4,32,32).random_(-5, 5)
+    x =torch.rand(data_shape) - 0.5
+    dace_model = DaceModule(ptmodel)
+    dace_output = dace_model(x)
 
-torch_output = ptmodel(x)
-dace_model.sdfg.save('/tmp/out.sdfg')
-
-assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
-
-# Transform to FPGA
-
-sdfg = dace_model.sdfg
-start_sdfg = copy.deepcopy(sdfg)
-orig_sdfg = copy.deepcopy(sdfg)
-orig_sdfg.expand_library_nodes()
-orig_sdfg.save('/tmp/out_expanded.sdfg')
+    torch_output = ptmodel(x)
 
 
-##################################
-# Vectorize container
+    assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
 
-# find the input node
-vec_width = 4
-vec_type = dace.vector(dace.float32, vec_width)
-utils.vectorize_array_and_memlet(sdfg, "ONNX_x", vec_type)
-utils.vectorize_array_and_memlet(sdfg, "ONNX_1", vec_type)
+    # Transform to FPGA
 
-sdfg.apply_transformations([FPGATransformSDFG])
-sdfg.states()[0].location["is_FPGA_kernel"] = False
-sdfg.save('/tmp/out_fpga.sdfg')
+    sdfg = dace_model.sdfg
 
-donnx.ONNXRelu.default_implementation = "fpga"
+    ##################################
+    # Vectorize container
 
+    # find the input node
+    vec_type = dace.vector(dace.float32, vec_width)
+    utils.vectorize_array_and_memlet(sdfg, "ONNX_x", vec_type)
+    utils.vectorize_array_and_memlet(sdfg, "ONNX_1", vec_type)
 
+    ##########################################
+    sdfg.save('/tmp/out.sdfg')
+    start_sdfg = copy.deepcopy(sdfg)
+    # save expanded version
+    # orig_sdfg = copy.deepcopy(sdfg)
+    # orig_sdfg.expand_library_nodes()
+    # orig_sdfg.save('/tmp/out_expanded.sdfg')
 
-sdfg.expand_library_nodes()
-sdfg.save('/tmp/out_fpga_expanded.sdfg')
-dace_output_fpga = dace_model(torch.clone(x))
-dace_output_fpga=dace_output_fpga.reshape(data_shape)
+    sdfg.apply_transformations([FPGATransformSDFG])
+    sdfg.apply_transformations
+    # sdfg.states()[0].location["is_FPGA_kernel"] = False
 
-print(
-    "Difference: ",
-    np.linalg.norm(torch_output.detach().numpy() - dace_output_fpga) /
-    dace_output_fpga.size)
-assert np.allclose(torch_output.detach().numpy(), dace_output_fpga)
+    donnx.ONNXRelu.default_implementation = "fpga"
+    sdfg.expand_library_nodes()
+    sdfg.save('/tmp/out_fpga_expanded.sdfg')
+    sdfg.apply_transformations_repeated([InlineSDFG])
+    dace_output_fpga = dace_model(torch.clone(x))
+    dace_output_fpga=dace_output_fpga.reshape(data_shape)
+
+    print(
+        "Difference: ",
+        np.linalg.norm(torch_output.detach().numpy() - dace_output_fpga) /
+        dace_output_fpga.size)
+    assert np.allclose(torch_output.detach().numpy(), dace_output_fpga)
