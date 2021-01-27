@@ -16,6 +16,8 @@ import copy
 import dace
 import argparse
 from daceml.util import utils
+
+
 def get_library_node_by_name(sdfg, name):
 
     for node, _ in sdfg.all_nodes_recursive():
@@ -24,12 +26,6 @@ def get_library_node_by_name(sdfg, name):
                 return node
 
     raise Exception("LibNode {} not found".format(name))
-
-
-
-
-
-
 
 
 def get_node_predecessors(node, state):
@@ -52,10 +48,9 @@ def get_node_predecessors(node, state):
 
     return predecessors
 
+
 def get_data_node_by_name(node, state, sdfg, name):
     return sdfg.arrays[utils.in_edge_with_name(node, state, name)]
-
-
 
 
 class Model(nn.Module):
@@ -65,9 +60,14 @@ class Model(nn.Module):
     def forward(self, x):
         return F.relu(x)
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("W", type=int, nargs="?", default=1, help="Vectorization width")
+    parser.add_argument("W",
+                        type=int,
+                        nargs="?",
+                        default=1,
+                        help="Vectorization width")
 
     args = vars(parser.parse_args())
 
@@ -77,14 +77,13 @@ if __name__ == "__main__":
 
     ptmodel = Model()
 
-    data_shape = (1000,4,32,32)
+    data_shape = (10000, 4, 32, 32)
     # x = torch.FloatTensor(1000,4,32,32).random_(-5, 5)
-    x =torch.rand(data_shape) - 0.5
+    x = torch.rand(data_shape) - 0.5
     dace_model = DaceModule(ptmodel)
     dace_output = dace_model(x)
 
     torch_output = ptmodel(x)
-
 
     assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
 
@@ -117,7 +116,7 @@ if __name__ == "__main__":
     sdfg.save('/tmp/out_fpga_expanded.sdfg')
     sdfg.apply_transformations_repeated([InlineSDFG])
     dace_output_fpga = dace_model(torch.clone(x))
-    dace_output_fpga=dace_output_fpga.reshape(data_shape)
+    dace_output_fpga = dace_output_fpga.reshape(data_shape)
 
     print(
         "Difference: ",
