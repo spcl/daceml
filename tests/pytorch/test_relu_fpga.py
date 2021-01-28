@@ -101,14 +101,12 @@ if __name__ == "__main__":
 
     ##########################################
     sdfg.save('/tmp/out.sdfg')
-    start_sdfg = copy.deepcopy(sdfg)
     # save expanded version
     # orig_sdfg = copy.deepcopy(sdfg)
     # orig_sdfg.expand_library_nodes()
     # orig_sdfg.save('/tmp/out_expanded.sdfg')
 
     sdfg.apply_transformations([FPGATransformSDFG])
-    sdfg.apply_transformations
     # sdfg.states()[0].location["is_FPGA_kernel"] = False
 
     donnx.ONNXRelu.default_implementation = "fpga"

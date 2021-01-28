@@ -72,17 +72,19 @@ def evaluate(in_channels,
         dace_model.sdfg.save('/tmp/out.sdfg')
 
     sdfg = dace_model.sdfg
+    ##################################
+    # Vectorize input and output container
+    vec_type = dace.vector(dace.float32, vec_width)
+    # utils.vectorize_array_and_memlet(sdfg, "fpga_ONNX_input", vec_type)
+    utils.vectorize_array_and_memlet(sdfg, "ONNX_3", vec_type)
+    sdfg.save("/tmp/out.sdfg")
+
     ###################################################
     # Transform for FPGA and Inline
     donnx.ONNXConv.default_implementation = "fpga"
     sdfg.apply_transformations([FPGATransformSDFG])
     sdfg.apply_transformations_repeated([InlineSDFG])
-    sdfg.save("/tmp/out.sdfg")
-    ##################################
-    # Vectorize input and output container
-    vec_type = dace.vector(dace.float32, vec_width)
-    # utils.vectorize_array_and_memlet(sdfg, "fpga_ONNX_input", vec_type)
-    utils.vectorize_array_and_memlet(sdfg, "fpga_ONNX_3", vec_type)
+
 
     ###################################
     sdfg.expand_library_nodes()
@@ -117,9 +119,9 @@ def run(input_to_constant):
     Execute the program, in hardware if required, with a fixed input size
     :return:
     '''
-    evaluate(6, 16, 5, 8, (1000, 6, 12, 12), input_to_constant, False)
+    #evaluate(6, 16, 5, 4, (1000, 6, 12, 12), input_to_constant, False)
     #second conv
-    #evaluate(1, 6, 5, 8, (1000, 1, 28, 28), input_to_constant, False)
+    evaluate(1, 6, 5, 1, (1000, 1, 28, 28), input_to_constant, False)
 
 def test(input_to_constant):
     '''
@@ -208,58 +210,3 @@ if __name__ == "__main__":
         test(input_to_constant)
     else:
         run(input_to_constant)
-    #
-    # ptmodel = Model(6, 16, 5)
-    # data_shape = (1000, 6, 12, 12)
-    #
-    # x = torch.rand(data_shape)
-    #
-    # dace_model = DaceModule(ptmodel)
-    # dace_output = dace_model(x)
-    #
-    # torch_output = ptmodel(x)
-    # dace_model.sdfg.save('/tmp/out.sdfg')
-    #
-    # assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
-    #
-    # # Save sdfg to file
-    # sdfg = dace_model.sdfg
-    # orig_sdfg = copy.deepcopy(sdfg)
-    # orig_sdfg.expand_library_nodes()
-    # orig_sdfg.save('/tmp/out_expanded.sdfg')
-    #
-    # ###################################################
-    # # Transform for FPGA and Inline
-    # donnx.ONNXConv.default_implementation = "fpga"
-    # sdfg.apply_transformations([FPGATransformSDFG])
-    # sdfg.apply_transformations_repeated([InlineSDFG])
-    #
-    # ##################################
-    # # Vectorize input and output container
-    # vec_width = 8
-    # vec_type = dace.vector(dace.float32, vec_width)
-    # utils.vectorize_array_and_memlet(sdfg, "fpga_ONNX_3", vec_type)
-    #
-    # ###################################
-    # sdfg.save('/tmp/out_vectorized.sdfg')
-    # sdfg.expand_library_nodes()
-    # sdfg.apply_transformations_repeated([InlineSDFG])
-    #
-    # # ###################################################################
-    # # # Input to constant
-    # if input_to_constant:
-    #     sdfg.apply_transformations_repeated([InputToConstant],
-    #                                         print_report=True)
-    #
-    # dace_output_fpga = dace_model(torch.clone(x))
-    # dace_output_fpga = dace_output_fpga.reshape(dace_output.shape)
-    #
-    # print(
-    #     "Difference: ",
-    #     np.linalg.norm(torch_output.detach().numpy() - dace_output_fpga) /
-    #     dace_output_fpga.size)
-    #
-    # torch_output_numpy = torch_output.detach().numpy()
-    # diff = torch_output_numpy - dace_output_fpga
-    #
-    # assert np.allclose(torch_output.detach().numpy(), dace_output_fpga)

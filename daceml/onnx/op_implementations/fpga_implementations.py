@@ -1075,6 +1075,10 @@ class FPGAMaxPool2D(ONNXForward):
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
         X = in_desc_with_name(node, state, sdfg, "X")
+        Y = out_desc_with_name(node, state, sdfg, "Y")
+
+        if Y.veclen != 1: #NYI
+            return False
 
         if "Indices" in {e.src_conn for e in state.out_edges(node)}:
             return False
@@ -1157,7 +1161,7 @@ class FPGAMaxPool2D(ONNXForward):
                            storage=dace.StorageType.FPGA_Registers,
                            transient=True)
         new_sdfg.add_array('vec_data',
-                           shape=[vec_width],
+                           shape=[vec_width, ],
                            dtype=dace.float32,
                            transient=True,
                            storage=dace.dtypes.StorageType.FPGA_Registers)
@@ -1232,7 +1236,7 @@ class FPGAMaxPool2D(ONNXForward):
 
         # memlet: from input image to shift register
         to_shift_register_memlet = dace.Memlet(
-            "vec_data[w]", other_subset="{}".format(shift_register_size - 1))
+            "vec_data[{}]".format('0' if vec_width == 1 else 'w'), other_subset="{}".format(shift_register_size - 1))
         # explicitely set oob otherwise is not taken
         to_shift_register_memlet.allow_oob = True
         new_state.add_memlet_path(vec_data,
@@ -1244,15 +1248,7 @@ class FPGAMaxPool2D(ONNXForward):
         # To create the shift register outside the map, add an empty memlet path
         # shift_register_write = new_state.add_write("shift_register")
         shift_register_read = new_state.add_read("shift_register")
-        # new_state.add_memlet_path(shift_register_read,
-        #                           outer_me,
-        #                           # vect_me,
-        #                           inner_me,
-        #                           inner_mx,
-        #                           # vect_mx,
-        #                           outer_mx,
-        #                           shift_register_write,
-        #                           memlet=dace.Memlet())
+
         new_state.add_memlet_path(shift_register_read,
                                   outer_me,
                                   memlet=dace.Memlet())
@@ -1285,8 +1281,10 @@ class FPGAMaxPool2D(ONNXForward):
         #empty memlet
         new_state.add_memlet_path(write_max_res, vect_mx, memlet=dace.Memlet())
         #Attention, the storing location must take into account that the input was vectorized
-        y_memlet = dace.Memlet("Y[b,c, in_y//{}, (in_x*{}+w)//{}]".format(
-            filter_height, vec_width, filter_width))
+        if vec_width !=1:
+            y_memlet = dace.Memlet(f"Y[b,c, in_y//{filter_height}, (in_x*{vec_width}+w)//{filter_width}]")
+        else:
+            y_memlet = dace.Memlet(f"Y[b,c, in_y//{filter_height}, in_x//{filter_width}]")
         #dynamic memlet (to access only when needed) from compute tasklet to out image
         # Attention: use propagate=False otherwise it does not validate
         new_state.add_memlet_path(compute_tasklet,

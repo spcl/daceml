@@ -2,17 +2,19 @@
 
 # TODO: conform to pytest syntax if needed
 
-from dace.transformation.interstate import FPGATransformSDFG
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+import dace
 import numpy as np
+from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
+from daceml.util import utils
 
 import daceml.onnx as donnx
 from daceml.pytorch import DaceModule, dace_module
 import copy
+import argparse
 
 
 class Model(nn.Module):
@@ -20,41 +22,71 @@ class Model(nn.Module):
         super(Model, self).__init__()
 
     def forward(self, x):
-        return F.max_pool2d(x, 4)
+        return F.max_pool2d(x, 2)
 
 
-import daceml.onnx as donnx
-donnx.default_implementation = "pure"
 
-ptmodel = Model()
-x = torch.rand(2, 6, 32, 32, dtype=torch.float32)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("W",
+                        type=int,
+                        nargs="?",
+                        default=1,
+                        help="Vectorization width")
 
-dace_model = DaceModule(ptmodel)
-dace_output = dace_model(x)
+    args = vars(parser.parse_args())
 
-torch_output = ptmodel(x)
-dace_model.sdfg.save('/tmp/out.sdfg')
+    vec_width = args["W"]
+    import daceml.onnx as donnx
+    donnx.default_implementation = "pure"
 
-assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
+    ptmodel = Model()
+    data_shape = (1000, 6, 32, 32)
+    x = torch.rand(data_shape)
 
-# Transform to FPGA
 
-sdfg = dace_model.sdfg
-orig_sdfg = copy.deepcopy(sdfg)
-orig_sdfg.expand_library_nodes()
-orig_sdfg.save('/tmp/out_expanded.sdfg')
+    dace_model = DaceModule(ptmodel)
+    dace_output = dace_model(x)
 
-donnx.ONNXMaxPool.default_implementation = "fpga"
-sdfg.apply_transformations([FPGATransformSDFG])
-sdfg.states()[0].location["is_FPGA_kernel"] = False
-sdfg.save('/tmp/out_fpga.sdfg')
+    torch_output = ptmodel(x)
 
-sdfg.expand_library_nodes()
-sdfg.save('/tmp/out_fpga_expanded.sdfg')
-dace_output_fpga = dace_model(torch.clone(x))
 
-print(
-    "Difference: ",
-    np.linalg.norm(torch_output.detach().numpy() - dace_output_fpga) /
-    dace_output_fpga.size)
-assert np.allclose(torch_output.detach().numpy(), dace_output_fpga)
+    assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
+
+
+    # Transform to FPGA
+
+    sdfg = dace_model.sdfg
+    # Transform to FPGA
+
+    sdfg = dace_model.sdfg
+
+    ##################################
+    # Vectorize container
+
+    # find the input node, for the moment being maxpool writes only to non vectorized containers
+    vec_type = dace.vector(dace.float32, vec_width)
+    utils.vectorize_array_and_memlet(sdfg, "ONNX_0", vec_type)
+
+    ##########################################
+    dace_model.sdfg.save('/tmp/out.sdfg')
+    # orig_sdfg = copy.deepcopy(sdfg)
+    # orig_sdfg.expand_library_nodes()
+    # orig_sdfg.save('/tmp/out_expanded.sdfg')
+
+    donnx.ONNXMaxPool.default_implementation = "fpga"
+    sdfg.save('/tmp/out_fpga.sdfg')
+
+    sdfg.apply_transformations([FPGATransformSDFG])
+    # sdfg.states()[0].location["is_FPGA_kernel"] = False
+    sdfg.expand_library_nodes()
+    sdfg.apply_transformations_repeated([InlineSDFG])
+
+    sdfg.save('/tmp/out_fpga_expanded.sdfg')
+    dace_output_fpga = dace_model(torch.clone(x))
+
+    print(
+        "Difference: ",
+        np.linalg.norm(torch_output.detach().numpy() - dace_output_fpga) /
+        dace_output_fpga.size)
+    assert np.allclose(torch_output.detach().numpy(), dace_output_fpga)
