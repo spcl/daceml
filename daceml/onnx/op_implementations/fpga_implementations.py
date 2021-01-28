@@ -1179,7 +1179,7 @@ class FPGAMaxPool2D(ONNXForward):
 
         # if vec_width >1 this will deal with it
         vect_me, vect_mx = new_state.add_map('vect_pool_map',
-                                             dict(w="0:{}".format(vec_width)))
+                                             dict(w="0:{}".format(vec_width)), unroll=True)
 
         # the inner map computes the pooling
         inner_me, inner_mx = new_state.add_map(
