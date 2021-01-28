@@ -4,6 +4,7 @@
 # TODO: render this a real test
 
 from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
+from daceml.transformation import InputToConstant
 
 
 import torch
@@ -36,9 +37,13 @@ def get_access_node_by_name(sdfg, name):
 
 
 class Model(nn.Module):
-    def __init__(self):
+    def __init__(self, input_to_constant=False):
         super(Model, self).__init__()
         self.conv1 = nn.Conv2d(1, 6, 5)
+        if input_to_constant:
+            #fix the weight otherwise everytime they are randomized
+            self.conv1.weight.data.fill_(0.1)
+            self.conv1.bias.data.fill_(1)
 
     def forward(self, x):
         x = F.max_pool2d(F.relu(self.conv1(x)), 2)
@@ -52,18 +57,22 @@ if __name__ == "__main__":
                         nargs="?",
                         default=1,
                         help="Vectorization width")
+    parser.add_argument("-input_to_constant",
+                        action="store_true",
+                        default=False,
+                        help="Apply InputToConstant")
 
     args = vars(parser.parse_args())
     vec_width = args["W"]
-
+    input_to_constant = args["input_to_constant"]
 
     import daceml.onnx as donnx
     donnx.default_implementation = "pure"
     donnx.ONNXConv.default_implementation = 'im2col'
 
-    ptmodel = Model()
+    ptmodel = Model(input_to_constant)
 
-    data_shape = (10, 1, 28, 28)
+    data_shape = (1000, 1, 28, 28)
     x = torch.rand(data_shape)
 
 
@@ -104,6 +113,11 @@ if __name__ == "__main__":
     sdfg.expand_library_nodes()
     sdfg.apply_transformations_repeated([InlineSDFG])
     sdfg.save('/tmp/out_fpga_expanded.sdfg')
+
+    if input_to_constant:
+        sdfg.apply_transformations_repeated([InputToConstant],
+                                        print_report=True)
+
     dace_output_fpga = dace_model(torch.clone(x))
 
     #reshape if vec_width is different than 1
