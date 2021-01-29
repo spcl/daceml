@@ -36,7 +36,7 @@ class Model(nn.Module):
         # x = self.fc2(x)
         return self.fc1(x)
 
-def test(input_to_constant):
+def test(vec_width, input_to_constant):
 
     import daceml.onnx as donnx
     donnx.default_implementation = "pure"
@@ -48,30 +48,22 @@ def test(input_to_constant):
     dace_output = dace_model(x)
 
     torch_output = ptmodel(x)
-    dace_model.sdfg.save('/tmp/out.sdfg')
 
     assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
 
-    # Transform to FPGA
 
     sdfg = dace_model.sdfg
-    orig_sdfg = copy.deepcopy(sdfg)
-    orig_sdfg.expand_library_nodes()
-    orig_sdfg.save('/tmp/out_expanded.sdfg')
 
+    ##################################
+    # Vectorize output container (in Lenet the input is not vectorized)
+    vec_type = dace.vector(dace.float32, vec_width)
+    utils.vectorize_array_and_memlet(sdfg, "ONNX_7", vec_type)
+    sdfg.save('/tmp/out.sdfg')
 
     ###################################################
     # Transform for FPGA and Inline
     donnx.ONNXGemm.default_implementation = "fpga"
     sdfg.apply_transformations([FPGATransformSDFG])
-    sdfg.apply_transformations_repeated([InlineSDFG])
-
-    ##################################
-    # Vectorize output container (in Lenet the input is not vectorized)
-    vec_type = dace.vector(dace.float32, 8)
-    utils.vectorize_array_and_memlet(sdfg, "fpga_ONNX_7", vec_type)
-
-    ###################################
     sdfg.expand_library_nodes()
     sdfg.apply_transformations_repeated([InlineSDFG])
 
@@ -86,23 +78,30 @@ def test(input_to_constant):
     sdfg.save('/tmp/out_fpga.sdfg')
 
     dace_output_fpga = dace_model(torch.clone(x))
+    # reshape if vec_width is different than 1
+    dace_output_fpga = dace_output_fpga.reshape(dace_output.shape)
 
     diff =  np.linalg.norm(torch_output.detach().numpy() - dace_output_fpga) /dace_output_fpga.size
     print("Difference: ", diff)
 
     assert(diff < 1e-6)
 
-    # can not use np all close here
-    #assert np.allclose(torch_output.detach().numpy(), dace_output_fpga)
+
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("W",
+                        type=int,
+                        nargs="?",
+                        default=1,
+                        help="Vectorization width")
     parser.add_argument("-input_to_constant",
                         action="store_true",
                         default=False,
                         help="Apply InputToConstant")
 
     args = vars(parser.parse_args())
+    vec_width = args["W"]
     input_to_constant = args["input_to_constant"]
-    test(input_to_constant)
+    test(vec_width, input_to_constant)
