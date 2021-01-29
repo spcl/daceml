@@ -905,6 +905,7 @@ else:
                             vec_type,
                             transient=True,
                             shape=(P + 1, ),
+                            buffer_size=2,
                             storage=dace.dtypes.StorageType.FPGA_Local)
         new_sdfg.add_stream("Y_pipe",
                             vec_type,
