@@ -39,14 +39,17 @@ def get_access_node_by_name(sdfg, name):
 class Model(nn.Module):
     def __init__(self, input_to_constant=False):
         super(Model, self).__init__()
-        self.conv1 = nn.Conv2d(1, 6, 5)
+        #first conv
+        # self.conv = nn.Conv2d(1, 6, 5)
+        #second conv
+        self.conv = nn.Conv2d(6, 16, 5)
         if input_to_constant:
             #fix the weight otherwise everytime they are randomized
-            self.conv1.weight.data.fill_(0.1)
-            self.conv1.bias.data.fill_(1)
+            self.conv.weight.data.fill_(0.1)
+            self.conv.bias.data.fill_(1)
 
     def forward(self, x):
-        x = F.max_pool2d(F.relu(self.conv1(x)), 2)
+        x = F.max_pool2d(F.relu(self.conv(x)), 2)
         return x
 
 if __name__ == "__main__":
@@ -71,8 +74,10 @@ if __name__ == "__main__":
     donnx.ONNXConv.default_implementation = 'im2col'
 
     ptmodel = Model(input_to_constant)
-
-    data_shape = (1000, 1, 28, 28)
+    #first conv
+    # data_shape = (1000, 1, 28, 28)
+    #second conv
+    data_shape = (1000, 6, 12, 12)
     x = torch.rand(data_shape)
 
 
