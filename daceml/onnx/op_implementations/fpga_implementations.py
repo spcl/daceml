@@ -493,7 +493,6 @@ class FPGAIm2ColConv(ONNXForward):
 
         # TODO: accept parametric?
 
-
         #if Y.veclen !=1 else math.gcd(16, output_size_x)
         #N = num_filters
         K = num_channels * filter_hx * filter_hy
@@ -501,6 +500,7 @@ class FPGAIm2ColConv(ONNXForward):
         P = num_filters  # Num PEs  #TODO parametric
         #safe delay
         L = max(11 - M, 0)
+
         def make_read_W(state):
             # this will read the weights, organized as a matrix of size
             # num_filters x (num_channels * filter_hx * filter_hy)
@@ -517,10 +517,16 @@ class FPGAIm2ColConv(ONNXForward):
                     "n0": "0:{}/{}".format(num_filters, P),
                     "cin": "0:{}".format(num_channels),
                     "hx": "0:{}".format(filter_hx),
-                    "hy": "0:{}".format(filter_hy),
-                    "n1": "0:{}".format(P)
+                    "hy": "0:{}".format(filter_hy)
                 },
                 schedule=dace.ScheduleType.FPGA_Device)
+
+            # use a different map, and unroll it if necessary
+            unroll_inner_map = P > (M + L) and P <= 16
+            send_map_entry, send_map_exit = state.add_map(
+                "send_weights", {"n1": "0:{}".format(P)},
+                schedule=dace.ScheduleType.FPGA_Device,
+                unroll=unroll_inner_map)
 
             mem = state.add_read("W")
             pipe = state.add_write("W_pipe")
@@ -531,14 +537,17 @@ class FPGAIm2ColConv(ONNXForward):
             state.add_memlet_path(
                 mem,
                 entry,
+                send_map_entry,
                 tasklet,
                 dst_conn="from_memory",
                 memlet=dace.Memlet("W[n0 * {} + n1, cin, hx, hy]".format(P)))
             state.add_memlet_path(tasklet,
+                                  send_map_exit,
                                   exit,
                                   pipe,
                                   src_conn="to_kernel",
-                                  memlet=dace.Memlet("W_pipe[{} -n1 -1]".format(P)))
+                                  memlet=dace.Memlet(
+                                      "W_pipe[{} -n1 -1]".format(P)))
 
         def make_read_im2col(state, sdfg, vec_width=1):
 
@@ -671,11 +680,9 @@ class FPGAIm2ColConv(ONNXForward):
                                   src_conn="out_con",
                                   memlet=dace.Memlet("Y[b, n, x, y]"))
 
-
         def make_compute(sdfg, state, vec_width=1):
             vec_type = dace.vector(dace.float32, vec_width)
             W_pipe_in = state.add_read("W_pipe")
-            W_pipe_out = state.add_write("W_pipe")
             im2col_pipe_in = state.add_read("im2col_pipe")
             im2col_pipe_out = state.add_write("im2col_pipe")
             Y_pipe_in = state.add_read("Y_pipe")
@@ -699,18 +706,19 @@ class FPGAIm2ColConv(ONNXForward):
                 },
                 drain_size=P * M,
                 drain_overlap=False,
-                additional_iterators={'m_drain': 0, 'k_drain': 0},
+                additional_iterators={
+                    'm_drain': 0,
+                    'k_drain': 0
+                },
                 schedule=dace.ScheduleType.FPGA_Device)
-
 
             # Instantiate buffers
             sdfg.add_scalar("W_reg",
                             dtype=dace.float32,
                             transient=True,
                             storage=dace.dtypes.StorageType.FPGA_Registers)
-            W_reg_init= state.add_access("W_reg")
+            W_reg_init = state.add_access("W_reg")
             W_reg = state.add_access("W_reg")
-
 
             # For C result we are going to use vectorized data type
             sdfg.add_array(
@@ -729,7 +737,6 @@ class FPGAIm2ColConv(ONNXForward):
                            transient=True,
                            storage=dace.dtypes.StorageType.FPGA_Local)
             im2col_reg = state.add_access("im2col_reg")
-
 
             # every PE: reads input data, buffer the data assigned to it, forwards the data
             buffer_w_tasklet = state.add_tasklet(
@@ -753,7 +760,8 @@ if m == 0 and not {}:
             buffer_im2col_tasklet = state.add_tasklet(
                 "buffer_im2col", {"im2col_in"}, {"im2col_reg"}, """\
 if  m>={} and not {}:
-    im2col_reg = im2col_in""".format(L, entry_pipeline.pipeline.drain_condition()))
+    im2col_reg = im2col_in""".format(
+                    L, entry_pipeline.pipeline.drain_condition()))
 
             state.add_memlet_path(im2col_pipe_in,
                                   entry_pipeline,
@@ -767,12 +775,11 @@ if  m>={} and not {}:
                                                      dynamic=True),
                                   src_conn="im2col_reg")
 
-            
-
             # COMPUTE AND DRAIN
             # Compute and forward B: this is done if we are not in the init phase of the pipeline
             compute_tasklet = state.add_tasklet(
-                "compute_and_drain", {"w_in", "im2col_in", "y_in", "forward_in" },
+                "compute_and_drain",
+                {"w_in", "im2col_in", "y_in", "forward_in"},
                 {"im2col_out", "y_out", "y_pipe_out"}, f"""\
 if m>= {L} and not {entry_pipeline.pipeline.drain_condition()}:
     y_prev = 0 if k == 0 else y_in     
@@ -810,7 +817,6 @@ else:
         m_drain = m_drain + 1
 """)
 
-
             state.add_memlet_path(W_reg,
                                   compute_tasklet,
                                   dst_conn="w_in",
@@ -830,12 +836,17 @@ else:
                                   entry_pipeline,
                                   compute_tasklet,
                                   dst_conn="y_in",
-                                  memlet=dace.Memlet("Y_buffer[m-{}]".format(L), allow_oob=True))
+                                  memlet=dace.Memlet(
+                                      "Y_buffer[m-{}]".format(L),
+                                      allow_oob=True))
             state.add_memlet_path(compute_tasklet,
                                   exit_pipeline,
                                   Y_buffer_out,
                                   src_conn="y_out",
-                                  memlet=dace.Memlet("Y_buffer[m-{}]".format(L), allow_oob=True, dynamic=True))
+                                  memlet=dace.Memlet(
+                                      "Y_buffer[m-{}]".format(L),
+                                      allow_oob=True,
+                                      dynamic=True))
 
             state.add_memlet_path(Y_pipe_in,
                                   entry_pipeline,
@@ -866,9 +877,9 @@ else:
             state.add_memlet_path(compute_entry,
                                   Y_pipe_in,
                                   memlet=dace.memlet.Memlet())
-            state.add_memlet_path(W_pipe_out,
-                                  compute_exit,
-                                  memlet=dace.memlet.Memlet())
+            # state.add_memlet_path(W_pipe_out,
+            #                       compute_exit,
+            #                       memlet=dace.memlet.Memlet())
             state.add_memlet_path(im2col_pipe_out,
                                   compute_exit,
                                   memlet=dace.memlet.Memlet())
@@ -1078,7 +1089,7 @@ class FPGAMaxPool2D(ONNXForward):
         X = in_desc_with_name(node, state, sdfg, "X")
         Y = out_desc_with_name(node, state, sdfg, "Y")
 
-        if Y.veclen != 1: #NYI
+        if Y.veclen != 1:  #NYI
             return False
 
         if "Indices" in {e.src_conn for e in state.out_edges(node)}:
@@ -1162,7 +1173,9 @@ class FPGAMaxPool2D(ONNXForward):
                            storage=dace.StorageType.FPGA_Registers,
                            transient=True)
         new_sdfg.add_array('vec_data',
-                           shape=[vec_width, ],
+                           shape=[
+                               vec_width,
+                           ],
                            dtype=dace.float32,
                            transient=True,
                            storage=dace.dtypes.StorageType.FPGA_Registers)
@@ -1180,7 +1193,8 @@ class FPGAMaxPool2D(ONNXForward):
 
         # if vec_width >1 this will deal with it
         vect_me, vect_mx = new_state.add_map('vect_pool_map',
-                                             dict(w="0:{}".format(vec_width)), unroll=True)
+                                             dict(w="0:{}".format(vec_width)),
+                                             unroll=True)
 
         # the inner map computes the pooling
         inner_me, inner_mx = new_state.add_map(
@@ -1237,7 +1251,8 @@ class FPGAMaxPool2D(ONNXForward):
 
         # memlet: from input image to shift register
         to_shift_register_memlet = dace.Memlet(
-            "vec_data[{}]".format('0' if vec_width == 1 else 'w'), other_subset="{}".format(shift_register_size - 1))
+            "vec_data[{}]".format('0' if vec_width == 1 else 'w'),
+            other_subset="{}".format(shift_register_size - 1))
         # explicitely set oob otherwise is not taken
         to_shift_register_memlet.allow_oob = True
         new_state.add_memlet_path(vec_data,
@@ -1282,10 +1297,13 @@ class FPGAMaxPool2D(ONNXForward):
         #empty memlet
         new_state.add_memlet_path(write_max_res, vect_mx, memlet=dace.Memlet())
         #Attention, the storing location must take into account that the input was vectorized
-        if vec_width !=1:
-            y_memlet = dace.Memlet(f"Y[b,c, in_y//{filter_height}, (in_x*{vec_width}+w)//{filter_width}]")
+        if vec_width != 1:
+            y_memlet = dace.Memlet(
+                f"Y[b,c, in_y//{filter_height}, (in_x*{vec_width}+w)//{filter_width}]"
+            )
         else:
-            y_memlet = dace.Memlet(f"Y[b,c, in_y//{filter_height}, in_x//{filter_width}]")
+            y_memlet = dace.Memlet(
+                f"Y[b,c, in_y//{filter_height}, in_x//{filter_width}]")
         #dynamic memlet (to access only when needed) from compute tasklet to out image
         # Attention: use propagate=False otherwise it does not validate
         new_state.add_memlet_path(compute_tasklet,
@@ -1300,6 +1318,7 @@ class FPGAMaxPool2D(ONNXForward):
         new_sdfg.fill_scope_connectors()
         new_sdfg.save("/tmp/maxpool.sdfg")
         return new_sdfg
+
 
 @autoregister_params(op="Gemm", name="fpga")
 class FPGAGemm(ONNXForward):
@@ -1379,7 +1398,8 @@ class FPGAGemm(ONNXForward):
                                   exit,
                                   pipe,
                                   src_conn="to_kernel",
-                                  memlet=dace.Memlet("A_pipe[{} - n1 - 1]".format(P)))
+                                  memlet=dace.Memlet(
+                                      "A_pipe[{} - n1 - 1]".format(P)))
 
         def make_read_B(state, sdfg, vec_width=1):
 
@@ -1642,7 +1662,9 @@ class FPGAGemm(ONNXForward):
 
             # every PE: reads input data, buffer the data assigned to it, forwards the data
             buffer_a_tasklet = state.add_tasklet(
-                "buffer_a", {"a_in"}, {"a_reg", }, """\
+                "buffer_a", {"a_in"}, {
+                    "a_reg",
+                }, """\
 if m == 0:
     a_reg = a_in""")
             state.add_memlet_path(A_pipe_in,
@@ -1766,7 +1788,6 @@ if n1 <= p:
             state.add_memlet_path(A_reg_init,
                                   entry_k,
                                   memlet=dace.memlet.Memlet())
-
 
         # build the compute State
         vec_type = dace.vector(dace.float32, vec_width)
