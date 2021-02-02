@@ -23,18 +23,18 @@ import argparse
 class Model(nn.Module):
     def __init__(self, input_to_constant):
         super(Model, self).__init__()
-        self.fc1 = nn.Linear(256, 120)
-        self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, 10)
+        # self.fc = nn.Linear(256, 120)
+        self.fc = nn.Linear(120, 84)
+        # self.fc = nn.Linear(84, 10)
         if input_to_constant:
             #otherwise everytime they are randomized
-            self.fc1.weight.data.fill_(0.1)
-            self.fc1.bias.data.fill_(1)
+            self.fc.weight.data.fill_(0.1)
+            self.fc.bias.data.fill_(1)
 
     def forward(self, x):
         # x = self.fc1(x)
         # x = self.fc2(x)
-        return self.fc1(x)
+        return self.fc(x)
 
 def test(vec_width, input_to_constant):
 
@@ -42,7 +42,8 @@ def test(vec_width, input_to_constant):
     donnx.default_implementation = "pure"
 
     ptmodel = Model(input_to_constant)
-    x = torch.rand(1000, 256, dtype=torch.float32)
+    # x = torch.rand(1000, 256, dtype=torch.float32)
+    x = torch.rand(10000, 120, dtype=torch.float32)
 
     dace_model = DaceModule(ptmodel)
     dace_output = dace_model(x)
@@ -57,7 +58,8 @@ def test(vec_width, input_to_constant):
     ##################################
     # Vectorize output container (in Lenet the input is not vectorized)
     vec_type = dace.vector(dace.float32, vec_width)
-    utils.vectorize_array_and_memlet(sdfg, "ONNX_7", vec_type)
+    output_data_name = sdfg.states()[0].sink_nodes()[0].data
+    utils.vectorize_array_and_memlet(sdfg, output_data_name, vec_type)
     sdfg.save('/tmp/out.sdfg')
 
     ###################################################
