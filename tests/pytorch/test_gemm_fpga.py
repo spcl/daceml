@@ -23,8 +23,8 @@ import argparse
 class Model(nn.Module):
     def __init__(self, input_to_constant):
         super(Model, self).__init__()
-        # self.fc = nn.Linear(256, 120)
-        self.fc = nn.Linear(120, 84)
+        self.fc = nn.Linear(256, 120)
+        # self.fc = nn.Linear(120, 84)
         # self.fc = nn.Linear(84, 10)
         if input_to_constant:
             #otherwise everytime they are randomized
@@ -42,8 +42,9 @@ def test(vec_width, input_to_constant):
     donnx.default_implementation = "pure"
 
     ptmodel = Model(input_to_constant)
-    # x = torch.rand(1000, 256, dtype=torch.float32)
-    x = torch.rand(10000, 120, dtype=torch.float32)
+    x = torch.rand(1000, 256, dtype=torch.float32)
+    # x = torch.rand(10000, 120, dtype=torch.float32)
+    # x = torch.rand(10000, 84, dtype=torch.float32)
 
     dace_model = DaceModule(ptmodel)
     dace_output = dace_model(x)
