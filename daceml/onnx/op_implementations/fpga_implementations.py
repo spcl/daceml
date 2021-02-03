@@ -1366,10 +1366,7 @@ class FPGAGemm(ONNXForward):
         #Tile size, for the moment being the same as M_Y, the output size
         T = M_Y
         #safe delay
-        L = max(11 - M_Y, 0)
-
-        #temporary, in case unroll read _A
-        #assert(P < M_Y + L)
+        L = max(10 - M_Y, 0)
 
 
         ####################################################
@@ -1655,7 +1652,13 @@ class FPGAGemm(ONNXForward):
             A_reg_init = state.add_access("A_reg")
 
             # For C result we are going to use vectorized data type
-            sdfg.add_array("C_buffer", [M_Y],
+
+            # Note: for some of the Sacred Mysteries of Intel OpenCL Compiler (TM), if this buffer is smaller
+            # than 24 floats, the II of the pipeline will be 5. Therefore we check this (with 32 to be
+            # more compliant with standard vector size) and in case we enlarge it
+
+            buffer_size = max(M_Y * vec_width, 32) /vec_width
+            sdfg.add_array("C_buffer", [buffer_size],
                            dtype=vec_type,
                            transient=True,
                            storage=dace.dtypes.StorageType.FPGA_Local)
@@ -1860,6 +1863,7 @@ else:
                             vec_type,
                             transient=True,
                             shape=(P + 1, ),
+                            buffer_size=2,
                             storage=dace.dtypes.StorageType.FPGA_Local)
         new_sdfg.add_stream("C_pipe",
                             vec_type,
