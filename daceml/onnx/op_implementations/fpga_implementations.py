@@ -1050,7 +1050,7 @@ class FPGARelu(ONNXForward):
             #TODO: right now this handle the case Y.veclen==1
             assert (Y.veclen == 1)
             write_out_me, write_out_mx = new_state.add_map(
-                'relu_write_out_map', dict(i="0:{}".format(vec_width)))
+                'relu_write_out_map', dict(i="0:{}".format(vec_width)), unroll=True)
             tasklet = new_state.add_tasklet('read_tasklet', ['_in'], ['_out'],
                                             code="_out = _in")
             # write out
