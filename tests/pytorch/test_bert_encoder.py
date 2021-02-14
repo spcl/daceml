@@ -10,6 +10,7 @@ from dace.sdfg import state as dace_state
 from daceml.pytorch import DaceModule
 from daceml.transformation import ConstantFolding
 from dace import dtypes
+from dace.sdfg import utils as sdutil
 
 
 from dace.sdfg import nodes as sdfg_nodes
@@ -133,6 +134,18 @@ def test_bert_encoder(gpu, apply_strict):
     dace_model.sdfg.save('attn11.sdfg')
     print('attn11.sdfg')
 
+    from dace.transformation.dataflow.strip_mining import StripMining
+
+    pattern = sdutil.node_path_graph(dace.nodes.MapEntry(dace.nodes.Map('_', [], [])))
+
+    for subgraph in enumerate_matches(softmax_sdfg, pattern):
+        print("Match found in state", subgraph.graph.label, ". Nodes:", subgraph.nodes())
+
+        SubgraphFusion.apply_to(subgraph.graph.parent, subgraph)
+
+    dace_model.sdfg.save('attn11_1.sdfg')
+    print('attn11_1.sdfg')
+
     from dace.transformation.interstate.warp_all_reduce_detection import WarpAllReduceDetection
 
     softmax_sdfg.apply_transformations_repeated([WarpAllReduceDetection], validate_all=True, print_report=True)
@@ -168,6 +181,19 @@ def test_bert_encoder(gpu, apply_strict):
 
     dace_model.sdfg.save('attn16.sdfg')
     print('attn16.sdfg')
+
+    from dace.transformation.interstate.gpu_transform_sdfg import GPUTransformSDFG
+
+    # it fails with strict_transform enabled for some reason
+    softmax_sdfg.apply_transformations([GPUTransformSDFG], validate_all=True, print_report=True, options={'strict_transform': False})
+
+    dace_model.sdfg.save('attn17.sdfg')
+    print('attn17.sdfg')
+
+    softmax_sdfg.expand_library_nodes()
+
+    dace_model.sdfg.save('attn_last.sdfg')
+    print('attn_last.sdfg')
 
     # # fuse maps in softmax
     #

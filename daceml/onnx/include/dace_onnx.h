@@ -3,7 +3,7 @@
 #include <vector>
 
 // From https://stackoverflow.com/a/34571089
-std::string base64_decode(const std::string &in) {
+inline std::string base64_decode(const std::string &in) {
     std::string out;
 
     std::vector<int> T(256,-1);
