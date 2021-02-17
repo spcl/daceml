@@ -49,7 +49,7 @@ def _gen_attr_init_code(kernel_context: str, attr: ONNXAttribute,
         assert_type(value, _ATTR_TYPE_TO_PYTHON_TYPE[attr.type])
 
         init_code += """
-        __ort_check_status(__ort_api->ExecutableKernelContext_AddAttribute{type_str}({kernel_context}, "{name}", {value}));
+        __ort_check_status(__state->ort_api, __state->ort_api->ExecutableKernelContext_AddAttribute{type_str}({kernel_context}, "{name}", {value}));
         """.format(type_str=attr.type.name,
                    kernel_context=kernel_context,
                    name=attr.name,
@@ -80,7 +80,7 @@ def _gen_attr_init_code(kernel_context: str, attr: ONNXAttribute,
                 i=i, value=value_to_str(values_elem))
 
         init_code += """
-        __ort_check_status(__ort_api->ExecutableKernelContext_AddAttribute{type_str}({kernel_context}, "{name}", values, {length}));
+        __ort_check_status(__state->ort_api, __state->ort_api->ExecutableKernelContext_AddAttribute{type_str}({kernel_context}, "{name}", values, {length}));
         """.format(type_str=attr.type.name,
                    kernel_context=kernel_context,
                    name=attr.name,
@@ -126,7 +126,7 @@ def _gen_attr_init_code(kernel_context: str, attr: ONNXAttribute,
             init_code += "p_data[{}] = {};\n".format(i, data_val)
 
         init_code += """
-        __ort_check_status(__ort_api->ExecutableKernelContext_AddAttributeTensor({kernel_context}, "{name}", static_cast<void*>(p_data), {data_length}, shape, {shape_length}, element_type));
+        __ort_check_status(__state->ort_api, __state->ort_api->ExecutableKernelContext_AddAttributeTensor({kernel_context}, "{name}", static_cast<void*>(p_data), {data_length}, shape, {shape_length}, element_type));
         """.format(kernel_context=kernel_context,
                    name=attr.name,
                    data_length=value.size,
@@ -269,11 +269,11 @@ def emit_setup_code_for_ortvalue(parameter_name: str, edge_connector_name: str,
         copy_to_array = False
 
     if storage in [dtypes.StorageType.Default, dtypes.StorageType.CPU_Heap]:
-        mem_info = "__ort_cpu_mem_info"
+        mem_info = "__state->ort_cpu_mem_info"
     elif storage is dtypes.StorageType.GPU_Global:
-        mem_info = "__ort_cuda_mem_info"
+        mem_info = "__state->ort_cuda_mem_info"
     elif storage is dtypes.StorageType.CPU_Pinned:
-        mem_info = "__ort_cuda_pinned_mem_info"
+        mem_info = "__state->ort_cuda_pinned_mem_info"
     else:
         raise ValueError(
             "Unsupported storage type {} for input to ONNX node".format(
@@ -285,7 +285,7 @@ def emit_setup_code_for_ortvalue(parameter_name: str, edge_connector_name: str,
 
         code += """
         OrtValue* {ort_value_name};
-        __ort_check_status(__ort_api->CreateTensorWithDataAsOrtValue(
+        __ort_check_status(__state->ort_api, __state->ort_api->CreateTensorWithDataAsOrtValue(
             {mem_info},
             &{edge_connector_name},
             {data_size} * sizeof({ctype}),
@@ -319,7 +319,7 @@ def emit_setup_code_for_ortvalue(parameter_name: str, edge_connector_name: str,
 
         code += """
         OrtValue* {ort_value_name};
-        __ort_check_status(__ort_api->CreateTensorWithDataAsOrtValue(
+        __ort_check_status(__state->ort_api, __state->ort_api->CreateTensorWithDataAsOrtValue(
             {mem_info},
             {data},
             {data_size} * sizeof({ctype}),
@@ -358,7 +358,7 @@ def expand_node(node, state, sdfg):
     sdfg.append_init_code("""
     {{
     // Setup for {name}
-    __ort_check_status(__ort_api->CreateExecutableKernelContext("{name}", "{op_type}", &__ort_context_{name}));
+    __ort_check_status(__state->ort_api, __state->ort_api->CreateExecutableKernelContext("{name}", "{op_type}", &__ort_context_{name}));
     """.format(name=unique_id, op_type=node.schema.name))
 
     # check if ORT supports CUDA for this node using the op checker
@@ -429,7 +429,7 @@ def expand_node(node, state, sdfg):
         desc = sdfg.arrays[memlet.data]
         sdfg.append_init_code("""
         // Add parameter {parameter_name}
-        __ort_check_status(__ort_api->ExecutableKernelContext_Add{input_output_string}(__ort_context_{id}, ONNX_TENSOR_ELEMENT_DATA_TYPE_{type_string}));
+        __ort_check_status(__state->ort_api, __state->ort_api->ExecutableKernelContext_Add{input_output_string}(__ort_context_{id}, ONNX_TENSOR_ELEMENT_DATA_TYPE_{type_string}));
         """.format(id=unique_id,
                    type_string=typeclass_to_onnx_str(desc.dtype).upper(),
                    parameter_name=parameter_name,
@@ -457,7 +457,7 @@ def expand_node(node, state, sdfg):
             ort_value_name=ort_value_name,
             connector_dict=in_connectors if is_input else out_connectors)
 
-        tasklet_code += "__ort_check_status(__ort_api->ExecutableKernel_Set{input_output_string_capital}(" \
+        tasklet_code += "__ort_check_status(__state->ort_api, __state->ort_api->ExecutableKernel_Set{input_output_string_capital}(" \
                         "__ort_kernel_{unique_id}, {position}, {ort_value_name}));\n".format(
             input_output_string_capital=input_output_string.
                 capitalize(),
@@ -466,7 +466,7 @@ def expand_node(node, state, sdfg):
             position=get_position(node.schema, is_input,
                                   parameter_name))
 
-        tasklet_cleanup_code += "__ort_api->ReleaseValue(ort_value_{input_output_string}_{parameter_name});\n".format(
+        tasklet_cleanup_code += "__state->ort_api->ReleaseValue(ort_value_{input_output_string}_{parameter_name});\n".format(
             input_output_string=input_output_string,
             parameter_name=parameter_name)
 
@@ -480,22 +480,22 @@ def expand_node(node, state, sdfg):
                                     getattr(node, name)))
 
     sdfg.prepend_exit_code(
-        "__ort_api->ReleaseExecutableKernelContext(__ort_context_{});\n".
-        format(unique_id))
+        "__state->ort_api->ReleaseExecutableKernelContext(__ort_context_{});\n"
+        .format(unique_id))
     sdfg.prepend_exit_code(
-        "__ort_api->ReleaseExecutableKernel(__ort_kernel_{});\n".format(
+        "__state->ort_api->ReleaseExecutableKernel(__ort_kernel_{});\n".format(
             unique_id))
 
     if logging.root.level <= logging.DEBUG:
         tasklet_code += 'fprintf(stderr, "Launching {}\\n");\n'.format(
             unique_id)
 
-    tasklet_code += "__ort_check_status(__ort_api->ExecutableKernel_Compute(__ort_kernel_{}));\n".format(
+    tasklet_code += "__ort_check_status(__state->ort_api, __state->ort_api->ExecutableKernel_Compute(__ort_kernel_{}));\n".format(
         unique_id)
 
     sdfg.append_init_code(
-        "__ort_check_status(__ort_api->CreateExecutableKernel("
-        "__ort_session, __ort_context_{id}, /*provider_index=*/{provider_index}, &__ort_kernel_{id}));\n"
+        "__ort_check_status(__state->ort_api, __state->ort_api->CreateExecutableKernel("
+        "__state->ort_session, __ort_context_{id}, /*provider_index=*/{provider_index}, &__ort_kernel_{id}));\n"
         .format(provider_index=provider_index, id=unique_id))
     sdfg.append_init_code("}} // end setup for context_{}".format(unique_id))
 

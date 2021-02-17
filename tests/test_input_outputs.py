@@ -72,12 +72,14 @@ def test_squeeze(gpu, apply_strict, break_opchecker, default_implementation):
 
         X = np.random.rand(1).astype(np.float32)
 
+        sdfg.view()
         if gpu:
             sdfg.apply_gpu_transformations()
 
         if apply_strict:
             sdfg.expand_library_nodes()
             sdfg.apply_strict_transformations()
+        sdfg.view()
 
         result = sdfg(X_arr=X)
 
@@ -229,3 +231,7 @@ def test_add(gpu, scalars, apply_strict, break_opchecker,
         numpy_result = X + W
 
         assert np.allclose(result, numpy_result)
+
+
+if __name__ == "__main__":
+    test_squeeze(True, True, False, 'pure')
