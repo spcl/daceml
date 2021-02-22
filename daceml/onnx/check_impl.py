@@ -10,9 +10,7 @@ import daceml
 from dace.dtypes import DTYPE_TO_TYPECLASS
 from daceml.onnx.schema import ONNXAttributeType
 from daceml.onnx.converters import ONNX_DTYPES_TO_DACE_TYPE_CLASS
-from dace.codegen.codeobject import CodeObject
-from dace.codegen.compiler import generate_program_folder, configure_and_compile, get_binary_name
-from dace.codegen.targets import cpu
+from dace.codegen import codeobject, compiler, targets
 
 
 class ONNXOpValidationError(Exception):
@@ -30,18 +28,19 @@ def build_checker():
     with open(checker_code_path, "r") as f:
         checker_code = f.read()
 
-    program = CodeObject("onnx_op_checker",
-                         checker_code,
-                         "cpp",
-                         cpu.CPUCodeGen,
-                         "ONNXOpChecker",
-                         environments={"ONNXRuntime"})
+    program = codeobject.CodeObject("onnx_op_checker",
+                                    checker_code,
+                                    "cpp",
+                                    targets.cpu.CPUCodeGen,
+                                    "ONNXOpChecker",
+                                    environments={"ONNXRuntime"})
 
     BUILD_PATH = os.path.join('.dacecache', "onnx_op_checker")
-    generate_program_folder(None, [program], BUILD_PATH)
-    configure_and_compile(BUILD_PATH)
+    compiler.generate_program_folder(None, [program], BUILD_PATH)
+    compiler.configure_and_compile(BUILD_PATH)
 
-    checker_dll = ctypes.CDLL(get_binary_name(BUILD_PATH, "onnx_op_checker"))
+    checker_dll = ctypes.CDLL(
+        compiler.get_binary_name(BUILD_PATH, "onnx_op_checker"))
     build_checker.dll = checker_dll
 
     return checker_dll
