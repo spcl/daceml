@@ -1,5 +1,6 @@
 import copy
 import inspect
+import itertools
 import typing
 
 import dace
@@ -200,7 +201,6 @@ class PureMatMul(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
-        in_edges = state.in_edges(node)
         input0_dim = len(in_desc_with_name(node, state, sdfg, "A").shape)
         input1_dim = len(in_desc_with_name(node, state, sdfg, "B").shape)
 
@@ -218,87 +218,61 @@ class PureMatMul(ONNXForward):
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
         node.validate(sdfg, state)
-        in_edges = state.in_edges(node)
-        out_edges = state.out_edges(node)
 
-        atype = None
-        btype = None
-        if in_edges[0].dst_conn == "A" and in_edges[1].dst_conn == "B":
-            atype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
-            btype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
-        if in_edges[0].dst_conn == "B" and in_edges[1].dst_conn == "A":
-            atype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
-            btype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
+        input0_dim = in_desc_with_name(node, state, sdfg, "A").shape
+        input1_dim = in_desc_with_name(node, state, sdfg, "B").shape
 
-        ctype = copy.deepcopy(sdfg.arrays[out_edges[0].data.data])
+        # list containing letters from a-z
+        letters = [chr(ord('z') - i) for i in range(26)]
+        # i j k are used for the last dimensions
+        letters = [l for l in letters if l not in ['i', 'j', 'k']]
 
-        input0_dim = len(in_desc_with_name(node, state, sdfg, "A").shape)
-        input1_dim = len(in_desc_with_name(node, state, sdfg, "B").shape)
+        if len(input0_dim) == 1:
+            if len(input1_dim) != 2:
+                raise ValueError("invalid dimensions")
+            arg1 = 'k'
+            arg2 = 'kj'
+            result = 'j'
+        elif len(input1_dim) == 1:
+            if len(input0_dim) != 2:
+                raise ValueError("invalid dimensions")
+            arg1 = 'ik'
+            arg2 = 'k'
+            result = 'i'
+        else:
+            # build the einsum. The last two dimensions are always just the matrix multiply einsum
+            # dace will later specialize to a batched matmul if possible
+            arg1 = 'ik'
+            arg2 = 'kj'
+            result = 'ij'
+            input0_dim = input0_dim[:-2]
+            input1_dim = input1_dim[:-2]
+            for dim0, dim1 in itertools.zip_longest(reversed(input0_dim),
+                                                    reversed(input1_dim)):
+                if dim0 is None:
+                    # only dim0 exists
+                    letter = letters.pop()
+                    arg2 = letter + arg2
+                    result = letter + result
+                elif dim1 is None:
+                    # only dim1 exists
+                    letter = letters.pop()
+                    arg1 = letter + arg1
+                    result = letter + result
+                else:
+                    # both exist
+                    letter = letters.pop()
+                    arg1 = letter + arg1
+                    arg2 = letter + arg2
+                    result = letter + result
 
-        if input0_dim == 4 and input1_dim == 4:
+        einsum_str = '{},{}->{}'.format(arg1, arg2, result)
 
-            @dace.program
-            def einsumop(A: atype, B: btype, Y: ctype):
-                Y[:] = np.einsum('abik,abkj->abij', A, B)
+        def einsumop(A, B, Y):
+            Y[:] = np.einsum(einsum_str, A, B)
 
-            return einsumop.to_sdfg()
-
-        if input0_dim == 3 and input1_dim == 2:
-
-            @dace.program
-            def einsumop(A: atype, B: btype, Y: ctype):
-                Y[:] = np.einsum('bik,kj->bij', A, B)
-
-            return einsumop.to_sdfg()
-
-        if input0_dim == 2 and input1_dim == 2:
-            sdfg_exp = dace.SDFG('matmulExpansion')
-            ii = in_edges[0].data.subset.size()[0]
-            kk = in_edges[0].data.subset.size()[1]
-            jj = in_edges[1].data.subset.size()[1]
-
-            I = str(ii)
-            K = str(kk)
-            J = str(jj)
-            sdfg_exp.add_array('A', (ii, kk),
-                               sdfg.arrays[in_edges[0].data.data].dtype)
-            sdfg_exp.add_array('B', (kk, jj),
-                               sdfg.arrays[in_edges[1].data.data].dtype)
-            sdfg_exp.add_array('Y', (ii, jj),
-                               sdfg.arrays[out_edges[0].data.data].dtype)
-
-            init_state = sdfg_exp.add_state()
-            init_state.add_mapped_tasklet(
-                'batched_matmul_init', {
-                    '_o%d' % i: '0:%s' % symstr(d)
-                    for i, d in enumerate((ii, jj))
-                }, {},
-                'out = 0', {
-                    'out':
-                    dace.Memlet.simple(
-                        'Y', ','.join(
-                            ['_o%d' % i for i in range(len((ii, jj)))]))
-                },
-                external_edges=True)
-
-            state_exp = sdfg_exp.add_state_after(init_state)
-
-            state_exp.add_mapped_tasklet(
-                '_MatMult_',
-                {'__i%d' % i: '0:%s' % s
-                 for i, s in enumerate([I, J, K])}, {
-                     '_a': dace.Memlet.simple("A", ('__i0, __i2')),
-                     '_b': dace.Memlet.simple("B", ('__i2, __i1'))
-                 },
-                '_c = _a * _b', {
-                    '_c':
-                    dace.Memlet.simple(
-                        "Y", '__i0, __i1', wcr_str='lambda x, y: x + y')
-                },
-                external_edges=True)
-            return sdfg_exp
+        return program_for_node(einsumop, sdfg, state, node).to_sdfg()
 
 
 @autoregister_params(op="Identity", name="pure")
