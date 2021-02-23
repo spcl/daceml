@@ -214,13 +214,27 @@ class ConstantFolding(transformation.Transformation):
                                sdfg.make_array_memlet(clean_constant_name))
 
         # remove all now useless nodes with a reverse BFS
+        removed_nodes = []
         queue = deque([node])
         while len(queue) > 0:
             current_node = queue.popleft()
 
             edges = state.in_edges(current_node)
             state.remove_node(current_node)
+            removed_nodes.append(current_node)
+
             for e in edges:
                 next_node = e.src
                 if len(state.out_edges(next_node)) == 0:
                     queue.append(next_node)
+
+        # Remove the array corresponding to removed access nodes if possible
+        for rn in removed_nodes:
+            if isinstance(rn, nd.AccessNode):
+                for ostate in sdfg.nodes():
+                    if ostate is state:
+                        continue
+                    if any(n.data == rn.data for n in state.data_nodes()):
+                        break
+                else:
+                    del sdfg.arrays[rn.data]

@@ -362,10 +362,11 @@ class ONNXModel:
         # add the weights
         params = {}
         for name, arr in self.weights.items():
-            if len(arr.shape) == 0:
-                params[clean_onnx_name(name)] = arr[()]
-            else:
-                params[clean_onnx_name(name)] = arr.copy()
+            if clean_onnx_name(name) in sdfg.arrays:
+                if len(arr.shape) == 0:
+                    params[clean_onnx_name(name)] = arr[()]
+                else:
+                    params[clean_onnx_name(name)] = arr.copy()
 
         inferred_symbols = infer_symbols_from_shapes(sdfg, {
             **clean_inputs,
