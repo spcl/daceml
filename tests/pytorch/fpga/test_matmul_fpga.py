@@ -26,7 +26,7 @@ class Model(nn.Module):
 
     def forward(self, x,y):
         # equivalent to np.einsum('bik,bkj->bij', A, B)
-        z = torch.bmm(x, y)
+        z = torch.matmul(x, y)
         return z
 
 
@@ -54,7 +54,6 @@ def run(x_shape: tuple, y_shape:tuple, vec_width = 1,
     dace_model = DaceModule(ptmodel)
     dace_output = dace_model(x, y)
     assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
-
     sdfg = dace_model.sdfg
     sdfg.save('/tmp/out.sdfg')
     # ##################################
@@ -90,7 +89,7 @@ def test():
     Evaluates multiple combination of Matmul/input size
     :return:
     '''
-    print("----------- Testing Batched Matmul ---------------")
+    print("----------- Testing Batched Matmul (3Dx3D tensor) ---------------")
 
     # Run FPGA tests in a different process to avoid issues with Intel OpenCL tools
     # (But not in parallel)
@@ -110,6 +109,24 @@ def test():
         p.start()
         p.join()
         assert (queue.get() < 1e-6)
+
+    print("----------- Testing Matmul (3Dx2D tensor) ---------------")
+
+    vec_width = [1, 1, 1]
+    x_shapes = [(4, 8, 16), (8, 16, 32), (2, 16, 32)]
+    y_shapes = [(4, 16, 4), (32, 64), (32, 16)]
+
+    for i in range(0, len(vec_width)):
+        print("##########################################################")
+        print(f"# Configuration: vw={vec_width[i]}, x_shape={x_shapes[i]}, y_shape={y_shapes[i]}")
+        print("##########################################################")
+        queue = Queue()
+        p = Process(target=run,
+                    args=(x_shapes[i], y_shapes[i], vec_width[i], queue))
+        p.start()
+        p.join()
+        assert (queue.get() < 1e-6)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -131,7 +148,7 @@ if __name__ == "__main__":
     if t:
         test()
     else:
-        data_shape_1 = (16, 16, 32)
-        data_shape_2 = (16, 32, 128)
+        data_shape_1 = (2,2, 32)
+        data_shape_2 = (32, 128)
         run(data_shape_1, data_shape_2)
 

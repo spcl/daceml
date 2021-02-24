@@ -2136,40 +2136,33 @@ class PureMatMul(ONNXForward):
         input1_dim = len(B.shape)
 
         if input0_dim == 4 and input1_dim == 4:
+            assert(False)
+            # @dace.program
+            # def einsumop(A: atype, B: btype, Y: ctype):
+            #     Y[:] = np.einsum('abik,abkj->abij', A, B)
+            #
+            # return einsumop.to_sdfg()
 
-            @dace.program
-            def einsumop(A: atype, B: btype, Y: ctype):
-                Y[:] = np.einsum('abik,abkj->abij', A, B)
 
-            return einsumop.to_sdfg()
-
-        if input0_dim == 3 and input1_dim == 2:
-
-            @dace.program
-            def einsumop(A: atype, B: btype, Y: ctype):
-                Y[:] = np.einsum('bik,kj->bij', A, B)
-
-            return einsumop.to_sdfg()
-
-        if input0_dim == 3 and input1_dim == 3:
-
-            # Please not, this is not general but performs only bik,bkj->bij'
+        if input0_dim == 3 and (input1_dim == 3 or input1_dim == 2):
+            # This expansions performs the two following einsum:
+            # - 'bik,bkj->bij' (batched matmul)
+            # -  'bik,kj->bij' (B is a 2D tensor)
             new_sdfg = dace.SDFG("fpga_matmul")
-            new_state = new_sdfg.add_state("batched_mmm_compute")
+            new_state = new_sdfg.add_state("mmm_compute")
             # Batched MMM
-            assert (A.shape[0] != 1)
 
             # Input/Output shapes and strides are inferred by ONNX shape inference
-            # Matrix A, has shape [BATCH, N, K]
+            # Matrix A, has shape (BATCH, N, K)
             BATCH, N, K = A.shape
-            #its strides are [sAB, sAN, sAK]
+            #its strides are (sAB, sAN, sAK)
 
-            # Matrix B has shape [BATCH, K, M]
-            _, _, M = B.shape
-            # its strides are [sBB, sBK, sBM]
+            # Matrix B has shape ([BATCH,] K, M)
+            M = B.shape[-1]
+            # its strides are (sBB, sBK, sBM)
 
-            #Matrix Y, the result has shape [BATCH, N, M]
-            # its shape is [sCB, sCN, sCM]
+            #Matrix Y, the result has shape (BATCH, N, M)
+            # its shape is (sCB, sCN, sCM)
 
             ###############################
             # Add the containers to the new_sdfg
@@ -2254,7 +2247,7 @@ class PureMatMul(ONNXForward):
                     entry,
                     tasklet,
                     dst_conn="from_memory",
-                    memlet=dace.Memlet("B[b, k, tm*{} + m]".format(M / T)))
+                    memlet=dace.Memlet("B[{}k, tm*{} + m]".format("b," if input1_dim == 3 else "", M / T)))
 
                 state.add_memlet_path(tasklet,
                                       exit,
