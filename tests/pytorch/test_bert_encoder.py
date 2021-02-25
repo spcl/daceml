@@ -114,6 +114,28 @@ def test_bert_encoder(gpu, apply_strict):
     dace_model.sdfg.save('attn8.sdfg')
     print('attn8.sdfg')
 
+    from dace.transformation.dataflow.strip_mining import StripMining
+
+    pattern = sdutil.node_path_graph(dace.nodes.MapEntry(dace.nodes.Map('_', [], [])))
+
+    for subgraph in enumerate_matches(softmax_sdfg, pattern):
+        map_entry: sdfg_nodes.MapEntry = subgraph.nodes()[0]
+        if map_entry.map.range.dims() == 1:
+            print("Applying StripMining tranformation ", subgraph.graph.label, ". Nodes:", subgraph.nodes())
+            StripMining.apply_to(sdfg=subgraph.graph.parent,
+                                 options={'tile_size': seq_len // 32,
+                                          'tiling_type': 'ceilrange',
+                                          'divides_evenly': True},
+                                 _map_entry=map_entry)
+
+    dace_model.sdfg.save('attn8_1.sdfg')
+    print('attn8_1.sdfg')
+
+    softmax_sdfg.apply_transformations_repeated([NestMapContent], validate_all=True, print_report=True)
+
+    dace_model.sdfg.save('attn8_2.sdfg')
+    print('attn8_2.sdfg')
+
     from dace.transformation.interstate.nested_map_fusion import NestedMapFusion
 
     softmax_sdfg.apply_transformations_repeated([NestedMapFusion], validate_all=True, print_report=True)
@@ -134,17 +156,11 @@ def test_bert_encoder(gpu, apply_strict):
     dace_model.sdfg.save('attn11.sdfg')
     print('attn11.sdfg')
 
-    from dace.transformation.dataflow.strip_mining import StripMining
+    # TODO:
+    # 1. split WCR into two steps:
+    # detect WCR that goes into memory outside of nested sdfgs and create temporary buffer to store it
+    # 2. warp all reduce detection
 
-    pattern = sdutil.node_path_graph(dace.nodes.MapEntry(dace.nodes.Map('_', [], [])))
-
-    for subgraph in enumerate_matches(softmax_sdfg, pattern):
-        print("Match found in state", subgraph.graph.label, ". Nodes:", subgraph.nodes())
-
-        SubgraphFusion.apply_to(subgraph.graph.parent, subgraph)
-
-    dace_model.sdfg.save('attn11_1.sdfg')
-    print('attn11_1.sdfg')
 
     from dace.transformation.interstate.warp_all_reduce_detection import WarpAllReduceDetection
 
@@ -170,7 +186,13 @@ def test_bert_encoder(gpu, apply_strict):
     from dace.transformation.dataflow import PruneConnectors
 
     softmax_sdfg.apply_transformations_repeated(
-        [PruneConnectors, RemoveDanglingAccessNodes], validate_all=True, print_report=True)
+        [PruneConnectors], validate_all=True, print_report=True)
+
+    dace_model.sdfg.save('attn14_1.sdfg')
+    print('attn14_1.sdfg')
+
+    softmax_sdfg.apply_transformations_repeated(
+        [RemoveDanglingAccessNodes], validate_all=True, print_report=True)
 
     dace_model.sdfg.save('attn15.sdfg')
     print('attn15.sdfg')
