@@ -1987,43 +1987,52 @@ class PureReshape(ONNXForward):
             expansion.fill_scope_connectors()
             expansion.save('/tmp/exp.sdfg')
             return expansion
-        # elif len(indata.shape) == len(outdata.shape) == 3:
-        #     map_ranges = {'i': "0:{}".format(math.prod(indata.shape))}
-        #     me, mx = state.add_map("reshaping", map_ranges)
-        #     tasklet = state.add_tasklet('reshape_task', ['_in'], ['_out'],
-        #                                 '_out = _in')
-        #
-        #     data = state.add_read("data")
-        #     reshaped = state.add_write("reshaped")
-        #     state.add_memlet_path(
-        #         data,
-        #         me,
-        #         tasklet,
-        #         dst_conn="_in",
-        #         memlet=dace.Memlet(
-        #             f"data[floor(i/{indata.shape[1]*indata.shape[2]}), floor((i%{indata.shape[1]*indata.shape[2]})/{indata.shape[2]}),  (i%{indata.shape[1]*indata.shape[2]})%{indata.shape[2]}]"
-        #         ))
-        #
-        #     state.add_memlet_path(
-        #         tasklet,
-        #         mx,
-        #         reshaped,
-        #         src_conn="_out",
-        #         memlet=dace.Memlet(
-        #             f"reshaped[i//{outdata.shape[1]*outdata.shape[2]}, (i%{outdata.shape[1]*outdata.shape[2]})//{outdata.shape[2]},  (i%{outdata.shape[1]*outdata.shape[2]})%{outdata.shape[2]}]"))
-        #     # memlet = expansion.make_array_memlet("data")
-        #     # memlet.allow_oob = True
-        #
-        #     # state.add_edge(data, None, reshaped, None, memlet)
-        #     expansion.fill_scope_connectors()
-        #     expansion.save('/tmp/exp.sdfg')
-        #     return expansion
-        else:
+        elif len(indata.shape) == len(outdata.shape) == 3 and indata.shape[0]==outdata.shape[0]:
+            # TODO: tmp this is just for MHA, till we get views
+            map_ranges = {
+                '__i%d' % i: '0:%s' % n
+                for i, n in enumerate(indata.shape)
+            }
+            me, mx = state.add_map("reshaping", map_ranges)
+            tasklet = state.add_tasklet('reshape_task', ['_in'], ['_out'],
+                                        '_out = _in')
+
             data = state.add_read("data")
             reshaped = state.add_write("reshaped")
-            memlet = expansion.make_array_memlet("data")
-            memlet.allow_oob = True
-            state.add_edge(data, None, reshaped, None, memlet)
+            state.add_memlet_path(
+                data,
+                me,
+                tasklet,
+                dst_conn="_in",
+                memlet=dace.Memlet("data[{}]".format(",".join(
+                    ['__i%d' % i for i in range(len(indata.shape))]))))
+
+            state.add_memlet_path(
+                tasklet,
+                mx,
+                reshaped,
+                src_conn="_out",
+                memlet=dace.Memlet(
+                    f"reshaped[__i0, (__i1*{indata.shape[2]}+__i2)//{outdata.shape[2]},  (__i1*{indata.shape[2]}+__i2)%{outdata.shape[2]} ]"))
+
+            expansion.fill_scope_connectors()
+            expansion.save('/tmp/exp.sdfg')
+            return expansion
+        else:
+            expansion.add_view('Av', outdata.shape, dtype=outdata.dtype)
+            data = state.add_read("data")
+            reshaped = state.add_write("reshaped")
+            view = state.add_access('Av')
+
+            state.add_nedge(data, view, dace.Memlet(data='data'))
+            state.add_nedge(view, reshaped, dace.Memlet(data='reshaped'))
+
+            #
+            # data = state.add_read("data")
+            # reshaped = state.add_write("reshaped")
+            # memlet = expansion.make_array_memlet("data")
+            # memlet.allow_oob = True
+            # state.add_edge(data, None, reshaped, None, memlet)
             expansion.save("/tmp/reshape.sdfg")
             expansion.validate()
             return expansion

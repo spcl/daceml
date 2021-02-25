@@ -18,50 +18,90 @@ import dace
 import argparse
 import onnx
 from daceml.util import utils
+from multiprocessing import Process, Queue
 
 
-def get_library_node_by_name(sdfg, name):
-
-    for node, _ in sdfg.all_nodes_recursive():
-        if isinstance(node, dace.sdfg.nodes.LibraryNode):
-            if node.name == name:
-                return node
-
-    raise Exception("LibNode {} not found".format(name))
-
-
-def get_node_predecessors(node, state):
-    '''
-    Returns the LibNode that are predecessors of the passed one
-    :param node:
-    :param graph:
-    :return:
-    '''
-    # Check if the node has some library node as predecessor as
-    predecessors = []
-    for edge in state.in_edges(node):
-        import pdb
-        pdb.set_trace()
-        # check that this edge has a predecessor
-        pred = edge.src
-
-        if isinstance(pred, dace.sdfg.nodes.AccessNode):
-            predecessors.append(pred)
-
-    return predecessors
-
-
-def get_data_node_by_name(node, state, sdfg, name):
-    return sdfg.arrays[utils.in_edge_with_name(node, state, name)]
 
 
 class Model(nn.Module):
-    def __init__(self):
+    def __init__(self, new_shape):
         super(Model, self).__init__()
-
+        self.new_shape = new_shape
     def forward(self, x):
-        x = x.view(-1, 256)
+        x = x.reshape(self.new_shape)
         return x
+
+
+
+def run(data_shape: tuple, reshaped_shape: tuple, vec_width = 1,
+        queue=None):
+    # dace_output = dace_model(x)
+
+    import daceml.onnx as donnx
+    donnx.default_implementation = "pure"
+    ptmodel = Model(reshaped_shape)
+    x = torch.rand(data_shape)
+
+    torch_output = ptmodel(x)
+
+    dace_model = DaceModule(ptmodel)
+    out = dace_model(x)
+    sdfg = dace_model.sdfg
+    sdfg.save('/tmp/out.sdfg')
+    sdfg.apply_transformations([FPGATransformSDFG])
+
+    donnx.ONNXReshape.default_implementation = 'fpga'
+    sdfg.expand_library_nodes()
+    sdfg.apply_transformations_repeated([InlineSDFG])
+    # sdfg.apply_transformations([InlineSDFG])
+    sdfg.save('/tmp/out_fpga.sdfg')
+
+    dace_output_fpga = dace_model(x)
+    dace_output_fpga = dace_output_fpga.reshape(torch_output.detach().numpy().shape)
+
+    torch_output_numpy = torch_output.detach().numpy()
+    diff = np.linalg.norm(torch_output_numpy - dace_output_fpga) / dace_output_fpga.size
+
+    print("Difference: ",diff )
+    if queue is not None:
+        # we are testing
+        queue.put(diff)
+    else:
+        if diff > 1e-9:
+            import pdb
+            pdb.set_trace()
+            assert (False)
+
+    del dace_model, ptmodel, x
+
+
+
+def test():
+    '''
+    Evaluates multiple combination of Reshape
+    :return:
+    '''
+    print("----------- Testing Reshape ---------------")
+
+    # Run FPGA tests in a different process to avoid issues with Intel OpenCL tools
+    # (But not in parallel)
+
+    # each position of this lists contains a test configuration
+    vec_width = [1, 1, 1]
+    x_shapes = [(16,2,32), (16, 8, 8), (8,16,16)]
+    y_shapes = [(16,8,8), (16,2,32),(2,4,16,16)] # reshpaed
+
+    for i in range(0, len(vec_width)):
+        print("##########################################################")
+        print(f"# Configuration: vw={vec_width[i]}, x_shape={x_shapes[i]}, reshaped_shape={y_shapes[i]}")
+        print("##########################################################")
+        queue = Queue()
+        p = Process(target=run,
+                    args=(x_shapes[i], y_shapes[i], vec_width[i], queue))
+        p.start()
+        p.join()
+        assert (queue.get() < 1e-9)
+
 
 
 if __name__ == "__main__":
@@ -71,64 +111,23 @@ if __name__ == "__main__":
                         nargs="?",
                         default=1,
                         help="Vectorization width")
-    parser.add_argument("--onnx_model",
-                        type=str,
-                        help="Load the model from the given onnx file")
+    parser.add_argument("-test",
+                        action="store_true",
+                        default=False,
+                        help="Perform tests (USE ONLY WITH EMULATION)")
 
     args = vars(parser.parse_args())
 
     vec_width = args["W"]
-    onnx_file = args["onnx_model"]
-    assert(vec_width == 1) #FTMB
-    import daceml.onnx as donnx
-    donnx.default_implementation = "pure"
-    ptmodel = Model()
-    data_shape = (10000, 16, 4, 4)
-    x = torch.rand(data_shape)
-    if onnx_file is None:
-        # build the DaCe model from the pytorch model
-        dace_model = DaceModule(ptmodel, dummy_inputs=x)
+    t = args["test"]
+
+    if t:
+        test()
     else:
-        # load from file
-        onnx_model = onnx.load(onnx_file)
-        dace_model = ONNXModel("mymodel", onnx_model)
-        print("Loaded from ONNX file")
+        data_shape = (16, 8, 8)
+        reshaped_shape = (16,2,32)
+        run(data_shape, reshaped_shape)
 
 
 
-    # dace_output = dace_model(x)
 
-    torch_output = ptmodel(x)
-
-    # assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
-
-    sdfg = dace_model.sdfg
-
-    ##################################
-    # Vectorize container
-
-    # find the input node
-    # vec_type = dace.vector(dace.float32, vec_width)
-    # for name, desc in sdfg.arrays.items():
-    #     utils.vectorize_array_and_memlet(sdfg, name, vec_type)
-    #     utils.vectorize_array_and_memlet(sdfg, name, vec_type)
-
-    ##########################################
-    sdfg.save('/tmp/out.sdfg')
-
-
-    sdfg.apply_transformations([FPGATransformSDFG])
-    # sdfg.states()[0].location["is_FPGA_kernel"] = False
-
-    donnx.ONNXReshape.default_implementation = 'fpga'
-    sdfg.expand_library_nodes()
-    sdfg.apply_transformations_repeated([InlineSDFG])
-    sdfg.save('/tmp/out_fpga_expanded.sdfg')
-    dace_output_fpga = dace_model(x)
-    dace_output_fpga = dace_output_fpga.reshape(torch_output.detach().numpy().shape)
-
-    print(
-        "Difference: ",
-        np.linalg.norm(torch_output.detach().numpy() - dace_output_fpga) /
-        dace_output_fpga.size)
-    assert np.allclose(torch_output.detach().numpy(), dace_output_fpga)
