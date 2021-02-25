@@ -10,17 +10,36 @@ import daceml.onnx as donnx
 donnx.default_implementation = "pure"
 from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
 from dace.transformation.dataflow import PruneConnectors
+from dace.transformation.dataflow import streaming_memory as sm
+
 from dace import SDFG
 
 @pytest.mark.ort
 def test_attn(execute_cpu_dace = False):
     # BERT_base: H=12, P=64 N=768, emb=4N, SM=SN=128
     # BERT_large: H=16, P=64, N=1024, emb=4N, SM=SN=512
+
+    ##### Tiny BERT
+    # B = 2
+    # H = 4
+    # P = 8
+    # N = P * H
+    # SM, SN = 16, 16
+
+    ##### SMALL BERT
+    # B = 2
+    # H = 12
+    # P = 32
+    # N = P * H
+    # SM, SN = 32, 32
+
+    ##### BASE BERT
     B = 2
-    H = 4
-    P = 8
+    H = 12
+    P = 64
     N = P * H
-    SM, SN = 16, 16
+    SM, SN = 128, 128
+
     K, Q, V = [
         torch.randn([SM, B, N]),
         torch.randn([SN, B, N]),
@@ -73,6 +92,9 @@ def test_attn(execute_cpu_dace = False):
     # sdfg.states()[0].location["is_FPGA_kernel"] = False
     # sdfg.states()[0].nodes()[0].sdfg.states()[0].location["is_FPGA_kernel"] = False
     sdfg.save('/tmp/out_fpga.sdfg')
+
+    # Streaming composition
+    # sdfg.apply_transformations_repeated([InlineSDFG, sm.StreamingComposition], [{}, {"storage": dace.StorageType.FPGA_Local}])
 
     # Load from file
     # sdfg = SDFG.from_file('/tmp/out_fpga.sdfg')
