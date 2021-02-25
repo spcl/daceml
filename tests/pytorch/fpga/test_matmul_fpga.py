@@ -95,9 +95,9 @@ def test():
     # (But not in parallel)
 
     # each position of this lists contains a test configuration
-    vec_width = [1, 1, 1]
-    x_shapes = [(4,8,16), (8,16,32), (2,16,32)]
-    y_shapes = [(4,16,4), (8,32,64), (2,32,16)]
+    vec_width = [1, 1, 1, 1]
+    x_shapes = [(4,8,16), (8,16,32), (8,16,16), (8,16,8)]
+    y_shapes = [(4,16,4), (8,32,64), (8,16,8), (8,8,16)]
 
     for i in range(0, len(vec_width)):
         print("##########################################################")
@@ -113,8 +113,8 @@ def test():
     print("----------- Testing Matmul (3Dx2D tensor) ---------------")
 
     vec_width = [1, 1, 1]
-    x_shapes = [(4, 8, 16), (8, 16, 32), (2, 16, 32)]
-    y_shapes = [(4, 16, 4), (32, 64), (32, 16)]
+    x_shapes = [(4, 8, 16), (8, 16, 32), (2, 16, 32), (16,2,32)]
+    y_shapes = [(4, 16, 4), (32, 64), (32, 16), (32,32)]
 
     for i in range(0, len(vec_width)):
         print("##########################################################")
@@ -148,7 +148,7 @@ if __name__ == "__main__":
     if t:
         test()
     else:
-        data_shape_1 = (2,2, 32)
-        data_shape_2 = (32, 128)
+        data_shape_1 = (8,16, 8)
+        data_shape_2 = (8, 8,16)
         run(data_shape_1, data_shape_2)
 
