@@ -241,14 +241,15 @@ class PureMatMul(ONNXForward):
         input1_dim = len(in_desc_with_name(node, state, sdfg, "B").shape)
 
         if input0_dim == 4 and input1_dim == 4:
+
             @dace.program
             def einsumop(A: atype, B: btype, Y: ctype):
                 Y[:] = np.einsum('abik,abkj->abij', A, B)
 
             return einsumop.to_sdfg()
 
-        if input0_dim == 3 and input1_dim == 2:
 
+        if input0_dim == 3 and input1_dim == 2:
             @dace.program
             def einsumop(A: atype, B: btype, Y: ctype):
                 Y[:] = np.einsum('bik,kj->bij', A, B)
