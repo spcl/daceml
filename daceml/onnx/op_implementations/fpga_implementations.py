@@ -1889,7 +1889,7 @@ else:
 
 
 @autoregister_params(op="Reshape", name="fpga")
-class PureReshape(ONNXForward):
+class FPGAReshape(ONNXForward):
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
@@ -1987,7 +1987,8 @@ class PureReshape(ONNXForward):
             expansion.fill_scope_connectors()
             expansion.save('/tmp/exp.sdfg')
             return expansion
-        elif len(indata.shape) == len(outdata.shape) == 3 and indata.shape[0]==outdata.shape[0]:
+        elif len(indata.shape) == len(
+                outdata.shape) == 3 and indata.shape[0] == outdata.shape[0]:
             # TODO: tmp this is just for MHA, till we get views
             map_ranges = {
                 '__i%d' % i: '0:%s' % n
@@ -2013,7 +2014,8 @@ class PureReshape(ONNXForward):
                 reshaped,
                 src_conn="_out",
                 memlet=dace.Memlet(
-                    f"reshaped[__i0, (__i1*{indata.shape[2]}+__i2)//{outdata.shape[2]},  (__i1*{indata.shape[2]}+__i2)%{outdata.shape[2]} ]"))
+                    f"reshaped[__i0, (__i1*{indata.shape[2]}+__i2)//{outdata.shape[2]},  (__i1*{indata.shape[2]}+__i2)%{outdata.shape[2]} ]"
+                ))
 
             expansion.fill_scope_connectors()
             expansion.save('/tmp/exp.sdfg')
@@ -2039,7 +2041,7 @@ class PureReshape(ONNXForward):
 
 
 @autoregister_params(op="Softmax", name="fpga")
-class PureSoftmax(ONNXForward):
+class FPGASoftmax(ONNXForward):
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[nodes.Node, SDFG]:
@@ -2065,8 +2067,8 @@ class PureSoftmax(ONNXForward):
         out_tmp_shape = inparr.shape
         out_tmp_dtype = inparr.dtype
 
-        #ad hoc lenet implementation, needs to be generalized
-        assert (len(inparr.shape) == 2)
+        #ad hoc implementation, wich accepts only the last axis needs to be generalized
+        assert (len(inparr.shape) - 1 == axis)
 
         new_sdfg = dace.SDFG("fpga_softmax")
         new_state = new_sdfg.add_state("compute")
@@ -2074,7 +2076,7 @@ class PureSoftmax(ONNXForward):
         new_sdfg.add_datadesc("output", copy.deepcopy(outarr))
 
         # Add registers to store exp results
-        # NOTE: ok in lenet since we are not working with large input size
+        # TODO: ok in small models since we are not working with large input size
         new_sdfg.add_array("exp_data", [inparr.shape[-1]],
                            dtype=dace.float32,
                            transient=True,
@@ -2092,8 +2094,12 @@ class PureSoftmax(ONNXForward):
         # the exp and the div
 
         #batch map
-        batch_me, batch_mx = new_state.add_map(
-            "softmax_batch", dict(b="0:{}".format(inparr.shape[0])))
+        map_ranges = {
+            '__i%d' % i: '0:%s' % n
+            for i, n in enumerate(inparr.shape[:-1])
+        }
+
+        batch_me, batch_mx = new_state.add_map("softmax_map", map_ranges)
 
         #exp map
         exp_me, exp_mx = new_state.add_map(
@@ -2123,12 +2129,16 @@ class PureSoftmax(ONNXForward):
         init_tasklet = new_state.add_tasklet('init_task', [], ['_out'],
                                              '_out = float(0)')
 
-        new_state.add_memlet_path(in_read,
-                                  batch_me,
-                                  exp_me,
-                                  exp_tasklet,
-                                  dst_conn="_in",
-                                  memlet=dace.Memlet("input[b,i]"))
+        memlet_except_axis = "{}".format(",".join(
+            ['__i%d' % i for i in range(len(inparr.shape) - 1)]))
+
+        new_state.add_memlet_path(
+            in_read,
+            batch_me,
+            exp_me,
+            exp_tasklet,
+            dst_conn="_in",
+            memlet=dace.Memlet("input[{},i]".format(memlet_except_axis)))
 
         new_state.add_memlet_path(init_tasklet,
                                   sum_in,
@@ -2165,13 +2175,14 @@ class PureSoftmax(ONNXForward):
                                   div_tasklet,
                                   dst_conn="_sum",
                                   memlet=dace.Memlet("sum_data[0]"))
-        new_state.add_memlet_path(div_tasklet,
-                                  div_mx,
-                                  batch_mx,
-                                  out_write,
-                                  src_conn="_out",
-                                  memlet=dace.Memlet("output[b, i]"),
-                                  propagate=False)
+        new_state.add_memlet_path(
+            div_tasklet,
+            div_mx,
+            batch_mx,
+            out_write,
+            src_conn="_out",
+            memlet=dace.Memlet("output[{}, i]".format(memlet_except_axis)),
+            propagate=False)
 
         new_sdfg.fill_scope_connectors()
         new_sdfg.save('/tmp/softmax.sdfg')
@@ -2179,7 +2190,7 @@ class PureSoftmax(ONNXForward):
 
 
 @autoregister_params(op="MatMul", name="fpga")
-class PureMatMul(ONNXForward):
+class FPGAMatMul(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
@@ -2270,7 +2281,9 @@ class PureMatMul(ONNXForward):
             # safe delay (see explanation later, when the pipeline scope is created)
             L = max(11 - M, 0)
             P = math.gcd(N, 4)  # Num PEs
-            P = math.gcd(K, P)  # (this to ensure that the cycles needed to compute on each PE > number of cycle to drain everything; see later)
+            P = math.gcd(
+                K, P
+            )  # (this to ensure that the cycles needed to compute on each PE > number of cycle to drain everything; see later)
             vec_width = Y.veclen
 
             # In order to guarantee correctness an deadlock free:
@@ -2282,7 +2295,7 @@ class PureMatMul(ONNXForward):
 
             # We check this with asserts to track these cases
             #assert(N/P*M/T*K < P*T)
-            assert(K<=P*T) # condition 2.
+            assert (K <= P * T)  # condition 2.
 
             def make_read_A(state):
                 entry, exit = state.add_map(
@@ -2710,3 +2723,117 @@ else:
                 },
                 external_edges=True)
             return sdfg_exp
+
+
+@autoregister_params(op="ReduceSum", name="fpga")
+class FPGAReduceSum(ONNXForward):
+    @staticmethod
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[nodes.Node, SDFG]:
+        node.validate(sdfg, state)
+        axes = node.axes
+
+        # TODO: ad hoc implementation for MHA, needs to be generalized
+        # It exploits single clock cycle accumulator of Intel
+
+        indata = in_desc_with_name(node, state, sdfg, "data")
+        outdata = out_desc_with_name(node, state, sdfg, "reduced")
+
+        assert (axes[0] == 1)
+        assert (len(indata.shape) == 4)
+        assert (node.keepdims == False)
+
+        new_sdfg = dace.SDFG("fpga_reduce_sum_expansion")
+        new_sdfg.add_datadesc("data", copy.deepcopy(indata))
+        new_sdfg.add_datadesc("reduced", copy.deepcopy(outdata))
+        new_sdfg.arrays["data"].transient = False
+        new_sdfg.arrays["reduced"].transient = False
+        new_state = new_sdfg.add_state()
+
+        # variable for reduction
+        new_sdfg.add_array("sum_res", [1],
+                           dace.float32,
+                           storage=dace.StorageType.FPGA_Registers,
+                           transient=True)
+
+        # outer map along all dimension except axes
+        outer_me, outer_mx = new_state.add_map(
+            'outer_pool_map',
+            dict(o0="0:{}".format(indata.shape[0]),
+                 o1="0:{}".format(indata.shape[2]),
+                 o2="0:{}".format(indata.shape[3])))
+
+        # the inner map computes the pooling
+        # TODO: unroll/vectorize
+        inner_me, inner_mx = new_state.add_map(
+            'inner_pool_map', dict(i0="0:{}".format(indata.shape[1])))
+
+        # accumulate sum
+        compute_tasklet = new_state.add_tasklet(
+            "sum",
+            inputs={"accum_in", "data_in"},
+            outputs={"accum_out"},
+            code="accum_out = data_in + accum_in")
+        sum_in = new_state.add_access("sum_res")
+        sum_accum = new_state.add_access("sum_res")
+        input_data = new_state.add_read("data")
+        out_data = new_state.add_write("reduced")
+
+        init_tasklet = new_state.add_tasklet('init_task', {}, {'_out'},
+                                             '_out = float(0)')
+
+        store_tasklet = new_state.add_tasklet('store_tasklet', {'in_res'},
+                                              {'out_res'},
+                                              code='out_res = in_res')
+
+        new_sdfg.save('/tmp/1.sdfg')
+
+        # compute tasklet memlets
+        # data in
+        new_state.add_memlet_path(input_data,
+                                  outer_me,
+                                  inner_me,
+                                  compute_tasklet,
+                                  dst_conn="data_in",
+                                  memlet=dace.Memlet("data[o0,i0,o1,o2]"))
+
+        #accum in
+        new_state.add_memlet_path(sum_in,
+                                  inner_me,
+                                  compute_tasklet,
+                                  dst_conn="accum_in",
+                                  memlet=dace.Memlet("sum_res[0]"))
+
+        #accum out
+        new_state.add_memlet_path(compute_tasklet,
+                                  inner_mx,
+                                  sum_accum,
+                                  src_conn="accum_out",
+                                  memlet=dace.Memlet("sum_res[0]"))
+
+        #store to memory
+        new_state.add_memlet_path(sum_accum,
+                                  store_tasklet,
+                                  dst_conn="in_res",
+                                  memlet=dace.Memlet("sum_res[0]"))
+        # init accumulator
+        new_state.add_memlet_path(init_tasklet,
+                                  sum_in,
+                                  src_conn="_out",
+                                  memlet=dace.Memlet("sum_res[0]"))
+        new_state.add_memlet_path(outer_me, init_tasklet, memlet=dace.Memlet())
+
+
+        new_state.add_memlet_path(store_tasklet,
+                                  outer_mx,
+                                  out_data,
+                                  src_conn="out_res",
+                                  memlet=dace.Memlet("reduced[o0, o1, o2]"))
+
+
+
+
+        new_sdfg.fill_scope_connectors()
+        new_sdfg.validate()
+        new_sdfg.save('/tmp/reduce_sum.sdfg')
+        return new_sdfg
