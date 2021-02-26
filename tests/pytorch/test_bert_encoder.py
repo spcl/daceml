@@ -71,6 +71,35 @@ def test_bert_encoder(gpu, apply_strict):
     dace_model.sdfg.save('attn3.sdfg')
     print('attn3.sdfg')
 
+    # apply strip mining for future use as warps
+
+    from dace.transformation.dataflow.strip_mining import StripMining
+
+    pattern = sdutil.node_path_graph(dace.nodes.MapEntry(dace.nodes.Map('_', [], [])))
+
+    for subgraph in enumerate_matches(softmax_sdfg, pattern):
+        map_entry: sdfg_nodes.MapEntry = subgraph.nodes()[0]
+        if map_entry.map.range.dims() == 1:
+            print("Applying StripMining tranformation ", subgraph.graph.label, ". Nodes:", subgraph.nodes())
+            StripMining.apply_to(sdfg=subgraph.graph.parent,
+                                 options={'tile_size': seq_len // 32,
+                                          'tiling_type': 'ceilrange',
+                                          'divides_evenly': True},
+                                 _map_entry=map_entry)
+
+    dace_model.sdfg.validate()
+
+    dace_model.sdfg.save('attn3_1.sdfg')
+    print('attn3_1.sdfg')
+
+    # add temp transient
+    from dace.transformation.dataflow.stream_transient import AccumulateTransient
+
+    softmax_sdfg.apply_transformations_repeated([AccumulateTransient], validate_all=True, print_report=True)
+
+    dace_model.sdfg.save('attn3_2.sdfg')
+    print('attn3_2.sdfg')
+
     # nest all maps into states
 
     from dace.transformation.dataflow.nest_maps import NestMaps
@@ -107,34 +136,17 @@ def test_bert_encoder(gpu, apply_strict):
     dace_model.sdfg.save('attn7.sdfg')
     print('attn7.sdfg')
 
+    softmax_sdfg.apply_transformations_repeated([TrivialMapRangeElimination, TrivialMapElimination], validate_all=True, print_report=True)
+
+    dace_model.sdfg.save('attn7_1.sdfg')
+    print('attn7_1.sdfg')
+
     from dace.transformation.dataflow.nest_maps import NestMapContent
 
     softmax_sdfg.apply_transformations_repeated([NestMapContent], validate_all=True, print_report=True)
 
     dace_model.sdfg.save('attn8.sdfg')
     print('attn8.sdfg')
-
-    from dace.transformation.dataflow.strip_mining import StripMining
-
-    pattern = sdutil.node_path_graph(dace.nodes.MapEntry(dace.nodes.Map('_', [], [])))
-
-    for subgraph in enumerate_matches(softmax_sdfg, pattern):
-        map_entry: sdfg_nodes.MapEntry = subgraph.nodes()[0]
-        if map_entry.map.range.dims() == 1:
-            print("Applying StripMining tranformation ", subgraph.graph.label, ". Nodes:", subgraph.nodes())
-            StripMining.apply_to(sdfg=subgraph.graph.parent,
-                                 options={'tile_size': seq_len // 32,
-                                          'tiling_type': 'ceilrange',
-                                          'divides_evenly': True},
-                                 _map_entry=map_entry)
-
-    dace_model.sdfg.save('attn8_1.sdfg')
-    print('attn8_1.sdfg')
-
-    softmax_sdfg.apply_transformations_repeated([NestMapContent], validate_all=True, print_report=True)
-
-    dace_model.sdfg.save('attn8_2.sdfg')
-    print('attn8_2.sdfg')
 
     from dace.transformation.interstate.nested_map_fusion import NestedMapFusion
 
@@ -156,15 +168,9 @@ def test_bert_encoder(gpu, apply_strict):
     dace_model.sdfg.save('attn11.sdfg')
     print('attn11.sdfg')
 
-    # TODO:
-    # 1. split WCR into two steps:
-    # detect WCR that goes into memory outside of nested sdfgs and create temporary buffer to store it
-    # 2. warp all reduce detection
+    from dace.transformation.interstate.warp_all_reduce_detection import WarpAllReduceDetectionNoTasklet
 
-
-    from dace.transformation.interstate.warp_all_reduce_detection import WarpAllReduceDetection
-
-    softmax_sdfg.apply_transformations_repeated([WarpAllReduceDetection], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([WarpAllReduceDetectionNoTasklet], validate_all=True, print_report=True)
 
     dace_model.sdfg.save('attn12.sdfg')
     print('attn12.sdfg')
