@@ -2021,6 +2021,7 @@ class FPGAReshape(ONNXForward):
             expansion.save('/tmp/exp.sdfg')
             return expansion
         else:
+            assert(False)
             expansion.add_view('Av', outdata.shape, dtype=outdata.dtype)
             data = state.add_read("data")
             reshaped = state.add_write("reshaped")
@@ -2257,7 +2258,7 @@ class FPGAMatMul(ONNXForward):
             #its strides are (sAB, sAN, sAK)
 
             # Matrix B has shape ([BATCH,] K, M)
-            M = B.shape[-1]
+            M = B.shape[-1] # Note, this accounts for vectorization
             # its strides are (sBB, sBK, sBM)
 
             #Matrix Y, the result has shape (BATCH, N, M)
@@ -2276,11 +2277,11 @@ class FPGAMatMul(ONNXForward):
             # TODO: vectorization
             # TODO: choOse PE in a wiser way, and deal with PEs that do not divide N (or whatever dimension is meaningul)
             #   For this, check the GEMM generic implementation on the "generic" branch
-            T = M  #T is expressed in plain data type (floats)
+            T = M  #T is expressed in vector data type (e.g. float4)
 
             # safe delay (see explanation later, when the pipeline scope is created)
-            L = max(11 - M, 0)
-            P = math.gcd(N, 4)  # Num PEs
+            L = max(11 - T, 0)
+            P = math.gcd(N, 16)  # Num PEs
             P = math.gcd(
                 K, P
             )  # (this to ensure that the cycles needed to compute on each PE > number of cycle to drain everything; see later)
@@ -2346,7 +2347,7 @@ class FPGAMatMul(ONNXForward):
                         "n": "0:{}/{}".format(N, P),
                         "tm": "0:{}/{}".format(M, T),
                         "k": "0:{}".format(K),
-                        "m": "0:{}/{}".format(T, vec_width)
+                        "m": "0:{}".format(T)
                     },
                     schedule=dace.ScheduleType.FPGA_Device)
 
@@ -2383,8 +2384,8 @@ class FPGAMatMul(ONNXForward):
                         "n0": "0:{}/{}".format(N, P),
                         "tm": "0:{}/{}".format(M, T),
                         "n1": "0:{}".format(P),
-                        "m": "0:{}/{}".format(
-                            T, vec_width)  # consider also vectorization
+                        "m": "0:{}".format(
+                            T)  # considers also vectorization
                     },
                     schedule=dace.ScheduleType.FPGA_Device)
 
@@ -2405,8 +2406,8 @@ class FPGAMatMul(ONNXForward):
                     mem,
                     src_conn="to_memory",
                     memlet=dace.Memlet(
-                        "Y[b, n0 * {} + n1, tm*{}/{}+ m]".format(
-                            P, T, vec_width)))
+                        "Y[b, n0 * {} + n1, tm*{}+ m]".format(
+                            P, T)))
 
             def make_compute(sdfg, state, vec_width=1):
                 vec_type = dace.vector(dace.float32, vec_width)
@@ -2449,7 +2450,7 @@ class FPGAMatMul(ONNXForward):
                 # Note: for some of the Sacred Mysteries of Intel OpenCL Compiler (TM), if this buffer is smaller
                 # than 24 floats, the II of the pipeline will be 5. Therefore we check this (with 32 to be
                 # more compliant with standard vector size) and in case we enlarge it
-
+                # TODO: not sure what happens with vec data type
                 buffer_size = max(M * vec_width, 32) / vec_width
                 sdfg.add_array("Y_buffer", [buffer_size],
                                dtype=vec_type,

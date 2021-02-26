@@ -56,18 +56,29 @@ def run(x_shape: tuple, y_shape:tuple, vec_width = 1,
     assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
     sdfg = dace_model.sdfg
     sdfg.save('/tmp/out.sdfg')
+    ##################################
+    # Vectorize output container and input B
+    vec_type = dace.vector(dace.float32, vec_width)
+    input_data_name = sdfg.states()[0].source_nodes()[1].data
+    output_data_name = sdfg.states()[0].sink_nodes()[0].data
+    utils.vectorize_array_and_memlet(sdfg, output_data_name, vec_type)
+    utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
+    sdfg.save('/tmp/out_vectorized.sdfg')
     # ##################################
     # Transform to FPGA
     #
     donnx.ONNXMatMul.default_implementation = "fpga"
     sdfg.apply_transformations([FPGATransformSDFG])
 
-    # TODO: vectorize
+
+
+    ###################################################
     sdfg.expand_library_nodes()
     sdfg.apply_transformations_repeated([InlineSDFG])
     sdfg.save('/tmp/out_fpga_expanded.sdfg')
     dace_output_fpga = dace_model(x, y)
-    diff = np.linalg.norm(torch_output.detach().numpy() - dace_output_fpga) /  dace_output_fpga.size
+    dace_output_fpga_reshaped = dace_output_fpga.reshape(torch_output.detach().numpy().shape)
+    diff = np.linalg.norm(torch_output.detach().numpy() - dace_output_fpga_reshaped) /  dace_output_fpga_reshaped.size
     print(
         "Difference: ", diff
         )
@@ -95,9 +106,9 @@ def test():
     # (But not in parallel)
 
     # each position of this lists contains a test configuration
-    vec_width = [1, 1, 1, 1]
-    x_shapes = [(4,8,16), (8,16,32), (8,16,16), (8,16,8)]
-    y_shapes = [(4,16,4), (8,32,64), (8,16,8), (8,8,16)]
+    vec_width = [1, 1, 1, 1, 2, 4]
+    x_shapes = [(4,8,16), (8,16,32), (8,16,16), (8,16,8), (8,16,32),  (8,32,64)]
+    y_shapes = [(4,16,4), (8,32,64), (8,16,8), (8,8,16),  (8,32,64), (8, 64, 16)]
 
     for i in range(0, len(vec_width)):
         print("##########################################################")
@@ -112,9 +123,9 @@ def test():
 
     print("----------- Testing Matmul (3Dx2D tensor) ---------------")
 
-    vec_width = [1, 1, 1]
-    x_shapes = [(4, 8, 16), (8, 16, 32), (2, 16, 32), (16,2,32)]
-    y_shapes = [(4, 16, 4), (32, 64), (32, 16), (32,32)]
+    vec_width = [1, 1, 1, 2, 4]
+    x_shapes = [(4, 8, 16), (8, 16, 32), (2, 16, 32), (16,2,32), (16,2,32), (16,2,32)]
+    y_shapes = [(4, 16, 4), (32, 64), (32, 16), (32,32), (32,64), (32,16)]
 
     for i in range(0, len(vec_width)):
         print("##########################################################")
@@ -130,17 +141,18 @@ def test():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    # parser.add_argument("W",
-    #                     type=int,
-    #                     nargs="?",
-    #                     default=1,
-    #                     help="Vectorization width")
+    parser.add_argument("W",
+                        type=int,
+                        nargs="?",
+                        default=1,
+                        help="Vectorization width")
     parser.add_argument("-test",
                         action="store_true",
                         default=False,
                         help="Perform tests (USE ONLY WITH EMULATION)")
 
     args = vars(parser.parse_args())
+    vec_width = args["W"]
     t = args["test"]
 
     #
@@ -148,7 +160,7 @@ if __name__ == "__main__":
     if t:
         test()
     else:
-        data_shape_1 = (8,16, 8)
-        data_shape_2 = (8, 8,16)
-        run(data_shape_1, data_shape_2)
+        data_shape_1 = (8,32, 64)
+        data_shape_2 = (8, 64,16)
+        run(data_shape_1, data_shape_2, vec_width)
 
