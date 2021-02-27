@@ -22,7 +22,7 @@ def test_bert_encoder(gpu, default_implementation):
     ptmodel = BertLayer(BertConfig()).eval()
     pt_outputs = ptmodel(input.clone())
 
-    dace_model = DaceModule(ptmodel, cuda=gpu, train=False)
+    dace_model = DaceModule(ptmodel, train=False)
     dace_outputs0 = dace_model(input.clone())
 
     diff = np.abs(dace_outputs0 - pt_outputs[0].detach().numpy())
@@ -46,6 +46,7 @@ def test_bert_cf():
 
     dace_model.dace_model.sdfg.apply_transformations_repeated(
         [ConstantFolding, RedundantSecondArray], validate_all=True)
+    dace_model.dace_model.sdfg.save("/tmp/bert_enc.sdfg")
     dace_model.dace_model.sdfg.expand_library_nodes()
     dace_model.dace_model.sdfg.apply_strict_transformations()
 
@@ -55,3 +56,6 @@ def test_bert_cf():
 
     assert np.max(diff) < 1e-5
     assert np.allclose(dace_outputs1, dace_outputs0)
+
+
+test_bert_cf()
