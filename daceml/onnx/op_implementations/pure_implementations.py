@@ -1,6 +1,7 @@
 import copy
 import inspect
 import itertools
+import logging
 import typing
 
 import dace
@@ -16,6 +17,8 @@ from daceml.onnx.implementation_abc import ONNXForward
 import numpy as np
 
 from daceml.util.utils import in_desc_with_name, out_desc_with_name
+
+log = logging.getLogger(__name__)
 
 
 def program_for_node(program, sdfg: SDFG, state: SDFGState,
@@ -246,6 +249,23 @@ class PureMatMul(ONNXForward):
             arg1 = 'ik'
             arg2 = 'kj'
             result = 'ij'
+            if input0_dim[-2] != input0_dim[-1]:
+                A_desc = in_desc_with_name(node, state, sdfg, "A")
+                B_desc = in_desc_with_name(node, state, sdfg, "B")
+                if dace.symbolic.issymbolic(input0_dim[-2]):
+                    log.warning(
+                        f"overriding symbol {input0_dim[-2]} with value {input1_dim[-1]} in descriptor of input A of node {node}"
+                    )
+                    new_shape = list(A_desc.shape)
+                    new_shape[-1] = input1_dim[-2]
+                    A_desc.shape = new_shape
+                elif dace.symbolic.issymbolic(input1_dim[-1]):
+                    log.warning(
+                        f"overriding symbol {input0_dim[-1]} with value {input0_dim[-2]} in descriptor of input B of node {node}"
+                    )
+                    new_shape = list(B_desc.shape)
+                    new_shape[-2] = input0_dim[-1]
+                    B_desc.shape = new_shape
             input0_dim = input0_dim[:-2]
             input1_dim = input1_dim[:-2]
             for dim0, dim1 in itertools.zip_longest(reversed(input0_dim),
