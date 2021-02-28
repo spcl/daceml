@@ -25,6 +25,12 @@ jobs:
           . /opt/setupenv
           make clean install
 
+      -name: Install ORT
+        run: |
+          . venv/bin/activate
+          cd /opt/onnxruntime
+          ./build.sh --use_cuda --cuda_version=11.1 --cuda_home=/usr/local/cuda-11.1 --cudnn_home=/usr/local/cuda-11 --build_shared_lib --parallel --config Release
+          
       - name: Test with pytest
         env:
           PYTEST_ARGS: --cov=daceml --cov-report=term --cov-report xml --cov-config=.coveragerc --gpu-only
