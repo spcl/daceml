@@ -158,7 +158,7 @@ def test_cast_float_to_long():
                           ('Mean', False, [0])])
 #+yapf: enable
 @pytest.mark.pure
-def test_reduce_nokeepdims(keepdims, reduce_type, axes):
+def test_reduce(keepdims, reduce_type, axes):
 
     X = np.random.normal(scale=10, size=(2, 4, 10)).astype(np.float32)
 
