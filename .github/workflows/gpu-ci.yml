@@ -26,7 +26,7 @@ jobs:
           make clean install
 
 
-      -name: Install ORT
+      - name: Install ORT
         run: |
           . venv/bin/activate
           cd /opt/onnxruntime
