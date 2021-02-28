@@ -118,6 +118,8 @@ class ONNXOp(nd.LibraryNode):
             inputs: bool = False) -> List[MultiConnectorEdge]:
         parameters = list(
             self.schema.inputs if inputs else self.schema.outputs)
+        if len(parameters) == 0:
+            return []
         if parameters[-1].param_type == ONNXParameterType.Variadic:
             name = parameters[-1].name
             parameters = itertools.chain(
