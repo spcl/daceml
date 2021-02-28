@@ -125,7 +125,13 @@ class ONNXRuntimeCUDA:
     init_code = """
     __ort_check_status(__state->ort_api, __state->ort_api->CreateMemoryInfo("Cuda", /*allocator_type=*/OrtDeviceAllocator, /*device=*/0, /*mem_type=*/OrtMemTypeDefault, &__state->ort_cuda_mem_info));
     __ort_check_status(__state->ort_api, __state->ort_api->CreateMemoryInfo("CudaPinned", /*allocator_type=*/OrtDeviceAllocator, /*device=*/0, /*mem_type=*/OrtMemTypeCPU, &__state->ort_cuda_pinned_mem_info));
-    __ort_check_status(__state->ort_api, OrtSessionOptionsAppendExecutionProvider_CUDA(__state->ort_session_options, /*device=*/0));
+    
+    OrtCUDAProviderOptions options = {
+        .device_id = 0,
+        .has_user_compute_stream = 1,
+        .user_compute_stream = nullptr
+    };
+    __ort_check_status(__state->ort_api, __state->ort_api->SessionOptionsAppendExecutionProvider_CUDA(__state->ort_session_options, &options));
     
     // overwrite the CPU ORT session with the CUDA session
     
