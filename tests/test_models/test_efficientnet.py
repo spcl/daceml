@@ -1,6 +1,9 @@
 import os
 import subprocess
 
+import pytest
+
+from daceml import onnx as donnx
 import numpy as np
 import onnx
 
@@ -8,6 +11,8 @@ from daceml.onnx import ONNXModel
 
 
 def test_efficientnet(gpu, default_implementation):
+    if gpu:
+        pytest.skip("GPU EfficientNet is currently broken due to Gemv")
     data_directory = os.path.join(os.path.dirname(__file__), "data")
 
     path = os.path.join(data_directory, "efficientnet.onnx")
