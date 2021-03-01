@@ -227,7 +227,7 @@ class PureMatMul(ONNXForward):
         input0_dim = in_desc_with_name(node, state, sdfg, "A").shape
         input1_dim = in_desc_with_name(node, state, sdfg, "B").shape
 
-        # list containing letters from a-z
+        # list containing letters from z-a
         letters = [chr(ord('z') - i) for i in range(26)]
         # i j k are used for the last dimensions
         letters = [l for l in letters if l not in ['i', 'j', 'k']]
