@@ -78,7 +78,6 @@ class ONNXRuntime:
         "OrtMemoryInfo* ort_cpu_mem_info;"
     ]
     dependencies = []
-    state_fields = []
 
 
     headers = [
@@ -122,7 +121,6 @@ class ONNXRuntimeCUDA:
         "OrtMemoryInfo* ort_cuda_pinned_mem_info;"
     ]
     dependencies = [ONNXRuntime]
-    state_fields = []
 
     headers = []
     init_code = """
