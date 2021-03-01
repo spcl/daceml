@@ -7,7 +7,7 @@ import onnx
 import daceml.onnx as donnx
 
 
-def test_bert_full(gpu, default_implementation):
+def test_bert_full(gpu, default_implementation, sdfg_name):
     data_directory = os.path.join(os.path.dirname(__file__), "data")
 
     bert_path = os.path.join(data_directory, "bert_infer.onnx")
@@ -20,7 +20,10 @@ def test_bert_full(gpu, default_implementation):
 
     model = onnx.load(bert_path)
 
-    dace_model = donnx.ONNXModel("bert", model, cuda=gpu, infer_shapes=False)
+    dace_model = donnx.ONNXModel(sdfg_name,
+                                 model,
+                                 cuda=gpu,
+                                 infer_shapes=False)
     feed = {
         "input_ids:0": np.load(os.path.join(data_directory, "input_ids.npy")),
         "input_mask:0": np.load(os.path.join(data_directory,
