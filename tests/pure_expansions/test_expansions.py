@@ -39,7 +39,6 @@ def test_matmul_expansion(a_shape, b_shape, sdfg_name):
                    sdfg.make_array_memlet("__return"))
 
     sdfg.expand_library_nodes()
-    sdfg.view()
     # check that the expansion worked. The default ORT expansion wouldn't produce a map
     assert any(
         isinstance(n, dace.nodes.MapEntry)
