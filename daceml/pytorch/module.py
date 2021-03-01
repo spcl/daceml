@@ -22,7 +22,7 @@ class DaceModule(nn.Module):
         :param train: whether to use train mode when tracing ``model``.
         :param apply_strict: whether to apply strict transforms after conversion (this generally improves performance,
                              but can be slow).
-        :param sdfg_name: the name to give to the sdfg.
+        :param sdfg_name: the name to give to the sdfg (defaults to ``dace_model``).
 
         :Example:
 
