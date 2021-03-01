@@ -207,6 +207,7 @@ class PureMatMul(ONNXForward):
         input0_dim = len(in_desc_with_name(node, state, sdfg, "A").shape)
         input1_dim = len(in_desc_with_name(node, state, sdfg, "B").shape)
 
+        # TODO remove these when dace reshapes work for nested SDFGs
         if input0_dim == 4 and input1_dim == 4:
             return True
 
