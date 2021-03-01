@@ -22,6 +22,7 @@ class DaceModule(nn.Module):
         :param train: whether to use train mode when tracing ``model``.
         :param apply_strict: whether to apply strict transforms after conversion (this generally improves performance,
                              but can be slow).
+        :param sdfg_name: the name to give to the sdfg.
 
         :Example:
 
@@ -46,13 +47,15 @@ class DaceModule(nn.Module):
             dummy_inputs: typing.Optional[typing.Tuple[torch.Tensor]] = None,
             cuda: bool = False,
             train: bool = False,
-            apply_strict: bool = False):
+            apply_strict: bool = False,
+            sdfg_name: typing.Optional[str] = None):
         super(DaceModule, self).__init__()
 
         self.model = module
         self.train = train
         self.sdfg = None
         self.cuda = cuda
+        self.sdfg_name = sdfg_name or "dace_model"
         self.apply_strict = apply_strict
         if dummy_inputs is not None:
             self.dace_model = self._initialize_sdfg(dummy_inputs)
@@ -73,7 +76,7 @@ class DaceModule(nn.Module):
             onnx_model = infer_shapes(onnx.load(export_name))
             self.onnx_model = onnx_model
 
-            dace_model = ONNXModel("dace_model",
+            dace_model = ONNXModel(self.sdfg_name,
                                    onnx_model,
                                    infer_shapes=False,
                                    cuda=self.cuda,

@@ -24,6 +24,12 @@ def pytest_generate_tests(metafunc):
         ])
 
 
+@pytest.fixture
+def sdfg_name(request):
+    return request.node.name.replace("[", "-").replace("]",
+                                                       "").replace("-", "_")
+
+
 @pytest.fixture(autouse=True)
 def setup_default_implementation(request):
     # this fixture is used for all tests (autouse)
