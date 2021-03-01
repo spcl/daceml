@@ -5,6 +5,7 @@ from typing import Iterator, Tuple, List, Dict, Type
 import dace
 import dace.sdfg.nodes as nd
 import dace.frontend.common.op_repository as dace_op_repo
+from dace.frontend.python.newast import ProgramVisitor
 import onnx
 from dace import SDFG, SDFGState, dtypes, data
 from dace.properties import Property, ListProperty
@@ -117,6 +118,8 @@ class ONNXOp(nd.LibraryNode):
             inputs: bool = False) -> List[MultiConnectorEdge]:
         parameters = list(
             self.schema.inputs if inputs else self.schema.outputs)
+        if len(parameters) == 0:
+            return []
         if parameters[-1].param_type == ONNXParameterType.Variadic:
             name = parameters[-1].name
             parameters = itertools.chain(
@@ -402,7 +405,8 @@ class ONNXOp(nd.LibraryNode):
 def register_op_repo_replacement(cls: Type[ONNXOp], cls_name: str,
                                  dace_schema: ONNXSchema):
     @dace_op_repo.replaces("daceml.onnx.{}".format(cls_name))
-    def op_repo_replacement(TODO_remove_this, sdfg: SDFG, state: SDFGState, **kwargs):
+    def op_repo_replacement(pv: ProgramVisitor, sdfg: SDFG, state: SDFGState,
+                            **kwargs):
         attrs = {
             name: value
             for name, value in kwargs.items() if name in dace_schema.attributes
@@ -425,15 +429,13 @@ def register_op_repo_replacement(cls: Type[ONNXOp], cls_name: str,
             read = state.add_read(arr_name)
             state.add_edge(read, None, onnx_node, inp,
                            sdfg.make_array_memlet(arr_name))
-            if inp in input_names:
-                onnx_node.add_in_connector(inp)
+            onnx_node.add_in_connector(inp)
 
         for outp, arr_name in outputs.items():
             write = state.add_read(arr_name)
             state.add_edge(onnx_node, outp, write, None,
                            sdfg.make_array_memlet(arr_name))
-            if outp in output_names:
-                onnx_node.add_out_connector(outp)
+            onnx_node.add_out_connector(outp)
         return []
 
 

@@ -1,5 +1,4 @@
-#ifndef __DACE_OP_CHECKER_H
-#define __DACE_OP_CHECKER_H
+#pragma once
 #include <unordered_map>
 #include <string>
 #include <iostream>
@@ -189,4 +188,3 @@ DACE_EXPORTED ONNXTensorElementDataType GetONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX
 DACE_EXPORTED ONNXTensorElementDataType GetONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16() {
     return ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16;
 }
-#endif  // __DACE_OP_CHECKER_H

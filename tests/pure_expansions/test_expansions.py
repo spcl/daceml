@@ -7,13 +7,22 @@ import daceml.onnx as donnx
 import daceml.onnx.converters as converters
 
 
+#+yapf: disable
+@pytest.mark.parametrize("a_shape, b_shape",
+                         [([2, 4], [4, 3]),
+                          pytest.param([3, 5], [5], marks=pytest.mark.skip("issues in dace")),
+                          pytest.param([5], [5, 6], marks=pytest.mark.skip("issues in dace"))])
+#+yapf: enable
 @pytest.mark.pure
-def test_matmul_expansion():
+def test_matmul_expansion(a_shape, b_shape):
     sdfg = dace.SDFG("test_matmul_expansion")
 
-    sdfg.add_array("X", [2, 4], dace.float32)
-    sdfg.add_array("Z", [4, 3], dace.float32)
-    sdfg.add_array("__return", [2, 3], dace.float32)
+    X = np.random.rand(*a_shape).astype(np.float32)
+    Z = np.random.rand(*b_shape).astype(np.float32)
+    expected_result = X @ Z
+    sdfg.add_array("X", a_shape, dace.float32)
+    sdfg.add_array("Z", b_shape, dace.float32)
+    sdfg.add_array("__return", expected_result.shape, dace.float32)
 
     state = sdfg.add_state()
     access_X = state.add_access("X")
@@ -29,10 +38,8 @@ def test_matmul_expansion():
     state.add_edge(op_node, "Y", access_result, None,
                    sdfg.make_array_memlet("__return"))
 
-    X = np.random.rand(2, 4).astype(np.float32)
-    Z = np.random.rand(4, 3).astype(np.float32)
-
     sdfg.expand_library_nodes()
+    sdfg.view()
     # check that the expansion worked. The default ORT expansion wouldn't produce a map
     assert any(
         isinstance(n, dace.nodes.MapEntry)
@@ -40,7 +47,7 @@ def test_matmul_expansion():
 
     result = sdfg(X=X, Z=Z)
 
-    assert np.allclose(X @ Z, result)
+    assert np.allclose(expected_result, result)
 
 
 @pytest.mark.pure
@@ -158,7 +165,7 @@ def test_cast_float_to_long():
                           ('Mean', False, [0])])
 #+yapf: enable
 @pytest.mark.pure
-def test_reduce_nokeepdims(keepdims, reduce_type, axes):
+def test_reduce(keepdims, reduce_type, axes):
 
     X = np.random.normal(scale=10, size=(2, 4, 10)).astype(np.float32)
 
