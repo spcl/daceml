@@ -37,6 +37,9 @@ NONDETERMINISTIC_OPS = {'ONNXDropout',
                         'ONNXTreeEnsembleRegressor'}
 # yapf: enable
 
+global UNIQUE_ID
+UNIQUE_ID = 0
+
 
 @registry.autoregister_params(singlestate=True)
 @make_properties
@@ -124,7 +127,9 @@ class ConstantFolding(transformation.Transformation):
                            sdfg.make_array_memlet(clean_constant_name))
         else:
             # otherwise compute the result of the op
-            sub_sdfg = dace.SDFG("sub_sdfg")
+            global UNIQUE_ID
+            UNIQUE_ID += 1
+            sub_sdfg = dace.SDFG("sub_sdfg_" + str(UNIQUE_ID))
             sub_state = sub_sdfg.add_state()
 
             node_copy = copy.deepcopy(node)

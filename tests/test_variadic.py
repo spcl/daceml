@@ -6,8 +6,8 @@ import daceml.onnx as donnx
 
 
 @pytest.mark.ort
-def test_sum(gpu):
-    sdfg = dace.SDFG("test_variadic")
+def test_sum(gpu, sdfg_name):
+    sdfg = dace.SDFG(sdfg_name)
 
     sdfg.add_array("A_arr", [2, 2], dace.float32)
     sdfg.add_array("B_arr", [2, 2], dace.float32)

@@ -14,10 +14,10 @@ data_directory = os.path.join(os.path.dirname(__file__), "..", "onnx_files")
 
 
 @pytest.mark.ort
-def test_bert_subgraph():
+def test_bert_subgraph(sdfg_name):
 
     model = onnx.load(os.path.join(data_directory, "reshape.onnx"))
-    dace_model = donnx.ONNXModel("reshape", model)
+    dace_model = donnx.ONNXModel(sdfg_name, model)
 
     out_before = dace_model()
     assert len(dace_model.sdfg.nodes()[0].nodes()) > 2

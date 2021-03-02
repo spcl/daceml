@@ -46,7 +46,6 @@ def test_bert_cf():
 
     dace_model.dace_model.sdfg.apply_transformations_repeated(
         [ConstantFolding, RedundantSecondArray], validate_all=True)
-    dace_model.dace_model.sdfg.save("/tmp/bert_enc.sdfg")
     dace_model.dace_model.sdfg.expand_library_nodes()
     dace_model.dace_model.sdfg.apply_strict_transformations()
 
