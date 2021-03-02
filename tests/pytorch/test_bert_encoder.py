@@ -9,7 +9,7 @@ from daceml.pytorch import DaceModule
 from daceml.transformation import ConstantFolding
 
 
-def test_bert_encoder(gpu, default_implementation):
+def test_bert_encoder(gpu, default_implementation, sdfg_name):
     if not gpu and default_implementation == 'onnxruntime':
         pytest.skip("combination is tested below")
 
@@ -22,7 +22,10 @@ def test_bert_encoder(gpu, default_implementation):
     ptmodel = BertLayer(BertConfig()).eval()
     pt_outputs = ptmodel(input.clone())
 
-    dace_model = DaceModule(ptmodel, cuda=gpu, train=False)
+    dace_model = DaceModule(ptmodel,
+                            cuda=gpu,
+                            train=False,
+                            sdfg_name=sdfg_name)
     dace_outputs0 = dace_model(input.clone())
 
     diff = np.abs(dace_outputs0.detach().numpy() - pt_outputs[0].detach().numpy())
@@ -31,7 +34,7 @@ def test_bert_encoder(gpu, default_implementation):
 
 
 @pytest.mark.ort
-def test_bert_cf():
+def test_bert_cf(sdfg_name):
     batch_size = 8
     seq_len = 512
     hidden_size = 768
@@ -41,7 +44,7 @@ def test_bert_cf():
     ptmodel = BertLayer(BertConfig()).eval()
     pt_outputs = ptmodel(input.clone())
 
-    dace_model = DaceModule(ptmodel, train=False)
+    dace_model = DaceModule(ptmodel, train=False, sdfg_name=sdfg_name)
     dace_outputs0 = dace_model(input.clone())
 
     dace_model.dace_model.sdfg.apply_transformations_repeated(

@@ -14,8 +14,8 @@ import daceml.onnx.converters as converters
                           pytest.param([5], [5, 6], marks=pytest.mark.skip("issues in dace"))])
 #+yapf: enable
 @pytest.mark.pure
-def test_matmul_expansion(a_shape, b_shape):
-    sdfg = dace.SDFG("test_matmul_expansion")
+def test_matmul_expansion(a_shape, b_shape, sdfg_name):
+    sdfg = dace.SDFG(sdfg_name)
 
     X = np.random.rand(*a_shape).astype(np.float32)
     Z = np.random.rand(*b_shape).astype(np.float32)
@@ -39,7 +39,6 @@ def test_matmul_expansion(a_shape, b_shape):
                    sdfg.make_array_memlet("__return"))
 
     sdfg.expand_library_nodes()
-    sdfg.view()
     # check that the expansion worked. The default ORT expansion wouldn't produce a map
     assert any(
         isinstance(n, dace.nodes.MapEntry)
@@ -51,8 +50,8 @@ def test_matmul_expansion(a_shape, b_shape):
 
 
 @pytest.mark.pure
-def test_cast_int_to_float():
-    sdfg = dace.SDFG("test_cast")
+def test_cast_int_to_float(sdfg_name):
+    sdfg = dace.SDFG(sdfg_name)
 
     sdfg.add_array("X", [2, 4], dace.int32)
     sdfg.add_array("__return", [2, 4], dace.float32)
@@ -85,8 +84,8 @@ def test_cast_int_to_float():
 
 
 @pytest.mark.pure
-def test_cast_float_to_int():
-    sdfg = dace.SDFG("test_cast")
+def test_cast_float_to_int(sdfg_name):
+    sdfg = dace.SDFG(sdfg_name)
 
     sdfg.add_array("X", [2, 4], dace.float32)
     sdfg.add_array("__return", [2, 4], dace.int32)
@@ -119,8 +118,8 @@ def test_cast_float_to_int():
 
 
 @pytest.mark.pure
-def test_cast_float_to_long():
-    sdfg = dace.SDFG("test_cast")
+def test_cast_float_to_long(sdfg_name):
+    sdfg = dace.SDFG(sdfg_name)
 
     sdfg.add_array("X", [2, 4], dace.float32)
     sdfg.add_array("__return", [2, 4], dace.int64)
@@ -165,11 +164,11 @@ def test_cast_float_to_long():
                           ('Mean', False, [0])])
 #+yapf: enable
 @pytest.mark.pure
-def test_reduce(keepdims, reduce_type, axes):
+def test_reduce(keepdims, reduce_type, axes, sdfg_name):
 
     X = np.random.normal(scale=10, size=(2, 4, 10)).astype(np.float32)
 
-    sdfg = dace.SDFG("test_reduce")
+    sdfg = dace.SDFG(sdfg_name)
 
     sdfg.add_array("X", [2, 4, 10], dace.float32)
 
@@ -207,10 +206,10 @@ def test_reduce(keepdims, reduce_type, axes):
 
 
 @pytest.mark.pure
-def test_reduce_scalar():
+def test_reduce_scalar(sdfg_name):
     X = np.random.normal(scale=10, size=(2, 4, 10)).astype(np.float32)
 
-    sdfg = dace.SDFG("test_reduce")
+    sdfg = dace.SDFG(sdfg_name)
 
     numpy_result = np.mean(X)
 
@@ -249,10 +248,10 @@ def test_reduce_scalar():
 
 @pytest.mark.pure
 @pytest.mark.parametrize("new_shape", [[8, 10], [80], [2, 40]])
-def test_reshape(new_shape):
+def test_reshape(new_shape, sdfg_name):
     X = np.random.normal(scale=10, size=(2, 4, 10)).astype(np.float32)
 
-    sdfg = dace.SDFG("test_reduce")
+    sdfg = dace.SDFG(sdfg_name)
 
     numpy_result = X.reshape(*new_shape)
 
@@ -285,13 +284,13 @@ def test_reshape(new_shape):
 
 @pytest.mark.pure
 @pytest.mark.parametrize("axis", [0, -1])
-def test_softmax(axis):
+def test_softmax(axis, sdfg_name):
 
     X = np.random.normal(scale=10, size=(2, 4, 10)).astype(np.float32)
 
     torch_result = torch.nn.functional.softmax(torch.Tensor(X),
                                                dim=axis).numpy()
-    sdfg = dace.SDFG("test_softmax")
+    sdfg = dace.SDFG(sdfg_name)
 
     sdfg.add_array("X", [2, 4, 10], dace.float32)
     sdfg.add_array("__return", torch_result.shape, dace.float32)
@@ -323,11 +322,11 @@ def test_softmax(axis):
 
 
 @pytest.mark.pure
-def test_reciprocal():
+def test_reciprocal(sdfg_name):
     X = np.random.normal(scale=10, size=(2, 4, 10)).astype(np.float32)
 
     numpy_result = 1 / X
-    sdfg = dace.SDFG("test_reciprocal")
+    sdfg = dace.SDFG(sdfg_name)
 
     sdfg.add_array("X", [2, 4, 10], dace.float32)
     sdfg.add_array("__return", numpy_result.shape, dace.float32)

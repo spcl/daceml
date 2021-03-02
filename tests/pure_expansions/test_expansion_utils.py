@@ -6,9 +6,9 @@ import daceml.onnx as donnx
 
 
 @pytest.mark.pure
-def test_sqrt_expansion():
+def test_sqrt_expansion(sdfg_name):
     # sqrt expansion makes use of the program_for_node function
-    sdfg = dace.SDFG("test_sqrt_expansion")
+    sdfg = dace.SDFG(sdfg_name)
 
     sdfg.add_array("inp", [2, 4], dace.float32)
     sdfg.add_array("__return", [2, 4], dace.float32)
