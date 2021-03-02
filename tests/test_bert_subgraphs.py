@@ -22,8 +22,7 @@ def test_slice(gpu):
     assert out[0] == 1.0
 
 
-@pytest.mark.ort
-def test_reshape(gpu):
+def test_reshape(gpu, default_implementation):
     model = onnx.load(os.path.join(data_directory, "reshape.onnx"))
     dace_model = ONNXModel("reshape", model, cuda=gpu)
     dace_model()

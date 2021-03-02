@@ -10,14 +10,14 @@ from dace.frontend.python.parser import DaceProgram
 from dace.registry import autoregister_params
 import dace.libraries.blas as blas
 from dace.sdfg.nodes import Node
-from dace.symbolic import symstr
 
+from daceml.transformation import constant_folding
 from daceml.onnx.nodes.onnx_op import ONNXOp
 from daceml.onnx import converters
 from daceml.onnx.forward_implementation_abc import ONNXForward
 import numpy as np
 
-from daceml.util.utils import in_desc_with_name, out_desc_with_name
+from daceml.util.utils import in_desc_with_name, out_desc_with_name, in_edge_with_name
 
 log = logging.getLogger(__name__)
 
@@ -490,7 +490,6 @@ class PureCast(ONNXForward):
 
 @autoregister_params(op="Gemm", name="pure")
 class PureGemm(ONNXForward):
-
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
@@ -508,9 +507,11 @@ class PureGemm(ONNXForward):
         # the gemm libnode is broken for now, so we just do it manually
         atype = in_desc_with_name(node, state, sdfg, "A")
         if "C" in node.in_connectors:
+
             def prog(A, B, C, Y):
                 Y[:] = A @ np.transpose(B) + C
         else:
+
             def prog(A, B, Y):
                 Y[:] = A @ np.transpose(B)
 
@@ -518,14 +519,34 @@ class PureGemm(ONNXForward):
         sdfg.apply_strict_transformations()
         return sdfg
 
+
 @autoregister_params(op="Relu", name="pure")
 class PureRelu(ONNXForward):
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState, sdfg: SDFG) -> typing.Union[Node, SDFG]:
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
         input_dtype = in_desc_with_name(node, state, sdfg, "X").dtype
-        cast_lambda = "lambda x: max(x, dace.{}(0))".format(input_dtype.to_string())
+        cast_lambda = "lambda x: max(x, dace.{}(0))".format(
+            input_dtype.to_string())
 
         def prog(X, Y):
             Y[:] = dace.elementwise(cast_lambda, X)
+
+        return program_for_node(prog, sdfg, state, node).to_sdfg()
+
+
+@autoregister_params(op="Reshape", name="pure")
+class PureReshape(ONNXForward):
+    @staticmethod
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+        new_shape = out_desc_with_name(node, state, sdfg, "reshaped").shape
+        node.remove_in_connector("shape")
+
+        shape_node = in_edge_with_name(node, state, "shape").src
+        constant_folding.remove_node_and_computation(sdfg, state, shape_node)
+
+        def prog(data, reshaped):
+            reshaped[:] = np.reshape(data, new_shape)
 
         return program_for_node(prog, sdfg, state, node).to_sdfg()

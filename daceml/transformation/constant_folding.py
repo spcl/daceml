@@ -213,14 +213,28 @@ class ConstantFolding(transformation.Transformation):
                 state.add_edge(access_constant, None, edge.dst, edge.dst_conn,
                                sdfg.make_array_memlet(clean_constant_name))
 
-        # remove all now useless nodes with a reverse BFS
-        queue = deque([node])
-        while len(queue) > 0:
-            current_node = queue.popleft()
+            # remove all now useless nodes with a reverse BFS
+            remove_node_and_computation(sdfg, state, node)
 
-            edges = state.in_edges(current_node)
-            state.remove_node(current_node)
-            for e in edges:
-                next_node = e.src
-                if len(state.out_edges(next_node)) == 0:
-                    queue.append(next_node)
+
+def remove_node_and_computation(sdfg: dace.SDFG, state: dace.SDFGState,
+                                node: nd.Node):
+    """ Remove a node and the parent nodes that compute this node, if the outputs are not used elsewhere.
+        :param node: the node to remove
+    """
+    queue = deque([node])
+    while len(queue) > 0:
+        current_node = queue.popleft()
+
+        edges = state.in_edges(current_node)
+        state.remove_node(current_node)
+        for e in edges:
+            next_node = e.src
+            data_used_in_other_states = isinstance(next_node, nd.AccessNode) and \
+                                        any(n.data == next_node.data
+                                            for s in sdfg.nodes()
+                                            for n in s.nodes() if s is not state)
+
+            if len(state.out_edges(
+                    next_node)) == 0 and not data_used_in_other_states:
+                queue.append(next_node)
