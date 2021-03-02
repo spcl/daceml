@@ -13,39 +13,78 @@ from dace.transformation.dataflow import PruneConnectors
 from dace.transformation.dataflow import streaming_memory as sm
 from dace import StorageType
 from dace import SDFG
+import argparse
+###################################################################
+# Transformer configurations to be used for MHA
+# Note:
+# - base and large, refer to original Bert model
+# - tiny and small are just for testing
+# - lu20, refers to the test configuration from "Hardware Accelerator for Multi-Head Attention and
+#       Position-Wise Feed-Forward in the Transformer" by Lu et al. They use the original transformer base model
+
+# Key:
+# H = #Heads
+# P = #projections
+# N = # features (sometimes referred as d_model)
+# SM, SN = input/output sequence length
+# numb_emb= 4N (after MHA, sometimes referred as feed forward filter size or d_ff)
+# Typically, N = P*H
+configurations = {
+    "tiny": {
+        "H": 4,
+        "P": 8,
+        "N": 32,
+        "SM": 16,
+        "SN": 16
+    },
+    "small": {
+        "H": 12,
+        "P": 32,
+        "N": 384,
+        "SM": 32,
+        "SN": 32
+    },
+    "base": {
+        "H": 12,
+        "P": 64,
+        "N": 768,
+        "SM": 128,
+        "SN": 128
+    },
+    "large": {
+        "H": 16,
+        "P": 64,
+        "N": 1024,
+        "SM": 512,
+        "SN": 512
+    },
+    "lu20": {
+        "H": 8,
+        "P": 64,
+        "N": 512,
+        "SM": 64,
+        "SN": 64
+    },
+}
+
 
 @pytest.mark.ort
-def test_attn(execute_cpu_dace = False):
-    # BERT_base: H=12, P=64 N=768, emb=4N, SM=SN=128
-    # BERT_large: H=16, P=64, N=1024, emb=4N, SM=SN=512
+def test_attn(batch_size, configuration_name, execute_cpu_dace=False):
 
-    ##### Tiny BERT
-    # B = 2
-    # H = 4
-    # P = 8
-    # N = P * H
-    # SM, SN = 16, 16
+    B = batch_size
+    conf = configurations[configuration_name]
+    H = conf["H"]
+    P = conf["P"]
+    N = conf["N"]
+    SM = conf["SM"]
+    SN = conf["SN"]
 
-    ##### SMALL BERT
-    # B = 2
-    # H = 12
-    # P = 32
-    # N = P * H
-    # SM, SN = 32, 32
+    print("******************************************************")
+    print("Executing MHA with configuration: ", configuration_name)
+    print("B: ",B, " H: ", H, " P: ", P, " N: ", N, " SM: ", SM, " SN:", SN)
+    print("******************************************************")
 
-    ##### BASE BERT
-    B = 2
-    H = 12
-    P = 64
-    N = P * H
-    SM, SN = 128, 128
-
-    ###### BERT LARGE
-    # B = 2
-    # H = 16
-    # P = 64
-    # N = P * H
-    # SM, SN = 512, 512
+    #############
 
     K, Q, V = [
         torch.randn([SM, B, N]),
@@ -56,22 +95,23 @@ def test_attn(execute_cpu_dace = False):
 
     donnx.ONNXCast.default_implementation = "onnxruntime"
 
-
     pt_outputs = ptmodel(Q, K, V)
 
     if execute_cpu_dace:
-        dace_model = DaceModule(ptmodel, dummy_inputs=(Q,K,V))
+        dace_model = DaceModule(ptmodel, dummy_inputs=(Q, K, V))
         # dace_outputs_0 = dace_model(Q, K, V)
 
     else:
-        dace_model = DaceModule(ptmodel, dummy_inputs=(Q,K,V))
+        dace_model = DaceModule(ptmodel, dummy_inputs=(Q, K, V))
 
     dace_model.sdfg.save('/tmp/out_pre.sdfg')
 
     ################################################
     # Apply transformations
     dace_model.dace_model.sdfg.apply_transformations_repeated(
-        [ConstantFolding, RedundantSecondArray], validate_all=True, print_report=True)
+        [ConstantFolding, RedundantSecondArray],
+        validate_all=True,
+        print_report=True)
     dace_model.sdfg.save('/tmp/out.sdfg')
 
     if execute_cpu_dace:
@@ -115,11 +155,12 @@ def test_attn(execute_cpu_dace = False):
     # Load from file
     # sdfg = SDFG.from_file('/tmp/out_fpga.sdfg')
 
-    dace_output_fpga = dace_model(Q,K,V)
+    dace_output_fpga = dace_model(Q, K, V)
 
-    diff0 = np.linalg.norm(pt_outputs[0].detach().numpy() - dace_output_fpga[0]) / dace_output_fpga[0].size
-    diff1 = np.linalg.norm(pt_outputs[1].detach().numpy() - dace_output_fpga[1]) / dace_output_fpga[1].size
-
+    diff0 = np.linalg.norm(pt_outputs[0].detach().numpy() -
+                           dace_output_fpga[0]) / dace_output_fpga[0].size
+    diff1 = np.linalg.norm(pt_outputs[1].detach().numpy() -
+                           dace_output_fpga[1]) / dace_output_fpga[1].size
 
     assert np.allclose(pt_outputs[0].detach().numpy(),
                        dace_output_fpga[0],
@@ -129,6 +170,21 @@ def test_attn(execute_cpu_dace = False):
                        atol=1e-06)
 
 
-
 if __name__ == "__main__":
-    test_attn(False)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("B",
+                        type=int,
+                        nargs="?",
+                        default=2,
+                        help="Batch size")
+    parser.add_argument("conf",
+                        type=str,
+                        nargs="?",
+                        default="tiny",
+                        help="Configuration")
+
+
+    args = vars(parser.parse_args())
+    B = args["B"]
+    conf = args["conf"]
+    test_attn(B, conf, False)
