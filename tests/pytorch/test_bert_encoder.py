@@ -207,8 +207,28 @@ def test_bert_encoder(gpu, apply_strict):
 
     softmax_sdfg.apply_transformations_repeated([ConstantPropagation], validate_all=True, print_report=True)
 
+    dace_model.sdfg.save('attn15_1.sdfg')
+    print('attn15_1.sdfg')
+
+    softmax_sdfg.apply_transformations_repeated([CleanNestedSDFGConnectors], validate_all=True, print_report=True)
+
     dace_model.sdfg.save('attn16.sdfg')
     print('attn16.sdfg')
+
+    assert len(softmax_sdfg.nodes()) == 1
+    state_with_nsdfg: dace_state.SDFGState = softmax_sdfg.nodes()[0]
+
+    from dace.transformation.dataflow.clean_connectors import merge_symbols
+
+    for n in state_with_nsdfg.nodes():
+        if isinstance(n, sdfg_nodes.NestedSDFG):
+            target_sdfg = n.sdfg
+
+            # TODO: for this we need transformation that detects opportunities for memory reuse
+            merge_symbols(target_sdfg, 'n2_output', 'n1_tmp_out')
+
+    dace_model.sdfg.save('attn16_1.sdfg')
+    print('attn16_1.sdfg')
 
     from dace.transformation.interstate.gpu_transform_sdfg import GPUTransformSDFG
 
