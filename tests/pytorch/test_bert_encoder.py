@@ -225,10 +225,32 @@ def test_bert_encoder(gpu, apply_strict):
             target_sdfg = n.sdfg
 
             # TODO: for this we need transformation that detects opportunities for memory reuse
+            # TODO: try TransientReuse
             merge_symbols(target_sdfg, 'n2_output', 'n1_tmp_out')
 
     dace_model.sdfg.save('attn16_1.sdfg')
     print('attn16_1.sdfg')
+
+    from dace.transformation.interstate.state_elimination import EmptyStateElimination
+    from dace.libraries.standard.nodes.barrier import Barrier
+
+    # remove all barriers
+    # TODO: it should be done in transformation that can detect if barrier removable or not
+    pattern = sdutil.node_path_graph(Barrier)
+
+    for subgraph in enumerate_matches(softmax_sdfg, pattern):
+        print("Match found in state", subgraph.graph.label, ". Nodes:", subgraph.nodes())
+
+        EmptyStateElimination.apply_to(subgraph.graph.parent, empty_state=subgraph.graph, verify=False)
+
+    dace_model.sdfg.save('attn16_2.sdfg')
+    print('attn16_2.sdfg')
+
+
+    softmax_sdfg.apply_transformations_repeated([EmptyStateElimination], validate_all=True, print_report=True)
+
+    dace_model.sdfg.save('attn16_3.sdfg')
+    print('attn16_3.sdfg')
 
     from dace.transformation.interstate.gpu_transform_sdfg import GPUTransformSDFG
 
