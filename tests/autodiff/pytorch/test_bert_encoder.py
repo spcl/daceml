@@ -8,7 +8,7 @@ from daceml.pytorch import DaceModule
 from daceml.transformation import ConstantFolding
 
 
-def test_bert_encoder(gpu):
+def test_bert_encoder_backward(gpu):
     batch_size = 8
     seq_len = 512
     hidden_size = 768

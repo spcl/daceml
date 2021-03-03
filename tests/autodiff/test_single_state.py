@@ -6,8 +6,11 @@ import torch
 import torch.nn.functional as F
 
 import dace
+from dace import data
 import dace.sdfg.nodes as nd
+from dace.transformation.interstate import StateFusion
 
+import daceml.onnx as donnx
 from daceml.autodiff import AutoDiffException, add_backward_pass
 
 ##################################
@@ -38,6 +41,7 @@ def run_correctness(func):
             print(v)
             print("SDFG results:", "-" * 10)
             print(sdfg_results[k])
+            print(v - sdfg_results[k])
 
             assert diff < 1e-5
 
@@ -48,11 +52,14 @@ class SDFGBackwardRunner:
     def __init__(self, sdfg, target, strict=True):
         if strict:
             sdfg.apply_strict_transformations()
-        self.sdfg = sdfg
+        self.sdfg: dace.SDFG = sdfg
         self.target = target
+
         state = sdfg.nodes()[0]
-        required_grads = list(node for node in state.source_nodes()
-                              if isinstance(node, nd.AccessNode))
+        required_grads = list(
+            node for node in state.nodes()
+            if isinstance(node, nd.AccessNode) and node.desc(sdfg).dtype in
+            [dace.float32, dace.float64] and not node.desc(sdfg).transient)
 
         add_backward_pass(self.sdfg, state, [self.target], required_grads)
 
@@ -71,22 +78,20 @@ class SDFGBackwardRunner:
             dtype=getattr(np, self.sdfg.arrays[self.target].dtype.to_string()))
 
         print("Pre-execution arrays")
-        print("-" * 10)
         for k, v in inputs.items():
             print(k, "-" * 10)
-            print(v.dtype)
-            print("is_contiguous:", v.flags['C_CONTIGUOUS'])
-            print(v)
+            print("\t{}".format(v.dtype))
+            print("\t{}".format("is_contiguous:", v.flags['C_CONTIGUOUS']))
+            print("\t{}".format(v))
 
         self.sdfg(**inputs)
 
         print("Post-execution arrays")
-        print("-" * 10)
         for k, v in inputs.items():
             print(k, "-" * 10)
-            print(v.dtype)
-            print("is_contiguous:", v.flags['C_CONTIGUOUS'])
-            print(v)
+            print("\t{}".format(v.dtype))
+            print("\t{}".format("is_contiguous:", v.flags['C_CONTIGUOUS']))
+            print("\t{}".format(v))
 
         results = {name: arr for name, arr in inputs.items()}
         return results
@@ -604,7 +609,7 @@ def test_reduce_max_simple():
     )
 
 
-@pytest.mark.skip()
+@pytest.mark.skip("max unimplemented for now")
 @run_correctness
 def test_reduce_max_node_1_axis():
     def torch_func(*, X, Y, W):
@@ -641,3 +646,34 @@ def test_reduce_max_node_1_axis():
             Y=np.random.rand(4, 3).astype(np.float64),
         ),
     )
+
+
+@run_correctness
+def test_reshape():
+    @dace.program
+    def add_reshape_grad_test(inp: dace.float64[9], bias: dace.float64[3],
+                              target_shape: dace.int64[2]):
+        reshaped = dace.define_local([3, 3], dace.float64)
+        donnx.ONNXReshape(data=inp, shape=target_shape, reshaped=reshaped)
+        Z = reshaped + bias
+        Zl = dace.elementwise(lambda x: log(x + 1), Z)
+        S = np.sum(Zl)
+        return S
+
+    sdfg = add_reshape_grad_test.to_sdfg(strict=False)
+
+    sdfg.apply_transformations_repeated([StateFusion])
+
+    def torch_func(*, inp, bias):
+        reshaped = torch.reshape(inp, [3, 3])
+
+        Z = reshaped + bias
+        Zl = torch.log(Z + 1)
+        S = Zl.sum()
+
+        S.backward()
+        return dict(inp_gradient=inp.grad, bias_gradient=bias.grad)
+
+    return (SDFGBackwardRunner(sdfg, "__return", strict=False), torch_func,
+            dict(inp=np.random.rand(9).astype(np.float64),
+                 bias=np.random.rand(3).astype(np.float64)))

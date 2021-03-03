@@ -403,10 +403,20 @@ class BackwardPassGenerator:
             # Nodes have been expanded again on the expanded graph; recalculate the forward graph
             forward_subgraph = self._find_subgraph_to_differentiate()
 
+        self.sdfg.view()
         # recursively reverse the subgraph
         self._reverse_subgraph(forward_subgraph)
 
         self._applied = True
+
+        # in some cases (accessnode -> accessnode), the descriptors for the gradients of the function outputs are not
+        # added yet. Add them now
+
+        for given_grad in self.given_gradients:
+            if given_grad.data not in self.backward_sdfg.arrays:
+                self._add_gradient_data_descriptor(given_grad.data)
+
+        self.backward_sdfg.view()
 
         # prepare the output
         required_grad_names = {
@@ -452,7 +462,7 @@ class BackwardPassGenerator:
 
     def _init_grad(self, data: str):
         """ Add a state where `data` is initialized with zero.
-            self.sdfg.arrays[data] should have type Union[dt.Array, dt.Scalar]
+            self.sdfg.arrays[data] should have type Union[dt.Array, dt.Scalar, dt.View]
         """
         state = self.backward_sdfg.add_state_before(self.backward_state,
                                                     label="init_" + data)
@@ -478,6 +488,10 @@ class BackwardPassGenerator:
             write = state.add_write(data)
             state.add_edge(tasklet, "__out", write, None,
                            Memlet.simple(data, "0"))
+        elif type(arr) is dt.View:
+            # not need to initialize: the viewed array will always be visited
+            # (since a view can never be a required grad), and thus the viewed array will be initialized.
+            pass
         else:
             raise AutoDiffException(
                 "Unsupported data descriptor {}".format(arr))
@@ -548,6 +562,34 @@ class BackwardPassGenerator:
                 raise AutoDiffException(
                     "Failed at node {}".format(node)) from e
 
+    def _add_gradient_data_descriptor(self, data_name: str):
+        """ Add the data descriptor for the gradient for `data_name`.
+            :param data_name: the name of the forward descriptor.
+        """
+        grad_name = self.array_grad_name(data_name)
+
+        if grad_name in self.backward_sdfg.arrays:
+            raise AutoDiffException(
+                f"descriptor for gradient of {data_name} ({grad_name}) already exists"
+            )
+
+        array = self.sdfg.arrays[data_name]
+
+        if type(array) not in [dt.Scalar, dt.Array, dt.View]:
+            raise AutoDiffException(
+                "Unsupported data descriptor {}".format(array))
+
+        cloned_datadesc = copy.deepcopy(array)
+
+        # only the grads of the inputs and the outputs are not transient
+        cloned_datadesc.transient = data_name not in self.input_names and data_name not in self.output_names
+
+        self.backward_grad_arrays[grad_name] = cloned_datadesc
+        self.backward_sdfg.arrays[grad_name] = copy.deepcopy(cloned_datadesc)
+
+        if cloned_datadesc.transient:
+            self._init_grad(grad_name)
+
     def _connect_given_gradients(self, subgraph: dstate.StateSubgraphView,
                                  forward_node):
         """ Connect the gradients of the outputs of forward_node as inputs to the corresponding reverse node. """
@@ -557,7 +599,7 @@ class BackwardPassGenerator:
                 # skip connecting edges for which we don't need to generate grads.
                 continue
 
-            _, output_conn, dest_node, input_conn, memlet = edge
+            src_node, output_conn, dest_node, input_conn, memlet = edge
             if detect_reduction_type(memlet.wcr) not in [
                     None,
                     dtypes.ReductionType.Sum,
@@ -571,30 +613,16 @@ class BackwardPassGenerator:
             # remove the WCR since these are now read edges
             memlet.wcr = None
 
-            if self.array_grad_name(
-                    memlet.data) not in self.backward_sdfg.arrays:
+            # the name of the data we are writing the gradient of
+            data_name = src_node.data if isinstance(
+                src_node, nd.AccessNode) else memlet.data
+            grad_name = self.array_grad_name(data_name)
+
+            if grad_name not in self.backward_sdfg.arrays:
                 # this grad hasn't been written before: initialize it
-                array = self.sdfg.arrays[memlet.data]
+                self._add_gradient_data_descriptor(data_name)
 
-                if type(array) is not dt.Scalar and type(
-                        array) is not dt.Array:
-                    raise AutoDiffException(
-                        "Unsupported data descriptor {}".format(array))
-
-                cloned_datadesc = copy.deepcopy(array)
-
-                # only the grads of the inputs and the outputs are not transient
-                cloned_datadesc.transient = memlet.data not in self.input_names and memlet.data not in self.output_names
-
-                self.backward_grad_arrays[self.array_grad_name(
-                    memlet.data)] = cloned_datadesc
-                self.backward_sdfg.arrays[self.array_grad_name(
-                    memlet.data)] = copy.deepcopy(cloned_datadesc)
-
-                if cloned_datadesc.transient:
-                    self._init_grad(self.array_grad_name(memlet.data))
-
-            memlet.data = self.array_grad_name(memlet.data)
+            memlet.data = grad_name
 
             self.backward_state.add_edge(
                 self.reverse_map[dest_node],

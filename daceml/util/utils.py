@@ -17,7 +17,8 @@ def is_desc_contiguous(desc: dt.Data) -> bool:
         ]
         return desc.strides == contiguous_strides
     else:
-        raise ValueError("Unsupported data descriptor type {}".format(type(desc)))
+        raise ValueError("Unsupported data descriptor type {}".format(
+            type(desc)))
 
 
 def in_desc_with_name(node: Node, state: SDFGState, sdfg: SDFG,
@@ -77,7 +78,8 @@ def out_edge_with_name(node: Node, state: SDFGState,
     return cands[0]
 
 
-def find_str_not_in_set(existing: typing.Set[str], target_str: typing.Optional[str]) -> str:
+def find_str_not_in_set(existing: typing.Set[str],
+                        target_str: typing.Optional[str]) -> str:
     """ Try to find a new str that is not in the set.
 
         :param existing: the existing strs.
@@ -93,5 +95,3 @@ def find_str_not_in_set(existing: typing.Set[str], target_str: typing.Optional[s
     while (base_name + "_" + str(i)) in existing:
         i += 1
     return base_name + "_" + str(i)
-
-
