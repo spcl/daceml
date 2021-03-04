@@ -403,7 +403,6 @@ class BackwardPassGenerator:
             # Nodes have been expanded again on the expanded graph; recalculate the forward graph
             forward_subgraph = self._find_subgraph_to_differentiate()
 
-        self.sdfg.view()
         # recursively reverse the subgraph
         self._reverse_subgraph(forward_subgraph)
 
@@ -413,10 +412,9 @@ class BackwardPassGenerator:
         # added yet. Add them now
 
         for given_grad in self.given_gradients:
-            if given_grad.data not in self.backward_sdfg.arrays:
+            if self.array_grad_name(
+                    given_grad.data) not in self.backward_sdfg.arrays:
                 self._add_gradient_data_descriptor(given_grad.data)
-
-        self.backward_sdfg.view()
 
         # prepare the output
         required_grad_names = {

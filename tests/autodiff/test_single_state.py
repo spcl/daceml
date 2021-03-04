@@ -677,3 +677,55 @@ def test_reshape():
     return (SDFGBackwardRunner(sdfg, "__return", strict=False), torch_func,
             dict(inp=np.random.rand(9).astype(np.float64),
                  bias=np.random.rand(3).astype(np.float64)))
+
+
+@run_correctness
+def test_reshape_on_memlet_path():
+    old_default = donnx.default_implementation
+    donnx.default_implementation = "pure"
+
+    @dace.program
+    def add_reshape_grad_test(inp: dace.float64[9], bias: dace.float64[3],
+                              target_shape: dace.int64[2]):
+        reshaped = dace.define_local([3, 3], dace.float64)
+        donnx.ONNXReshape(data=inp, shape=target_shape, reshaped=reshaped)
+        Z = reshaped + bias
+        Zl = dace.elementwise(lambda x: log(x + 1), Z)
+        S = np.sum(Zl)
+        return S
+
+    sdfg = add_reshape_grad_test.to_sdfg(strict=False)
+
+    sdfg.expand_library_nodes()
+    sdfg.apply_strict_transformations()
+
+    state: dace.SDFGState
+    access_prog_data_0, state = [
+        (n, state) for n, state in sdfg.all_nodes_recursive()
+        if isinstance(n, nd.AccessNode) and n.data == "prog_data_0"
+    ][0]
+    out_e = state.out_edges(access_prog_data_0)[0]
+    next_out_e = state.out_edges(out_e.dst)[0]
+
+    state.remove_node(out_e.dst)
+    new_edge = state.add_edge(access_prog_data_0, None, next_out_e.dst,
+                              next_out_e.dst_conn,
+                              dace.Memlet("prog_data_0[0:3, 0:3]"))
+    for edge in state.memlet_path(new_edge):
+        edge.data.data = "prog_data_0"
+
+    donnx.default_implementation = old_default
+
+    def torch_func(*, inp, bias):
+        reshaped = torch.reshape(inp, [3, 3])
+
+        Z = reshaped + bias
+        Zl = torch.log(Z + 1)
+        S = Zl.sum()
+
+        S.backward()
+        return dict(inp_gradient=inp.grad, bias_gradient=bias.grad)
+
+    return (SDFGBackwardRunner(sdfg, "__return", strict=False), torch_func,
+            dict(inp=np.random.rand(9).astype(np.float64),
+                 bias=np.random.rand(3).astype(np.float64)))
