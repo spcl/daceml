@@ -2283,7 +2283,9 @@ class FPGAMatMul(ONNXForward):
             P = math.gcd(
                 K, P
             )  # (this to ensure that the cycles needed to compute on each PE > number of cycle to drain everything; see later)
-            vec_width = Y.veclen
+
+            # This depends on the input. We deal with disalignment in input/output vectorization widths
+            vec_width = B.veclen
 
             # In order to guarantee correctness an deadlock free:
             # -  we have to ensure that the number of cycles needed to drain everything must be less or equal to the number
@@ -2294,6 +2296,7 @@ class FPGAMatMul(ONNXForward):
 
             # We check this with asserts to track these cases
             #assert(N/P*M/T*K < P*T)
+
             assert (K <= P * T)  # condition 2.
 
             def make_read_A(state):
@@ -2375,6 +2378,13 @@ class FPGAMatMul(ONNXForward):
                 pipe = state.add_read("Y_pipe")
                 mem = state.add_write("Y")
 
+                # Temp: allow Y to have different vec width from B
+                if Y.veclen != B.veclen:
+                    different_vec_width = True
+                else:
+                    different_vec_width = False
+
+
                 entry_map, exit_map = state.add_map(
                     "write_Y",
                     {
@@ -2387,25 +2397,58 @@ class FPGAMatMul(ONNXForward):
                     },
                     schedule=dace.ScheduleType.FPGA_Device)
 
-                # write in memory by adding itthen we copy that to memory
                 tasklet = state.add_tasklet("write_Y_tasklet", {"from_kernel"},
                                             {"to_memory"},
                                             "to_memory = from_kernel")
-                state.add_memlet_path(pipe,
-                                      entry_map,
-                                      tasklet,
-                                      dst_conn="from_kernel",
-                                      memlet=dace.Memlet(
-                                          "Y_pipe[{}-1]".format(P)))
+                if not different_vec_width:
+                    # write directly in memory
+                    state.add_memlet_path(pipe,
+                                          entry_map,
+                                          tasklet,
+                                          dst_conn="from_kernel",
+                                          memlet=dace.Memlet(
+                                              "Y_pipe[{}-1]".format(P)))
 
-                state.add_memlet_path(
-                    tasklet,
-                    exit_map,
-                    mem,
-                    src_conn="to_memory",
-                    memlet=dace.Memlet(
-                        "Y[b, n0 * {} + n1, tm*{}+ m]".format(
-                            P, T)))
+                    state.add_memlet_path(
+                        tasklet,
+                        exit_map,
+                        mem,
+                        src_conn="to_memory",
+                        memlet=dace.Memlet(
+                            "Y[b, n0 * {} + n1, tm*{}+ m]".format(
+                                P, T)))
+                else:
+                    entry_write_map, exit_write_map = state.add_map(
+                        "write_Y_unrolled",
+                        {"i": "0:{}".format(B.veclen)},unroll=True)
+                    # local storage to unpack vectorized data
+                    new_sdfg.add_array('vec_res',
+                                   shape=[B.veclen],
+                                   dtype=Y.dtype,
+                                   transient=True,
+                                   storage=dace.dtypes.StorageType.FPGA_Registers)
+                    vec_res = state.add_access("vec_res")
+                    state.add_memlet_path(pipe,
+                                          entry_map,
+                                          vec_res,
+                                          memlet=dace.Memlet(
+                                              "Y_pipe[{}-1]".format(P)))
+                    state.add_memlet_path(vec_res,
+                                          entry_write_map,
+                                          tasklet,
+                                          dst_conn="from_kernel",
+                                          memlet=dace.Memlet("vec_res[i]"))
+                    #write to memory
+                    state.add_memlet_path(
+                        tasklet,
+                        exit_write_map,
+                        exit_map,
+                        mem,
+                        src_conn="to_memory",
+                        memlet=dace.Memlet(
+                            "Y[b, n0 * {} + n1, (tm*{}+ m)*{} + i]".format(
+                                P, T, vec_width)))
+
 
             def make_compute(sdfg, state, vec_width=1):
                 vec_type = dace.vector(dace.float32, vec_width)

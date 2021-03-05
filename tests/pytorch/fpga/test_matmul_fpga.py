@@ -56,13 +56,16 @@ def run(x_shape: tuple, y_shape:tuple, vec_width = 1,
     assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
     sdfg = dace_model.sdfg
     sdfg.save('/tmp/out.sdfg')
+
     ##################################
-    # Vectorize output container and input B
+    # Vectorize
     vec_type = dace.vector(dace.float32, vec_width)
     input_data_name = sdfg.states()[0].source_nodes()[1].data
     output_data_name = sdfg.states()[0].sink_nodes()[0].data
-    utils.vectorize_array_and_memlet(sdfg, output_data_name, vec_type)
+    # vectorize input B
     utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
+    # vectorize output B
+    # utils.vectorize_array_and_memlet(sdfg, output_data_name, vec_type)
     sdfg.save('/tmp/out_vectorized.sdfg')
     # ##################################
     # Transform to FPGA
@@ -160,7 +163,7 @@ if __name__ == "__main__":
     if t:
         test()
     else:
-        data_shape_1 = (8,32, 64)
-        data_shape_2 = (8, 64,16)
+        data_shape_1 = (16,2, 32)
+        data_shape_2 = (32,32)
         run(data_shape_1, data_shape_2, vec_width)
 
