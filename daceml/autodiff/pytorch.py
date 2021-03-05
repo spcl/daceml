@@ -15,12 +15,15 @@ from daceml.onnx.onnx_importer import create_output_array, ONNXModel
 log = logging.getLogger(__name__)
 
 
-def make_backward_function(module: 'daceml.pytorch.DaceModule',
-                           model: ONNXModel) -> Type[torch.autograd.Function]:
+def make_backward_function(
+        module: 'daceml.pytorch.DaceModule',
+        model: ONNXModel,
+        apply_strict=False) -> Type[torch.autograd.Function]:
     """ Convert an ONNXModel to a PyTorch differentiable function.
 
         :param module: the parent pytorch module.
         :param model: the model to convert.
+        :param apply_strict: whether to apply strict transformations before creating the backward pass.
         :return: the PyTorch compatible :class:`torch.autograd.Function`.
     """
 
@@ -41,7 +44,8 @@ def make_backward_function(module: 'daceml.pytorch.DaceModule',
         # TODO filter inputs that don't require grad somehow...
         required_gradients=[clean_onnx_name(name) for name in model.inputs],
         backward_sdfg=backward_sdfg,
-        backward_state=backward_state)
+        backward_state=backward_state,
+        apply_strict=apply_strict)
 
     backward_result, backward_grad_arrays, backward_input_arrays = gen.backward(
     )

@@ -30,11 +30,11 @@ def run_correctness(func):
         torch_results = pytorch_func(**torch_dict)
 
         for k, v in torch_results.items():
+            print("-" * 10, k, "-" * 10)
             v = v.detach().numpy()
             diff = np.linalg.norm(sdfg_results[k] - v) / reduce(
                 lambda x, y: x * y, v.shape)
 
-            print("-" * 10, k, "-" * 10)
             print("Difference:", diff)
 
             print("Torch results:", "-" * 10)
@@ -699,21 +699,6 @@ def test_reshape_on_memlet_path():
     sdfg.expand_library_nodes()
     sdfg.apply_strict_transformations()
 
-    state: dace.SDFGState
-    access_prog_data_0, state = [
-        (n, state) for n, state in sdfg.all_nodes_recursive()
-        if isinstance(n, nd.AccessNode) and n.data == "prog_data_0"
-    ][0]
-    out_e = state.out_edges(access_prog_data_0)[0]
-    next_out_e = state.out_edges(out_e.dst)[0]
-
-    state.remove_node(out_e.dst)
-    new_edge = state.add_edge(access_prog_data_0, None, next_out_e.dst,
-                              next_out_e.dst_conn,
-                              dace.Memlet("prog_data_0[0:3, 0:3]"))
-    for edge in state.memlet_path(new_edge):
-        edge.data.data = "prog_data_0"
-
     donnx.default_implementation = old_default
 
     def torch_func(*, inp, bias):
@@ -729,3 +714,38 @@ def test_reshape_on_memlet_path():
     return (SDFGBackwardRunner(sdfg, "__return", strict=False), torch_func,
             dict(inp=np.random.rand(9).astype(np.float64),
                  bias=np.random.rand(3).astype(np.float64)))
+
+
+@run_correctness
+def test_reshape_reuse_in_same_state():
+    old_default = donnx.default_implementation
+    donnx.default_implementation = "pure"
+
+    @dace.program
+    def add_reshape_grad_test(inp: dace.float64[9],
+                              target_shape: dace.int64[2]):
+        reshaped = dace.define_local([3, 3], dace.float64)
+        donnx.ONNXReshape(data=inp, shape=target_shape, reshaped=reshaped)
+        Zl = dace.elementwise(lambda x: log(x + 1), reshaped)
+        S = np.sum(Zl)
+        return S
+
+    sdfg = add_reshape_grad_test.to_sdfg(strict=False)
+
+    sdfg.expand_library_nodes()
+    sdfg.apply_strict_transformations()
+
+    donnx.default_implementation = old_default
+
+    def torch_func(*, inp):
+        reshaped = torch.reshape(inp, [3, 3])
+
+        Z = reshaped
+        Zl = torch.log(Z + 1)
+        S = Zl.sum()
+
+        S.backward()
+        return dict(inp_gradient=inp.grad)
+
+    return (SDFGBackwardRunner(sdfg, "__return", strict=False), torch_func,
+            dict(inp=np.random.rand(9).astype(np.float64), ))

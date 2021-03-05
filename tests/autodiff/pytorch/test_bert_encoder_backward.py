@@ -8,7 +8,7 @@ from daceml.pytorch import DaceModule
 from daceml.transformation import ConstantFolding
 
 
-def test_bert_encoder_backward(gpu):
+def test_bert_encoder_backward():
     batch_size = 8
     seq_len = 512
     hidden_size = 768
@@ -16,7 +16,7 @@ def test_bert_encoder_backward(gpu):
     input = torch.randn([batch_size, seq_len, hidden_size])
     ptmodel = BertLayer(BertConfig(hidden_act="relu")).eval()
 
-    dace_model = DaceModule(ptmodel, cuda=gpu, train=False, backward=True)
+    dace_model = DaceModule(ptmodel, cuda=False, train=False, backward=True)
 
     dace_input = torch.clone(input)
     dace_input.requires_grad = True

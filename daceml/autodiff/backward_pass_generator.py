@@ -2,7 +2,7 @@
    This module exposes the add_backward_pass method that can be used to add a backward pass to an
    SDFGState.
 """
-from collections import defaultdict
+import collections
 import copy
 import typing
 
@@ -31,6 +31,20 @@ def _strings_to_symbols(strings: typing.Set[str]) -> typing.Set[sp.Symbol]:
 
 def _symbols_to_strings(symbs: typing.Set[sp.Symbol]) -> typing.Set[str]:
     return {str(symb) for symb in symbs}
+
+
+def _reverse_memlet(memlet: dace.Memlet) -> dace.Memlet:
+    """ Copy and reverse the given Memlet.
+
+    :param memlet: the memlet to reverse.
+    :return: the reversed memlet.
+    """
+
+    result = copy.deepcopy(memlet)
+    if result.other_subset is not None:
+        result.other_subset, result.subset = result.subset, result.other_subset
+
+    return result
 
 
 def generate_grad_connector_names(
@@ -199,6 +213,54 @@ def _get_matching_entry(state: SDFGState, map_exit: nd.MapExit) -> nd.MapEntry:
     return cands[0]
 
 
+def _walk_up_memlet_tree_through_view_nodes(
+    sdfg, forward_state, start_name
+) -> typing.Tuple[typing.Union[dt.Scalar, dt.Array], str,
+                  typing.Deque[typing.Tuple[str, dt.Data, Memlet]]]:
+    """ Starting from the (singular) access node for ``start_name`` in ``forward_state``, walk up the
+        memlet path until a non-view node is reached
+
+        :param sdfg: the forward sdfg
+        :param forward_state: the forward state
+        :param start_name: the name of the array to start at
+        :return: the descriptor at the root of the path, the name at the root of the path, the list of
+                 array names, view data descriptor and memlets encountered along the path.
+    """
+    forwarded_name = start_name
+    view_nodes_to_clone: typing.Deque[typing.Tuple[
+        str, dt.Data, Memlet]] = collections.deque()
+    if type(sdfg.arrays[start_name]) is dt.View:
+        # this is complicated slightly by views: we need to walk up the memlet path until we reach a
+        # non-view access node. We then need to replicate the sequence of views in the backward SDFG.
+        query = [
+            n for n, _ in forward_state.all_nodes_recursive()
+            if isinstance(n, nd.AccessNode) and n.data == start_name
+        ]
+        if len(query) != 1:
+            raise AutoDiffException(
+                f"Could not find access node to forward with data {start_name}"
+            )
+        current_node = query[0]
+        while type(sdfg.arrays[current_node.data]) is dt.View:
+
+            in_edges = forward_state.in_edges(current_node)
+            if len(in_edges) != 1:
+                raise AutoDiffException(
+                    f"Expected view node with in degree 1, got {len(in_edges)} for view node {current_node}"
+                )
+            if type(in_edges[0].src) is not nd.AccessNode:
+                raise AutoDiffException(
+                    f"Expected view node {current_node} to be connected to access node, got {in_edges[0].src} (of type {type(in_edges[0].src)})"
+                )
+            view_nodes_to_clone.append(
+                (current_node.data, sdfg.arrays[current_node.data],
+                 in_edges[0].data))
+            current_node = in_edges[0].src
+            forwarded_name = current_node.data
+
+    return sdfg.arrays[forwarded_name], forwarded_name, view_nodes_to_clone
+
+
 class BackwardPassGenerator:
     """ Class that holds the state for one backward pass creation.
 
@@ -211,6 +273,7 @@ class BackwardPassGenerator:
                               outputs must be a list containing a single scalar.
         :param backward_state: the state which the backward pass should be added to (must be added to `backward_sdfg`
                                before calling this method).
+        :param apply_strict: whether to apply strict transformations before creating the backward pass.
     """
     def __init__(
             self,
@@ -220,7 +283,8 @@ class BackwardPassGenerator:
             given_gradients: typing.List[typing.Union[nd.AccessNode, str]],
             required_gradients: typing.List[typing.Union[nd.AccessNode, str]],
             backward_sdfg: SDFG,  # this can be the same as SDFG
-            backward_state: SDFGState):
+            backward_state: SDFGState,
+            apply_strict=False):
 
         if backward_state not in backward_sdfg.nodes():
             raise AutoDiffException(
@@ -276,6 +340,7 @@ class BackwardPassGenerator:
 
         # checks if backward has already been applied
         self._applied = False
+        self.apply_strict = apply_strict
 
         for outp in self.given_gradients:
             if outp not in self.forward_state:
@@ -401,6 +466,10 @@ class BackwardPassGenerator:
         # expand until there is nothing left to expand
         while self._expand_nodes(forward_subgraph):
             # Nodes have been expanded again on the expanded graph; recalculate the forward graph
+            forward_subgraph = self._find_subgraph_to_differentiate()
+
+        if self.apply_strict:
+            self.sdfg.apply_strict_transformations()
             forward_subgraph = self._find_subgraph_to_differentiate()
 
         # recursively reverse the subgraph
@@ -545,7 +614,7 @@ class BackwardPassGenerator:
                                            (nd.MapExit, nd.MapEntry))
                                 or isinstance(path_edge.dst,
                                               (nd.MapExit, nd.MapEntry)))
-                            connector_in_edges = defaultdict(int)
+                            connector_in_edges = collections.defaultdict(int)
                             for _, _, _, dst_conn, _ in self.backward_state.in_edges(
                                     path_edge.dst):
                                 connector_in_edges[dst_conn] += 1
@@ -606,7 +675,7 @@ class BackwardPassGenerator:
                     "Unsupported reduction type {} on memlet".format(
                         detect_reduction_type(memlet.wcr)))
 
-            memlet = copy.deepcopy(memlet)
+            memlet = _reverse_memlet(memlet)
 
             # remove the WCR since these are now read edges
             memlet.wcr = None
@@ -659,6 +728,7 @@ class BackwardPassGenerator:
             if edge.dst_conn in required_inputs)
 
         for edge in input_edges_to_connect:
+            # memlet path should be fine here because the edges connect directly to the tasklet
             path = self.forward_state.memlet_path(edge)
 
             ####################################
@@ -736,18 +806,49 @@ class BackwardPassGenerator:
                             data_name = path_edge.src.data
                             data_desc = copy.deepcopy(
                                 self.sdfg.arrays[data_name])
+
+                            # if the descriptor is a view, we will rebuild the sequence of views that create this view
+                            # this involves walking up the path until we find a non-view access node, and then replicating
+                            # that path in the backward pass
+                            if type(data_desc) is dt.View:
+                                data_desc, data_name, view_nodes_to_clone = _walk_up_memlet_tree_through_view_nodes(
+                                    self.sdfg, self.forward_state, data_name)
+                                new_edge_src = self.backward_state.add_access(
+                                    data_name)
+
+                                while len(view_nodes_to_clone) > 0:
+                                    view_name, view_desc, memlet = view_nodes_to_clone.pop(
+                                    )
+
+                                    memlet = copy.deepcopy(memlet)
+
+                                    if self.separate_sdfgs:
+                                        self.backward_sdfg.add_datadesc(
+                                            view_name,
+                                            copy.deepcopy(view_desc))
+                                    new_access = self.backward_state.add_access(
+                                        view_name)
+                                    self.backward_state.add_edge(
+                                        new_edge_src, None, new_access, None,
+                                        memlet)
+                                    new_edge_src = new_access
+                            else:
+                                new_edge_src = self.backward_state.add_access(
+                                    data_name)
+
+                            # adding it to the backward_input_arrays will mean that any users of this SDFG
+                            # will know that we require this array from the forward pass
                             assert data_name not in self.backward_input_arrays
+                            self.backward_input_arrays[data_name] = data_desc
 
                             if self.separate_sdfgs:
+                                # because we need to forward this, the descriptor is no longer transient
                                 data_desc.transient = False
                                 self.backward_sdfg.add_datadesc(
                                     data_name, data_desc)
 
-                            self.backward_input_arrays[data_name] = data_desc
-
-                            new_edge_src = self.backward_state.add_access(
-                                data_name)
                             self.reverse_map[path_edge.src] = new_edge_src
+
                     else:
                         # if we have more than one edge, check that all intermediate nodes are MapEntry
                         if type(path_edge.src) is not nd.MapEntry:
@@ -843,6 +944,7 @@ class BackwardPassGenerator:
         required_gradients: typing.List[str],
     ) -> ReverseNodeReturnType:
         # check that the nested SDFG only has one state
+        state_to_diff: SDFGState
         if len(node.sdfg.nodes()) != 1:
             # however we make an exception for initialization states; these are ignored
             is_init_state = [(state, is_initialization_state(state))
@@ -872,6 +974,8 @@ class BackwardPassGenerator:
         # sdfg fails otherwise
         deferred_edges = []
 
+        inputs = set(backward_result.given_grad_names[name]
+                     for name in given_gradients)
         # loop through the arrays that we need from the forward pass
         for name, desc in backward_input_arrays.items():
             # if the name is not already passed to the reverse SDFG node ...
@@ -882,15 +986,13 @@ class BackwardPassGenerator:
                 #    from the output to there
                 # 3) add a read node to the backward state, and an edge into it
 
+                desc, forwarded_name, _ = _walk_up_memlet_tree_through_view_nodes(
+                    node.sdfg, state_to_diff, name)
+
                 # (1)
                 new_name = find_str_not_in_set(set(self.sdfg.arrays),
-                                               name + "_forwarded")
-                if new_name in self.sdfg.arrays:
-                    raise AutoDiffException(
-                        "Attempted to create array with name '{}', but it already existed"
-                        .format(new_name))
-
-                if new_name in self.backward_input_arrays:
+                                               forwarded_name + "_forwarded")
+                if new_name in self.sdfg.arrays or new_name in self.backward_input_arrays:
                     raise AutoDiffException(
                         "Attempted to create array with name '{}', but it already existed"
                         .format(new_name))
@@ -904,28 +1006,25 @@ class BackwardPassGenerator:
                     self.backward_sdfg.add_datadesc(new_name, to_add)
 
                 # (2)
-                node.sdfg.arrays[name].transient = False
-                assert node.add_out_connector(name)
+                node.sdfg.arrays[forwarded_name].transient = False
+                assert node.add_out_connector(forwarded_name)
                 write = self.forward_state.add_write(new_name)
                 self.forward_state.add_edge(
-                    node, name, write, None,
+                    node, forwarded_name, write, None,
                     self.sdfg.make_array_memlet(new_name))
 
                 # (3)
                 read = self.backward_state.add_read(new_name)
-                deferred_edges.append({
-                    "u":
-                    read,
-                    "u_connector":
-                    None,
-                    "v_connector":
-                    name,
-                    "memlet":
-                    self.backward_sdfg.make_array_memlet(new_name)
-                })
+                deferred_edges.append(
+                    dict(
+                        u=read,
+                        u_connector=None,
+                        v_connector=forwarded_name,
+                        memlet=self.backward_sdfg.make_array_memlet(new_name)))
+                inputs.add(forwarded_name)
+            else:
+                inputs.add(name)
 
-        inputs = set(backward_result.given_grad_names[name]
-                     for name in given_gradients).union(backward_input_arrays)
         outputs = set(backward_result.required_grad_names[name]
                       for name in required_gradients)
 
@@ -1051,7 +1150,7 @@ class BackwardPassGenerator:
         # for each output that an input is used in, there will be an entry for the expression of the
         # grad in this list in the final code snippet. When we generate the final code for the
         # reverse tasklet, we need to add them all up.
-        rev_code = defaultdict(list)
+        rev_code = collections.defaultdict(list)
 
         # the outputs of the reversed nodes are the grads of inputs of the original node
         rev_outputs = set()

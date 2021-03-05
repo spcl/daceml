@@ -8,7 +8,11 @@ import torch.nn.functional as F
 from daceml.pytorch import DaceModule
 
 
-def run_pytorch_module(module, shape=None, use_max=False):
+def run_pytorch_module(module,
+                       sdfg_name,
+                       shape=None,
+                       use_max=False,
+                       apply_strict=False):
     shape = shape or (3, 5)
 
     input_value = torch.rand(*shape, dtype=torch.float32)
@@ -32,7 +36,10 @@ def run_pytorch_module(module, shape=None, use_max=False):
     print("Pytorch output:")
     print(pytorch_input.grad)
 
-    dace_module = DaceModule(module, backward=True)
+    dace_module = DaceModule(module,
+                             backward=True,
+                             sdfg_name=sdfg_name,
+                             apply_strict=apply_strict)
 
     if use_max:
         s = dace_module(dace_input).max()
@@ -45,36 +52,48 @@ def run_pytorch_module(module, shape=None, use_max=False):
     assert np.allclose(pytorch_input.grad, dace_input.grad)
 
 
-def test_simple():
+def test_simple(sdfg_name):
     class Module(torch.nn.Module):
         def forward(self, x):
             x = torch.sqrt(x)
             x = torch.log(x)
             return x
 
-    run_pytorch_module(Module())
+    run_pytorch_module(Module(), sdfg_name)
 
 
-def test_repeated():
+def test_repeated(sdfg_name):
     class Module(torch.nn.Module):
         def forward(self, x):
             x = torch.sqrt(x)
             x = torch.sqrt(x)
             return x
 
-    run_pytorch_module(Module())
+    run_pytorch_module(Module(), sdfg_name)
 
 
-def test_softmax():
+def test_softmax(sdfg_name):
     class Module(torch.nn.Module):
         def forward(self, x):
             x = F.softmax(x, dim=1)
             return x
 
-    run_pytorch_module(Module(), use_max=True)
+    run_pytorch_module(Module(), sdfg_name, use_max=True)
 
 
-def test_weights():
+def test_reshape_on_memlet_path(sdfg_name):
+    # required test: this function in a nn.Module, with apply strict so that the reshape is
+    # inlined and copy is removed
+    class Module(torch.nn.Module):
+        def forward(self, x):
+            reshaped = torch.reshape(x + 1, [3, 3])
+            return torch.log(reshaped) + torch.reshape(
+                torch.tensor([[3, 2, 1]]), [3])
+
+    run_pytorch_module(Module(), sdfg_name, shape=(9, ), apply_strict=True)
+
+
+def test_weights(sdfg_name):
     class Module(torch.nn.Module):
         def __init__(self):
             super(Module, self).__init__()
@@ -88,8 +107,4 @@ def test_weights():
             x = self.fc3(x)
             return x
 
-    run_pytorch_module(Module(), shape=(4, 784), use_max=False)
-
-
-if __name__ == "__main__":
-    test_simple()
+    run_pytorch_module(Module(), sdfg_name, shape=(4, 784), use_max=False)

@@ -98,7 +98,8 @@ class DaceModule(nn.Module):
             self.sdfg.validate()
 
             if self.backward:
-                function = make_backward_function(self, dace_model)
+                function = make_backward_function(
+                    self, dace_model, apply_strict=self.apply_strict)
 
                 def forward(*args):
                     args_and_params = list(args)
