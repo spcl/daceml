@@ -1916,8 +1916,6 @@ class FPGAReshape(ONNXForward):
             # TODO
             # We can not directly copy from container to container, as this gives problem with SDFG nesting
             # ad hoc for lenet
-            import pdb
-            pdb.set_trace()
             assert (len(indata.shape) == 4)
             assert (len(outdata.shape) == 2)
             map_ranges = {

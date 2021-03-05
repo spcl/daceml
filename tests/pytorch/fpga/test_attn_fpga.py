@@ -122,15 +122,13 @@ def test_attn(batch_size, configuration_name, execute_cpu_dace=False):
         assert np.allclose(pt_outputs[1].detach().numpy(),
                            dace_outputs_1[1],
                            atol=1e-06)
-    # dace_model.sdfg.from_file('/tmp/out.sdfg')
+
+    # Get the SDFG
     sdfg = dace_model.sdfg
-    # import pdb
-    # pdb.set_trace()
 
     ###################################################
     # Transform to FPGA
 
-    #TODO: why this fails if I first dont't execute it through daceml?
     donnx.ONNXMatMul.default_implementation = "fpga"
     donnx.ONNXReshape.default_implementation = "fpga"
     donnx.ONNXSoftmax.default_implementation = "fpga"
@@ -142,18 +140,11 @@ def test_attn(batch_size, configuration_name, execute_cpu_dace=False):
 
     sdfg.apply_transformations_repeated([InlineSDFG])
     sdfg.apply_transformations_repeated(PruneConnectors)
-    # sdfg.states()[0].location["is_FPGA_kernel"] = False
-    # sdfg.states()[0].nodes()[0].sdfg.states()[0].location["is_FPGA_kernel"] = False
     sdfg.save('/tmp/out_fpga.sdfg')
 
-    # Streaming composition
+    # Streaming composition (Prov. disabled)
     #sdfg.apply_transformations_repeated([InlineSDFG, sm.StreamingComposition], [{}, {"storage": StorageType.FPGA_Local}], print_report=True)
-    # import pdb
-    # pdb.set_trace()
     sdfg.save('/tmp/out_fpga.sdfg')
-
-    # Load from file
-    # sdfg = SDFG.from_file('/tmp/out_fpga.sdfg')
 
     dace_output_fpga = dace_model(Q, K, V)
 
