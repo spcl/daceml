@@ -14,6 +14,8 @@ from dace.transformation.dataflow import streaming_memory as sm
 from dace import StorageType
 from dace import SDFG
 import argparse
+import dace
+from daceml.util import  utils
 ###################################################################
 # Transformer configurations to be used for MHA
 # Note:
@@ -125,6 +127,28 @@ def test_attn(batch_size, configuration_name, execute_cpu_dace=False):
 
     # Get the SDFG
     sdfg = dace_model.sdfg
+    ##################################
+    # Vectorize
+    # TODO: this is still partial
+    vec_width = 2 # we can not go further in this because of the systolic organization
+    vec_type = dace.vector(dace.float32, vec_width)
+
+    #vectorize input B matmul, output not vectorized
+    input_data_name = "ONNX___tmp33"
+    utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
+    print("Applying vectorization {} to Array {}".format(vec_width, input_data_name))
+
+    # vectorize input B matmul, output not vectorized
+    input_data_name = "ONNX___tmp36"
+    utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
+    print("Applying vectorization {} to Array {}".format(vec_width, input_data_name))
+
+    # vectorize input B matmul, output not vectorized
+    input_data_name = "ONNX___tmp37"
+    utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
+    sdfg.save('/tmp/out_vectorized.sdfg')
+    # ##################################
+
 
     ###################################################
     # Transform to FPGA
