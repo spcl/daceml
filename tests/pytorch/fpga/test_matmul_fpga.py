@@ -59,25 +59,24 @@ def run(x_shape: tuple, y_shape:tuple, vec_width = 1,
 
     ##################################
     # Vectorize
-    vec_type = dace.vector(dace.float32, vec_width)
-    input_data_name = sdfg.states()[0].source_nodes()[1].data
-    output_data_name = sdfg.states()[0].sink_nodes()[0].data
-    # vectorize input B
-    utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
-    # vectorize output B
-    # utils.vectorize_array_and_memlet(sdfg, output_data_name, vec_type)
-    sdfg.save('/tmp/out_vectorized.sdfg')
+    if vec_width != 1:
+        vec_type = dace.vector(dace.float32, vec_width)
+        input_data_name = sdfg.states()[0].source_nodes()[1].data
+        output_data_name = sdfg.states()[0].sink_nodes()[0].data
+        # vectorize input B
+        utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
+        # vectorize output B
+        utils.vectorize_array_and_memlet(sdfg, output_data_name, vec_type)
+        sdfg.save('/tmp/out_vectorized.sdfg')
     # ##################################
     # Transform to FPGA
-    #
+
     donnx.ONNXMatMul.default_implementation = "fpga"
     sdfg.apply_transformations([FPGATransformSDFG])
-
-
-
-    ###################################################
     sdfg.expand_library_nodes()
     sdfg.apply_transformations_repeated([InlineSDFG])
+
+    ###################################################
     sdfg.save('/tmp/out_fpga_expanded.sdfg')
     dace_output_fpga = dace_model(x, y)
     dace_output_fpga_reshaped = dace_output_fpga.reshape(torch_output.detach().numpy().shape)
