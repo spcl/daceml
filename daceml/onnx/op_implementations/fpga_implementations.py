@@ -64,7 +64,7 @@ def program_for_node(program, sdfg: SDFG, state: SDFGState,
 class FPGAConv2D(ONNXForward):
     """
     The "trivial" convolution implementation, i.e. two nested maps.
-    Does not work in hardware...needs some work on the unrolling etc. et.c
+    It may not synthesize to hardware, due to high resource consumption
     """
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
@@ -216,9 +216,9 @@ class FPGAConv2D(ONNXForward):
         # - the outer map loops over every entry in the output array
         # - the inner inner map computes the value for a single entry in the output array (i.e. Y[b, m, x, y])
 
-        # Here we want to increase reuse of the input feature, that is read the input once and oupdate all the
+        # Here we want to increase reuse of the input feature, that is read the input once and update all the
         # m output channels. Therefore we interchange some of maps indices.
-        # - the outer map loops over every entry in the ouput array, not considering the channel (Y[b,:,x,y])
+        # - the outer map loops over every entry in the output array, not considering the channel (Y[b,:,x,y])
         # - a mid map over the input channels (this is splitted from the inner map just to have more control on unrolling)
         # - the inner computes the value for all the entries of a given point
 
@@ -310,14 +310,7 @@ class FPGAConv2D(ONNXForward):
             memlet=dace.Memlet(f"{local_Y_write.data}[m]"))
 
         # hook up filter
-        # new_state.add_edge(inner_me, None, compute_tasklet, "filter_in",
-        #                    filter_memlet)
-        # inner_filter_memlet = propagation.propagate_memlet(
-        #     new_state, filter_memlet, inner_me, False)
-        # outer_filter_memlet = propagation.propagate_memlet(
-        #     new_state, inner_filter_memlet, outer_me, False)
-        # new_state.add_edge(outer_me, None, inner_me, None, inner_filter_memlet)
-        # new_state.add_edge(local_W_access, None, outer_me, None, outer_filter_memlet)
+
         new_state.add_memlet_path(local_W_access,
                                   outer_me,
                                   mid_me,
@@ -328,14 +321,7 @@ class FPGAConv2D(ONNXForward):
 
         # hook up X: this goes directly to the tasklet
         read_X = new_state.add_read("X")
-        # new_state.add_edge(inner_me, None, compute_tasklet, "image_in",
-        #                    image_memlet)
-        # inner_image_memlet = propagation.propagate_memlet(
-        #     new_state, image_memlet, inner_me, False)
-        # outer_image_memlet = propagation.propagate_memlet(
-        #     new_state, inner_image_memlet, outer_me, False)
-        # new_state.add_edge(outer_me, None, inner_me, None, inner_image_memlet)
-        # new_state.add_edge(read_X, None, outer_me, None, outer_image_memlet)
+
         new_state.add_memlet_path(read_X,
                                   outer_me,
                                   mid_me,
@@ -348,15 +334,7 @@ class FPGAConv2D(ONNXForward):
         # The output memlet is set to be dynamic, so that the value is only written at the end of the computation
         output_memlet = dace.Memlet("Y[b, m, out_x, out_y]", dynamic=True)
         write_Y = new_state.add_write("Y")
-        # inner_output_memlet = propagation.propagate_memlet(
-        #     new_state, output_memlet, inner_me, False)
-        # outer_output_memlet = propagation.propagate_memlet(
-        #     new_state, inner_output_memlet, outer_me, False)
-        # new_state.add_edge(compute_tasklet, "output", inner_mx, None,
-        #                    output_memlet)
-        #
-        # new_state.add_edge_pair(outer_mx, inner_mx, write_Y,
-        #                         inner_output_memlet, outer_output_memlet)
+
 
         new_state.add_memlet_path(compute_tasklet,
                                   inner_mx,
@@ -379,14 +357,14 @@ class FPGAConv2D(ONNXForward):
                                       memlet=B_memlet)
 
         new_sdfg.fill_scope_connectors()
-        new_sdfg.save('/tmp/conv.sdfg')
         return new_sdfg
 
 
 @autoregister_params(op="Conv", name="fpga")
 class FPGAIm2ColConv(ONNXForward):
-    """ Conv implementation based on Gemm
-
+    """
+        Im2Col implementation of Convolution.
+        Underneath it applies a Matrix Matrix Multiplication
     """
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
@@ -431,11 +409,6 @@ class FPGAIm2ColConv(ONNXForward):
 
         if node.auto_pad != 'NOTSET':
             return False
-
-        # Input veclen must be equal to the output veclen
-        # if X.veclen != Y.veclen:
-        #     return False
-
         return True
 
     @staticmethod
@@ -446,10 +419,11 @@ class FPGAIm2ColConv(ONNXForward):
         W = in_desc_with_name(node, state, sdfg, "W")
         Y = out_desc_with_name(node, state, sdfg, "Y")
 
-        # TODO: try to vectorize input
-        # Use the vector on the Y
-
-        #TODO deal with streams
+        # TODO
+        #  - The current implementation support vectorization on Y only. Support vectorization also for X
+        #  - for the weights, we may want vectorization as well (but this may cut out some transformation such
+        #   as InputToConstant), or, in any case, we want to be more memory-friendly by reading burst of data
+        #   since it is accessed as a transposed matrix
 
         try:
             B = in_desc_with_name(node, state, sdfg, "B")
@@ -491,23 +465,20 @@ class FPGAIm2ColConv(ONNXForward):
         # GEMM Parameters
         vec_width = Y.veclen
 
-        # TODO: accept parametric?
-
-        #if Y.veclen !=1 else math.gcd(16, output_size_x)
-        #N = num_filters
         K = num_channels * filter_hx * filter_hy
         M = output_size_y * output_size_x
         P = num_filters  # Num PEs  #TODO parametric
-        #safe delay
+
+        # safe delay: see explanation in the make_compute function
         L = max(11 - M, 0)
+
+        # TODO: add correctness check, see MatMul expansion
 
         def make_read_W(state):
             # this will read the weights, organized as a matrix of size
             # num_filters x (num_channels * filter_hx * filter_hy)
-
             # The original weight matrix has shape [num_filters, num_channels, filter_hx, filter_hy]
 
-            # TODO: vectorize also this, by reading more than one element at a time, to be memory friendly
             entry, exit = state.add_map(
                 "read_weights",
                 {
@@ -521,7 +492,7 @@ class FPGAIm2ColConv(ONNXForward):
                 },
                 schedule=dace.ScheduleType.FPGA_Device)
 
-            # use a different map, and unroll it if necessary
+            # use a different map, and unroll it if necessary (otherwise reading weights will slow down everythin)
             unroll_inner_map = P > (M + L) and P <= 16
             send_map_entry, send_map_exit = state.add_map(
                 "send_weights", {"n1": "0:{}".format(P)},
@@ -552,7 +523,7 @@ class FPGAIm2ColConv(ONNXForward):
         def make_read_im2col(state, sdfg, vec_width=1):
 
             # Matrix B will be the im2col matrix. We will build it row-by-row
-            # to facilitate streaming in the systolic GEMM, avoiding storing it back to memory
+            # to facilitate streaming in the systolic MMM, avoiding storing it back to memory
             # Note: this will require to load multiple times the input feature, yet this save I/Os
             # The im2col matrix has size (num_channels * filter_hx * filter_hy) x (output_size_y * output_size_x)
 
@@ -569,7 +540,7 @@ class FPGAIm2ColConv(ONNXForward):
                     "hy": "0:{}".format(filter_hy),
                     "x": "0:{}".format(output_size_x),
                     "y0": "0:{}/{}".format(output_size_x,
-                                           vec_width),  #TODO vectorize read
+                                           vec_width),
                 },
                 schedule=dace.ScheduleType.FPGA_Device)
 
@@ -594,8 +565,6 @@ class FPGAIm2ColConv(ONNXForward):
 
             im2col_input_memlet = dace.Memlet(
                 "X[b, cin, x + hx, y0*{}+y1 + hy]".format(vec_width))
-
-            # TODO check that offset to X are right in the codegenerated code
 
             # In the innermost map we read W=vec_width data elements and we store them into `vec_data`
             state.add_memlet_path(X,
@@ -633,7 +602,7 @@ class FPGAIm2ColConv(ONNXForward):
 
             # We don't need to accumulate on Y, but we need to add Biases (if present)
 
-            # C data arrives as expressed in vect. data type. Needs to be unpacked
+            # Y data arrives as expressed in vect. data type. Needs to be unpacked
             # For doing so we first store it into a local buffer and then we write it in memory
             # as gear boxing works on local data only (not global memory)
 
@@ -688,9 +657,8 @@ class FPGAIm2ColConv(ONNXForward):
             Y_pipe_in = state.add_read("Y_pipe")
             Y_pipe_out = state.add_write("Y_pipe")
 
-            # Safe delay for draining
 
-            # Create a single pipeline
+            # Create a single pipeline with all the flattened loops
 
             entry_pipeline, exit_pipeline = state.add_pipeline(
                 "compute_and_drain",
@@ -877,9 +845,7 @@ else:
             state.add_memlet_path(compute_entry,
                                   Y_pipe_in,
                                   memlet=dace.memlet.Memlet())
-            # state.add_memlet_path(W_pipe_out,
-            #                       compute_exit,
-            #                       memlet=dace.memlet.Memlet())
+
             state.add_memlet_path(im2col_pipe_out,
                                   compute_exit,
                                   memlet=dace.memlet.Memlet())
@@ -931,25 +897,12 @@ else:
         make_write_Y(new_state, new_sdfg, vec_width, add_bias=(B is not None))
 
         new_sdfg.fill_scope_connectors()
-        # Specialize the new sdfg, by using the input shapes
-        new_sdfg.save("/tmp/conv.sdfg")
-        # new_sdfg.validate()
         return new_sdfg
 
 
 @autoregister_params(op="Relu", name="fpga")
 class FPGARelu(ONNXForward):
-    @staticmethod
-    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
-                               sdfg: SDFG) -> bool:
-        X = in_desc_with_name(node, state, sdfg, "X")
-        Y = out_desc_with_name(node, state, sdfg, "Y")
-
-        # Input veclen must be equal to the output veclen
-        # if X.veclen != Y.veclen:
-        #     return False
-        return True
-
+   
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
@@ -957,19 +910,12 @@ class FPGARelu(ONNXForward):
         X = in_desc_with_name(node, state, sdfg, "X")
         Y = out_desc_with_name(node, state, sdfg, "Y")
 
-        # TODO deal with this. Right Now I'm doing it to
-        # gently introduce streaming
         vec_width = X.veclen
-        # if node.name in["ONNX_Relu_1", "ONNX_Relu_3", "ONNX_Relu_9", "ONNX_Relu_11"]:
-        #     streaming_node = True
-        #     # Use the vector on the X
-        #     print("RELU streamed ----")
-        # else:
-        #     streaming_node = False
-        #     print("RELU NON streamed ----")
         streaming_node = False
+
+        # Handle the case in which the vectorization width used for the input is different from
+        # the one used for the output
         if X.veclen != Y.veclen:
-            # we will need to copy the data out accordingly
             # NOTE: for the moment, tested with Y veclen = 1
             vec_width_mismatch = True
         else:
@@ -1004,10 +950,7 @@ class FPGARelu(ONNXForward):
         inner_me, inner_mx = new_state.add_map(
             'inner_relu_map', dict(i="0:{}".format(vec_width)), unroll=True)
 
-        # read_tasklet = new_state.add_tasklet('read_task', ['in_con'], ['out_con'],
-        #                                 'out_con=in_con')
-        # write_tasklet = new_state.add_tasklet('write_task', ['in_con'], ['out_con'],
-        #                                      'out_con=in_con')
+
         tasklet = new_state.add_tasklet('relu_task', ['x_con'], ['y_con'],
                                         'y_con = max(0.0, x_con)')
         x_read = new_state.add_read("X")
@@ -1079,7 +1022,6 @@ class FPGARelu(ONNXForward):
                 memlet=dace.Memlet("Y[{}]".format(",".join(
                     ['__i%d' % i for i in range(len(X.shape))]))))
         new_sdfg.fill_scope_connectors()
-        new_sdfg.save('/tmp/relu.sdfg')
         return new_sdfg
 
 

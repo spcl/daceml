@@ -74,6 +74,7 @@ class TrainLeNet(nn.Module):
         x = self.fc3(x)
         return x
 
+
 class TestLeNet(nn.Module):
     def __init__(self):
         super(TestLeNet, self).__init__()
@@ -107,7 +108,7 @@ def eval_model(args, test_dataloader, model, device, single=False):
         model = DaceModule(model, dummy_inputs=dummy_input[0])
         transformation.expand_library_nodes_except_reshape(model.sdfg)
         model.sdfg.apply_transformations_repeated(
-        [transformation.ReshapeElimination])
+            [transformation.ReshapeElimination])
         device = 'cpu'
     elif device == 'fpga':
         # transform to FPGA, for pytorch the device is always 'cpu'
@@ -139,7 +140,7 @@ def eval_model(args, test_dataloader, model, device, single=False):
         utils.vectorize_array_and_memlet(sdfg, "ONNX_15", vec_type)
 
         # Also the first GEMM can be vect by 8
-        # but the corresponding BIAS is not vectorized to not break input to consntat
+        # but the corresponding BIAS is not vectorized to not break input to constant
         utils.vectorize_array_and_memlet(sdfg, "ONNX_19", vec_type)
 
         # GEMM 10 is instead vectorized by 4
@@ -154,11 +155,16 @@ def eval_model(args, test_dataloader, model, device, single=False):
 
         # ###################################################################
         # # Input to constant
-        sdfg.apply_transformations_repeated([InputToConstant], print_report=True)
+        sdfg.apply_transformations_repeated([InputToConstant],
+                                            print_report=True)
 
         #######################################################################
         # Streaming Composition
-        sdfg.apply_transformations_repeated([InlineSDFG, sm.StreamingComposition], [{}, {"storage": dace.StorageType.FPGA_Local}])
+        sdfg.apply_transformations_repeated(
+            [InlineSDFG, sm.StreamingComposition],
+            [{}, {
+                "storage": dace.StorageType.FPGA_Local
+            }])
         ######################################
         # Prune connectors
         sdfg.apply_transformations_repeated(PruneConnectors)
@@ -189,7 +195,8 @@ def eval_model(args, test_dataloader, model, device, single=False):
             amount_samples += batch_num_samples
         else:
             for batch_idx, (data, target) in enumerate(test_dataloader):
-                batch_correct, batch_num_samples = eval_single_batch(data, target)
+                batch_correct, batch_num_samples = eval_single_batch(
+                    data, target)
                 correct += batch_correct
                 amount_samples += batch_num_samples
     print("TESTING")
@@ -282,12 +289,10 @@ if __name__ == '__main__':
         'if true, new weights will be trained and stored in the "data" directory. If false, the'
         ' script will attempt to load the weights from the directory.')
 
-    parser.add_argument(
-        '--target',
-        default='cpu',
-        choices=['cpu', 'cuda', 'dace', 'fpga', 'pytorch'],
-        help='Execution target for inference.'
-    )
+    parser.add_argument('--target',
+                        default='cpu',
+                        choices=['cpu', 'cuda', 'dace', 'fpga', 'pytorch'],
+                        help='Execution target for inference.')
     args = parser.parse_args()
 
     donnx.default_implementation = 'pure'
@@ -295,7 +300,6 @@ if __name__ == '__main__':
 
     train_loader = get_dataloader(False, args.batch_size)
     test_loader = get_dataloader(True, args.test_batch_size)
-
 
     if args.train_model:
         model = TrainLeNet()
