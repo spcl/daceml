@@ -79,7 +79,6 @@ class ONNXRuntime:
     ]
     dependencies = []
 
-
     headers = [
         "../include/dace_onnx.h",
         "onnxruntime_c_api.h",

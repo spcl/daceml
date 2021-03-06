@@ -233,7 +233,7 @@ class ConstantFolding(transformation.Transformation):
                 if len(state.out_edges(next_node)) == 0:
                     queue.append(next_node)
 
-        # Remove the array corresponding to removed access nodes if possible
+        # Remove the array corresponding to the removed access nodes if possible
         for rn in removed_nodes:
             if isinstance(rn, nd.AccessNode):
                 for ostate in sdfg.nodes():

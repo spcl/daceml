@@ -101,16 +101,13 @@ def eval_model(args, test_dataloader, model, device, single=False):
         model.to('cpu')
         device = 'cpu'
 
-
     elif device == 'dace':
         model.to('cpu')
         dummy_input = next(iter(test_dataloader))
         model = DaceModule(model, dummy_inputs=dummy_input[0])
-        model.sdfg.save('/tmp/out.sdfg')
         transformation.expand_library_nodes_except_reshape(model.sdfg)
         model.sdfg.apply_transformations_repeated(
         [transformation.ReshapeElimination])
-        model.sdfg.save('/tmp/out_expanded.sdfg')
         device = 'cpu'
     elif device == 'fpga':
         # transform to FPGA, for pytorch the device is always 'cpu'
@@ -125,18 +122,12 @@ def eval_model(args, test_dataloader, model, device, single=False):
 
         model = DaceModule(model, dummy_inputs=dummy_input[0])
         sdfg = model.sdfg
-        # The rational for applying the streaming transformation is the following:
-        # - we first change data containers
-        # - then we expand the lib nodes: note that the nodes needs input/output shapes
-        #       and their expansion should consider that in some cases the memlet are for streams
-        #       TODO: see if this can be avoided
 
         ##################################
         # Vectorize input and output container
         vec_width = 8
 
         vec_type = dace.vector(dace.float32, vec_width)
-        # utils.vectorize_array_and_memlet(sdfg, "ONNX_input", vec_type)
 
         # vectorize output of Conv0
         utils.vectorize_array_and_memlet(sdfg, "ONNX_11", vec_type)
@@ -149,56 +140,28 @@ def eval_model(args, test_dataloader, model, device, single=False):
 
         # Also the first GEMM can be vect by 8
         # but the corresponding BIAS is not vectorized to not break input to consntat
-        # TODO: fix that
-        # vectorize output of Gemm8
         utils.vectorize_array_and_memlet(sdfg, "ONNX_19", vec_type)
 
         # GEMM 10 is instead vectorized by 4
         vec_type4 = dace.vector(dace.float32, 4)
         utils.vectorize_array_and_memlet(sdfg, "ONNX_21", vec_type4)
 
-
-        sdfg.save('/tmp/out_pre.sdfg')
-
         ############################################
+        # Transform for FPGA and Inline
         sdfg.apply_transformations([FPGATransformSDFG])
-        sdfg.apply_transformations_repeated([InlineSDFG])
-
-
-        ###################################
-        sdfg.save('/tmp/out_vectorized.sdfg')
         sdfg.expand_library_nodes()
-
         sdfg.apply_transformations_repeated([InlineSDFG])
-
 
         # ###################################################################
         # # Input to constant
         sdfg.apply_transformations_repeated([InputToConstant], print_report=True)
 
-        sdfg.save('/tmp/out_fpga.sdfg')
-
-
         #######################################################################
         # Streaming Composition
-        # TODO: factorize code
-        # This will apply it to
-        # - Conv0 -> Relu1
-        # - Relu1-> MaxPool2
-        # - Conv3 -> Relu4
-        # - Relu4 -> MaxPool5
-        # - GEMM_8 -> Relu 9
-        # - GEMM 10-> Relu 11
-        # - GEMM 12 -> Softmax13
-        #sdfg.apply_transformations_repeated([InlineSDFG, sm.StreamingComposition], [{}, {"storage": dace.StorageType.FPGA_Local}])
+        sdfg.apply_transformations_repeated([InlineSDFG, sm.StreamingComposition], [{}, {"storage": dace.StorageType.FPGA_Local}])
         ######################################
         # Prune connectors
         sdfg.apply_transformations_repeated(PruneConnectors)
-
-        sdfg.save('/tmp/out_fpga.sdfg')
-        device = 'cpu'
-    elif device == 'pytorch':
-        model.to('cpu')
         device = 'cpu'
     else:
         model.to(device)
@@ -318,6 +281,13 @@ if __name__ == '__main__':
         help=
         'if true, new weights will be trained and stored in the "data" directory. If false, the'
         ' script will attempt to load the weights from the directory.')
+
+    parser.add_argument(
+        '--target',
+        default='cpu',
+        choices=['cpu', 'cuda', 'dace', 'fpga', 'pytorch'],
+        help='Execution target for inference.'
+    )
     args = parser.parse_args()
 
     donnx.default_implementation = 'pure'
@@ -335,8 +305,4 @@ if __name__ == '__main__':
     # try to load the weights
     model.load_state_dict(torch.load("./data/weights.pt"))
 
-    #eval_model(args, test_loader, model, 'cuda')
-    # eval_model(args, test_loader, model, 'cpu', single=True)
-    # eval_model(args, test_loader, model, 'dace', single=True)
-    eval_model(args, test_loader, model, 'pytorch', single=True)
-    eval_model(args, test_loader, model, 'fpga', single=True)
+    eval_model(args, test_loader, model, args.target, single=True)
