@@ -5,7 +5,7 @@ import logging
 import typing
 
 import dace
-from dace import SDFGState, SDFG, dtypes
+from dace import SDFGState, SDFG, dtypes, data as dt
 from dace.frontend.python.parser import DaceProgram
 from dace.registry import autoregister_params
 from dace.sdfg.nodes import Node
@@ -27,6 +27,14 @@ def program_for_node(program, sdfg: SDFG, state: SDFGState,
 
         The dtypes for the arguments will be extracted by matching the parameter names to edges.
     """
+
+    def _view_to_arr(desc: dt.Data):
+        if type(desc) is dt.View:
+            desc: dt.View = desc.as_array()
+            desc.lifetime = dtypes.AllocationLifetime.Scope
+            return
+        else:
+            return desc
     input_names = set(inp.name for inp in node.schema.inputs)
     output_names = set(outp.name for outp in node.schema.outputs)
 
@@ -42,9 +50,9 @@ def program_for_node(program, sdfg: SDFG, state: SDFGState,
     annotations = {}
     for name, param in params.items():
         if name in input_names:
-            annotations[name] = in_desc_with_name(node, state, sdfg, name)
+            annotations[name] = _view_to_arr(in_desc_with_name(node, state, sdfg, name))
         elif name in output_names:
-            annotations[name] = out_desc_with_name(node, state, sdfg, name)
+            annotations[name] = _view_to_arr(out_desc_with_name(node, state, sdfg, name))
         else:
             raise ValueError(
                 "'{}' was not found as an input or output for {}".format(
@@ -209,6 +217,7 @@ class PureMatMul(ONNXForward):
 
         # TODO remove these when dace reshapes work for nested SDFGs
         if input0_dim == 4 and input1_dim == 4:
+            print(f"{in_desc_with_name(node, state, sdfg, 'A').shape}x{in_desc_with_name(node, state, sdfg, 'B').shape}")
             return True
 
         if input0_dim == 3 and input1_dim == 2:
