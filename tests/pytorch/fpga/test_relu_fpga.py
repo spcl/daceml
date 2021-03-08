@@ -1,7 +1,5 @@
 # Simple test for relu for FPGA
 
-# TODO: conform to pytest syntax if needed
-
 from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
 
 import torch
@@ -16,41 +14,7 @@ import copy
 import dace
 import argparse
 from daceml.util import utils
-
-
-def get_library_node_by_name(sdfg, name):
-
-    for node, _ in sdfg.all_nodes_recursive():
-        if isinstance(node, dace.sdfg.nodes.LibraryNode):
-            if node.name == name:
-                return node
-
-    raise Exception("LibNode {} not found".format(name))
-
-
-def get_node_predecessors(node, state):
-    '''
-    Returns the LibNode that are predecessors of the passed one
-    :param node:
-    :param graph:
-    :return:
-    '''
-    # Check if the node has some library node as predecessor as
-    predecessors = []
-    for edge in state.in_edges(node):
-        import pdb
-        pdb.set_trace()
-        # check that this edge has a predecessor
-        pred = edge.src
-
-        if isinstance(pred, dace.sdfg.nodes.AccessNode):
-            predecessors.append(pred)
-
-    return predecessors
-
-
-def get_data_node_by_name(node, state, sdfg, name):
-    return sdfg.arrays[utils.in_edge_with_name(node, state, name)]
+from multiprocessing import Process, Queue
 
 
 class Model(nn.Module):
@@ -61,24 +25,18 @@ class Model(nn.Module):
         return F.relu(x)
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("W",
-                        type=int,
-                        nargs="?",
-                        default=1,
-                        help="Vectorization width")
-
-    args = vars(parser.parse_args())
-
-    vec_width = args["W"]
+def run(data_shape: tuple, vec_width=1, queue=None):
+    '''
+    Evaluates a specific configuration
+    :param data_shape:
+    :param vec_width:
+    :param queue:
+    :return:
+    '''
     import daceml.onnx as donnx
     donnx.default_implementation = "pure"
 
     ptmodel = Model()
-
-    data_shape = (10000, 4, 32, 32)
-    # x = torch.FloatTensor(1000,4,32,32).random_(-5, 5)
     x = torch.rand(data_shape) - 0.5
     dace_model = DaceModule(ptmodel)
     dace_output = dace_model(x)
@@ -100,24 +58,62 @@ if __name__ == "__main__":
     utils.vectorize_array_and_memlet(sdfg, "ONNX_1", vec_type)
 
     ##########################################
-    sdfg.save('/tmp/out.sdfg')
-    # save expanded version
-    # orig_sdfg = copy.deepcopy(sdfg)
-    # orig_sdfg.expand_library_nodes()
-    # orig_sdfg.save('/tmp/out_expanded.sdfg')
 
     sdfg.apply_transformations([FPGATransformSDFG])
-    # sdfg.states()[0].location["is_FPGA_kernel"] = False
-
     donnx.ONNXRelu.default_implementation = "fpga"
     sdfg.expand_library_nodes()
-    sdfg.save('/tmp/out_fpga_expanded.sdfg')
     sdfg.apply_transformations_repeated([InlineSDFG])
-    dace_output_fpga = dace_model(torch.clone(x))
+    dace_output_fpga = dace_model(x)
     dace_output_fpga = dace_output_fpga.reshape(data_shape)
+    diff = np.linalg.norm(torch_output.detach().numpy() -
+                          dace_output_fpga) / dace_output_fpga.size
+    print("Difference: ", diff)
+    if queue is not None:
+        # we are testing
+        queue.put(diff)
+    else:
+        assert diff < 1e-6
+    del dace_model, ptmodel, x
 
-    print(
-        "Difference: ",
-        np.linalg.norm(torch_output.detach().numpy() - dace_output_fpga) /
-        dace_output_fpga.size)
-    assert np.allclose(torch_output.detach().numpy(), dace_output_fpga)
+
+def test():
+    '''
+    Evaluates multiple combination of input size/vecwidth
+    '''
+    print("----------- Testing Relu ---------------")
+    vec_width = [1, 1, 2, 4]
+    data_shapes = [(4, 8, 16), (100, 4, 16, 32), (8, 16, 16),
+                   (1000, 4, 32, 32)]
+    for i in range(0, len(vec_width)):
+        print("##########################################################")
+        print(
+            f"# Configuration: vw={vec_width[i]}, data_shape={data_shapes[i]}")
+        print("##########################################################")
+        queue = Queue()
+        p = Process(target=run, args=(data_shapes[i], vec_width[i], queue))
+        p.start()
+        p.join()
+        assert (queue.get() < 1e-6)
+    print("Success!")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("W",
+                        type=int,
+                        nargs="?",
+                        default=1,
+                        help="Vectorization width")
+    parser.add_argument("-test",
+                        action="store_true",
+                        default=False,
+                        help="Perform tests (USE ONLY WITH EMULATION)")
+
+    args = vars(parser.parse_args())
+
+    vec_width = args["W"]
+    t = args["test"]
+    if t:
+        test()
+    else:
+        run((1000, 4, 32, 32), vec_width)
