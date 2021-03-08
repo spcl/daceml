@@ -5,6 +5,7 @@ PIP ?= pip
 YAPF ?= yapf
 
 TORCH_VERSION ?= torch==1.7.1+cpu torchvision==0.8.2+cpu torchaudio==0.7.2 -f https://download.pytorch.org/whl/torch_stable.html
+DACE_VERSION ?=
 UPDATE_PIP ?= python -m pip install --upgrade pip
 
 ifeq ($(VENV_PATH),)
@@ -26,7 +27,10 @@ install: venv
 ifneq ($(VENV_PATH),)
 	$(ACTIVATE) $(UPDATE_PIP)
 endif
-	$(ACTIVATE) $(PIP) install $(TORCH_VERSION) 
+ifneq ($(DACE_VERSION),)
+	$(ACTIVATE) $(PIP) install $(DACE_VERSION)
+endif
+	$(ACTIVATE) $(PIP) install $(TORCH_VERSION)
 	$(ACTIVATE) $(PIP) install -e .[testing,debug,docs]
 
 doc:

@@ -10,6 +10,13 @@ For example, the following command would install the package and run tests::
 
 If you would like to create a virtual environment and install to it, remove `VENV_PATH=''` from the above command.
 
+Specific Package Versions
+-------------------------
+The `DACE_VERSION` and `TORCH_VERSION` variables can be used to install specific versions of those packages over the
+recommended ones. For example, you can use a local dace repository using::
+
+        DACE_VERSION='-e /path/to/dace/' make clean install
+
 Makefile Targets
 ----------------
 The CI runs several tests using the ``Makefile``:
