@@ -21,20 +21,17 @@ from daceml.util import utils
 from multiprocessing import Process, Queue
 
 
-
-
 class Model(nn.Module):
     def __init__(self, new_shape):
         super(Model, self).__init__()
         self.new_shape = new_shape
+
     def forward(self, x):
         x = x.reshape(self.new_shape)
         return x
 
 
-
-def run(data_shape: tuple, reshaped_shape: tuple, vec_width = 1,
-        queue=None):
+def run(data_shape: tuple, reshaped_shape: tuple, vec_width=1, queue=None):
     # dace_output = dace_model(x)
 
     import daceml.onnx as donnx
@@ -57,12 +54,14 @@ def run(data_shape: tuple, reshaped_shape: tuple, vec_width = 1,
     sdfg.save('/tmp/out_fpga.sdfg')
 
     dace_output_fpga = dace_model(x)
-    dace_output_fpga = dace_output_fpga.reshape(torch_output.detach().numpy().shape)
+    dace_output_fpga = dace_output_fpga.reshape(
+        torch_output.detach().numpy().shape)
 
     torch_output_numpy = torch_output.detach().numpy()
-    diff = np.linalg.norm(torch_output_numpy - dace_output_fpga) / dace_output_fpga.size
+    diff = np.linalg.norm(torch_output_numpy -
+                          dace_output_fpga) / dace_output_fpga.size
 
-    print("Difference: ",diff )
+    print("Difference: ", diff)
     if queue is not None:
         # we are testing
         queue.put(diff)
@@ -73,7 +72,6 @@ def run(data_shape: tuple, reshaped_shape: tuple, vec_width = 1,
             assert (False)
 
     del dace_model, ptmodel, x
-
 
 
 def test():
@@ -88,12 +86,14 @@ def test():
 
     # each position of this lists contains a test configuration
     vec_width = [1, 1, 1]
-    x_shapes = [(16,2,32), (16, 8, 8), (8,16,16)]
-    y_shapes = [(16,8,8), (16,2,32),(2,4,16,16)] # reshpaed
+    x_shapes = [(16, 2, 32), (16, 8, 8), (8, 16, 16)]
+    y_shapes = [(16, 8, 8), (16, 2, 32), (2, 4, 16, 16)]  # reshpaed
 
     for i in range(0, len(vec_width)):
         print("##########################################################")
-        print(f"# Configuration: vw={vec_width[i]}, x_shape={x_shapes[i]}, reshaped_shape={y_shapes[i]}")
+        print(
+            f"# Configuration: vw={vec_width[i]}, x_shape={x_shapes[i]}, reshaped_shape={y_shapes[i]}"
+        )
         print("##########################################################")
         queue = Queue()
         p = Process(target=run,
@@ -101,7 +101,6 @@ def test():
         p.start()
         p.join()
         assert (queue.get() < 1e-9)
-
 
 
 if __name__ == "__main__":
@@ -124,10 +123,6 @@ if __name__ == "__main__":
     if t:
         test()
     else:
-        data_shape = (16, 8, 8)
-        reshaped_shape = (16,2,32)
+        data_shape = (2, 4, 4)
+        reshaped_shape = (2, 2, 8)
         run(data_shape, reshaped_shape)
-
-
-
-

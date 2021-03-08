@@ -77,7 +77,7 @@ if __name__ == "__main__":
 
     ptmodel = Model(input_to_constant)
     #first conv
-    data_shape = (1000, 1, 28, 28)
+    data_shape = (100, 1, 28, 28)
     #second conv
     # data_shape = (1000, 6, 12, 12)
     x = torch.rand(data_shape)
@@ -126,10 +126,11 @@ if __name__ == "__main__":
 
     sdfg.apply_transformations([FPGATransformSDFG])
     sdfg.expand_library_nodes()
+    sdfg.save('/tmp/out_fpga_expanded.sdfg')
     sdfg.apply_transformations_repeated([InlineSDFG])
     # sdfg.states()[0].location["is_FPGA_kernel"] = False
     # sdfg.states()[0].nodes()[0].sdfg.states()[0].location["is_FPGA_kernel"] = False
-    sdfg.save('/tmp/out_fpga_expanded.sdfg')
+    sdfg.save('/tmp/out_fpga_inlined.sdfg')
 
     if input_to_constant:
         sdfg.apply_transformations_repeated([InputToConstant],

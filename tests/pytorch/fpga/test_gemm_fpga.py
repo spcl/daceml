@@ -1,8 +1,6 @@
 # Simple test for gemm for FPGA
 # the GEMM ONNX operator is used when we use a fully connected layer
 
-# TODO: conform to pytest syntax if needed
-
 from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
 
 import torch

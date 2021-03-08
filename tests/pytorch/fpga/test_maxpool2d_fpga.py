@@ -70,9 +70,6 @@ if __name__ == "__main__":
 
     ##########################################
     dace_model.sdfg.save('/tmp/out.sdfg')
-    # orig_sdfg = copy.deepcopy(sdfg)
-    # orig_sdfg.expand_library_nodes()
-    # orig_sdfg.save('/tmp/out_expanded.sdfg')
 
     donnx.ONNXMaxPool.default_implementation = "fpga"
     sdfg.save('/tmp/out_fpga.sdfg')
