@@ -6,6 +6,7 @@ from collections import OrderedDict
 import torch
 
 import dace
+from dace import data as dt
 
 from daceml.autodiff.backward_pass_generator import BackwardPassGenerator
 from daceml.autodiff.base_abc import AutoDiffException
@@ -33,13 +34,14 @@ def make_backward_function(
                 len(model.sdfg.nodes())))
 
     forward_sdfg = model.sdfg
+    forward_state = model.sdfg.nodes()[0]
 
     backward_sdfg = dace.SDFG(forward_sdfg.name + "_backward")
     backward_state = backward_sdfg.add_state()
 
     gen = BackwardPassGenerator(
         sdfg=forward_sdfg,
-        state=model.sdfg.nodes()[0],
+        state=forward_state,
         given_gradients=[clean_onnx_name(name) for name in model.outputs],
         # TODO filter inputs that don't require grad somehow...
         required_gradients=[clean_onnx_name(name) for name in model.inputs],
@@ -50,13 +52,33 @@ def make_backward_function(
     backward_result, backward_grad_arrays, backward_input_arrays = gen.backward(
     )
 
+    replaced_scalars = {}
     for name, desc in backward_input_arrays.items():
         if name not in forward_sdfg.arrays:
             raise AutoDiffException(
                 "Expected to find array with name '{}' in SDFG".format(name))
 
+        forward_desc = forward_sdfg.arrays[name]
         # we will save this output and pass it to the backward pass
-        forward_sdfg.arrays[name].transient = False
+
+        # Views should not be forwarded. Instead the backward pass generator should forward the source of the view,
+        # and rebuild the sequence of required views in the backward pass.
+        assert type(forward_desc) is not dt.View
+        if type(forward_desc) is dt.Scalar:
+            # we can't return scalars from SDFGs, so we add a copy to an array of size 1
+            arr_name, _ = forward_sdfg.add_array(name + "_array", [1],
+                                                 forward_desc.dtype,
+                                                 transient=False,
+                                                 find_new_name=True)
+            copy_state = forward_sdfg.add_state_after(forward_state,
+                                                      label="copy_out_" +
+                                                      arr_name)
+            copy_state.add_edge(copy_state.add_read(name), None,
+                                copy_state.add_write(arr_name), None,
+                                dace.Memlet(name + "[0]"))
+            replaced_scalars[name] = arr_name
+        else:
+            forward_sdfg.arrays[name].transient = False
 
     backward_sdfg.validate()
 
@@ -86,24 +108,42 @@ def make_backward_function(
             inputs, params, symbols, outputs = model._call_args(
                 args=copied_inputs, kwargs={})
 
-            # add the intermediate values we need as empty tensors
-            filtered_backward_input_arrays = {
-                inp: val
-                for inp, val in backward_input_arrays.items()
-                if inp not in inputs and inp not in outputs
-            }
-            inputs.update({
-                name: create_output_array(symbols, desc, use_torch=True)
-                for name, desc, in filtered_backward_input_arrays.items()
-            })
+            # create the empty tensors we need for the intermediate values
+            for inp, val in backward_input_arrays.items():
+                if type(val) is dt.Scalar:
+                    # the value we need is actually in an array
+                    inp = replaced_scalars[inp]
+
+                if inp not in inputs and inp not in outputs and inp not in params:
+                    inputs[inp] = create_output_array(symbols,
+                                                      forward_sdfg.arrays[inp],
+                                                      use_torch=True)
 
             DaceFunction._forward_model.sdfg(**inputs, **symbols, **params,
                                              **outputs)
 
+            def _get_arr(name, desc):
+                if type(desc) is dt.Scalar:
+                    name = replaced_scalars[name]
+                if name in inputs:
+                    value = inputs[name]
+                elif name in outputs:
+                    value = outputs[name]
+                elif name in params:
+                    value = params[name]
+                else:
+                    raise AutoDiffException(
+                        f"Could not get value of array {name}")
+
+                if type(desc) is dt.Scalar:
+                    return value.numpy()[0]
+                else:
+                    return value
+
             # save the arrays we need for the backward pass
             backward_inputs = {
-                name: inputs[name] if name in inputs else outputs[name]
-                for name in backward_input_arrays
+                name: _get_arr(name, desc)
+                for name, desc in backward_input_arrays.items()
             }
             ctx.dace_backward_inputs = backward_inputs
             ctx.dace_symbols = symbols

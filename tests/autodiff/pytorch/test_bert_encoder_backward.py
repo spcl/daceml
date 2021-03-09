@@ -18,12 +18,16 @@ def test_bert_encoder_backward():
 
     dace_model = DaceModule(ptmodel, cuda=False, train=False, backward=True)
 
+    ptinput = torch.clone(input)
+    ptinput.requires_grad = True
+    ptmodel(ptinput)[0].sum().backward()
+
     dace_input = torch.clone(input)
     dace_input.requires_grad = True
     dace_model(dace_input).sum().backward()
 
-    ptinput = torch.clone(input)
-    ptinput.requires_grad = True
-    ptmodel(ptinput).sum().backward()
-
     assert np.allclose(dace_input.grad, ptinput.grad)
+
+
+if __name__ == "__main__":
+    test_bert_encoder_backward()
