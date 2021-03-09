@@ -108,3 +108,16 @@ def test_weights(sdfg_name):
             return x
 
     run_pytorch_module(Module(), sdfg_name, shape=(4, 784), use_max=False)
+
+
+def test_batched_matmul(sdfg_name):
+    class Module(torch.nn.Module):
+        def __init__(self):
+            super(Module, self).__init__()
+            self.fc1 = nn.Parameter(torch.ones([10, 5, 3]))
+
+        def forward(self, x):
+            x = self.fc1 @ x
+            return x
+
+    run_pytorch_module(Module(), sdfg_name, use_max=False)

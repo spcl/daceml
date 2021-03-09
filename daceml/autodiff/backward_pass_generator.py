@@ -33,20 +33,6 @@ def _symbols_to_strings(symbs: typing.Set[sp.Symbol]) -> typing.Set[str]:
     return {str(symb) for symb in symbs}
 
 
-def _reverse_memlet(memlet: dace.Memlet) -> dace.Memlet:
-    """ Copy and reverse the given Memlet.
-
-    :param memlet: the memlet to reverse.
-    :return: the reversed memlet.
-    """
-
-    result = copy.deepcopy(memlet)
-    if result.other_subset is not None:
-        result.other_subset, result.subset = result.subset, result.other_subset
-
-    return result
-
-
 def generate_grad_connector_names(
         existing_connectors: typing.Set[str],
         forward_connector_names: typing.List[str]) -> typing.Dict[str, str]:
@@ -443,6 +429,36 @@ class BackwardPassGenerator:
 
         return expanded_something
 
+    def _disambiguate_direction_dependent_views(self):
+        """ Consider the following subgraph:
+            (A) -- y --> (n) -- x --> (C)
+            In dace, if B is a View node and A and C are access nodes, and y and x both have data set to A.data and
+            B.data respectively, the semantics of the graph depend on the order in which it is executed, i.e. reversing
+            the subgraph doesn't perform as expected anymore. To disambiguate this case, we set y.data to the View's
+            data.
+        """
+
+        for n in self.forward_state.nodes():
+            if isinstance(
+                    n, nd.AccessNode) and type(n.desc(self.sdfg)) is dt.View:
+                in_edges = self.forward_state.in_edges(n)
+                out_edges = self.forward_state.out_edges(n)
+
+                if len(in_edges) == 1 and len(out_edges) == 1:
+                    A = in_edges[0].src
+                    y = in_edges[0].data
+                    C = out_edges[0].dst
+                    x = out_edges[0].data
+                    if (isinstance(A, nd.AccessNode)
+                            and isinstance(C, nd.AccessNode)
+                            and y.data == A.data and x.data == C.data):
+
+                        # flip the memlet
+                        y.subset, y.other_subset = y.other_subset, y.subset
+                        y.data = n.data
+                        y.try_initialize(self.sdfg, self.forward_state,
+                                         in_edges[0])
+
     def backward(
         self
     ) -> typing.Tuple[BackwardResult, typing.Dict[str, dt.Array], typing.Dict[
@@ -471,6 +487,8 @@ class BackwardPassGenerator:
         if self.apply_strict:
             self.sdfg.apply_strict_transformations()
             forward_subgraph = self._find_subgraph_to_differentiate()
+
+        self._disambiguate_direction_dependent_views()
 
         # recursively reverse the subgraph
         self._reverse_subgraph(forward_subgraph)
@@ -604,8 +622,15 @@ class BackwardPassGenerator:
                 self._connect_forward_inputs(subgraph, node)
 
                 if isinstance(node, nd.AccessNode):
-                    # this means we are writing out a grad to an array. In this case, we need to set
-                    # all incoming memlets to WCR Sum if there are conflicts
+                    # this means we are writing out a grad to an array.
+                    # initialize the gradient if it hasn't been initialized already (this can also happen in
+                    # _connect_given_gradients
+                    if self.array_grad_name(
+                            node.data) not in self.backward_sdfg.arrays:
+                        # this grad hasn't been written before: initialize it
+                        self._add_gradient_data_descriptor(node.data)
+
+                    # we need to set all incoming memlets to WCR Sum if there are conflicts.
                     # for now this is a simple check; if the source or target node is a map, we do sum
                     for edge in self.backward_state.in_edges(reversed_node):
                         for path_edge in self.backward_state.memlet_tree(edge):
@@ -675,20 +700,15 @@ class BackwardPassGenerator:
                     "Unsupported reduction type {} on memlet".format(
                         detect_reduction_type(memlet.wcr)))
 
-            memlet = _reverse_memlet(memlet)
+            memlet = copy.deepcopy(memlet)
 
             # remove the WCR since these are now read edges
             memlet.wcr = None
 
-            # the name of the data we are writing the gradient of
-            data_name = src_node.data if isinstance(
-                src_node, nd.AccessNode) else memlet.data
-            grad_name = self.array_grad_name(data_name)
-
+            grad_name = self.array_grad_name(memlet.data)
             if grad_name not in self.backward_sdfg.arrays:
                 # this grad hasn't been written before: initialize it
-                self._add_gradient_data_descriptor(data_name)
-
+                self._add_gradient_data_descriptor(memlet.data)
             memlet.data = grad_name
 
             self.backward_state.add_edge(
