@@ -137,16 +137,23 @@ def connect_output_from_forward(forward_node: nd.Node, backward_node: nd.Node,
 
     # add the array of the output to backward_input_arrays that it will be forwarded by the autodiff engine
     output_arr_name = output_edge.data.data
-    assert output_arr_name not in context.backward_generator.backward_input_arrays
-    data_desc = context.forward_sdfg.arrays[output_arr_name]
-    context.backward_generator.backward_input_arrays[
-        output_arr_name] = copy.deepcopy(data_desc)
+    if output_arr_name not in context.backward_generator.backward_input_arrays:
+        data_desc = context.forward_sdfg.arrays[output_arr_name]
+        context.backward_generator.backward_input_arrays[
+            output_arr_name] = copy.deepcopy(data_desc)
 
-    if context.backward_generator.separate_sdfgs:
-        data_desc.transient = False
-        context.backward_sdfg.add_datadesc(output_arr_name, data_desc)
+        if context.backward_generator.separate_sdfgs:
+            data_desc.transient = False
+            context.backward_sdfg.add_datadesc(output_arr_name, data_desc)
 
-    read = context.backward_state.add_read(output_arr_name)
+        read = context.backward_state.add_read(output_arr_name)
+    else:
+        cand = [
+            n for n, _ in context.backward_state.all_nodes_recursive()
+            if isinstance(n, nd.AccessNode) and n.data == output_arr_name
+        ]
+        assert len(cand) == 1
+        read = cand[0]
     context.backward_state.add_edge(read, None, backward_node,
                                     output_connector_name,
                                     copy.deepcopy(output_edge.data))
