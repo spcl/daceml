@@ -36,10 +36,10 @@ def mnist_trainloader():
     return trainloader
 
 
-def test_training_step(dace_model,
-                       pt_model,
-                       train_batch,
-                       train_criterion=None):
+def training_step(dace_model,
+                  pt_model,
+                  train_batch,
+                  train_criterion=None):
 
     # copy over the weights
     dace_model.load_state_dict(pt_model.state_dict())
@@ -109,7 +109,7 @@ def test_mnist(mnist_trainloader):
     images, labels = next(iter(mnist_trainloader))
     images = images.view(images.shape[0], -1)
 
-    test_training_step(dace_model, model, (images, labels))
+    training_step(dace_model, model, (images, labels))
 
 
 def test_bert():
@@ -131,5 +131,5 @@ def test_bert():
     input = torch.randn([batch_size, seq_len, hidden_size])
     labels = torch.tensor([0, 123], dtype=torch.long)
 
-    test_training_step(BertTokenSoftmaxClf(), BertTokenSoftmaxClf(),
-                       (input, labels))
+    training_step(BertTokenSoftmaxClf(), BertTokenSoftmaxClf(),
+                  (input, labels))

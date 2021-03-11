@@ -70,7 +70,7 @@ There are two main ways to generate backward passes in DaceML.
 :func:`~daceml.autodiff.add_backward_pass`
 
     The autodiff engine can also be run on plain SDFGs. Here, the output ``S`` of the dace function/sdfg
-    is differentiated w.r.t to ``X`` and ``Y``
+    is differentiated w.r.t to ``X`` and ``Y``.
 
     .. testcode::
 
@@ -122,7 +122,7 @@ At a high level, it operates as follows:
       ``NestedSDFG`` nodes (forwarding intermediate values is a source of complexity here).
 
     * Connect required inputs. This includes gradients of outputs of the node, as well as the values of inputs of the
-      node (which potentially need to be routed through reversed maps, or through ``NestedSDFG``s).
+      node (which potentially need to be routed through reversed maps, or through ``NestedSDFG`` s).
 
 .. _mod_extending:
 
