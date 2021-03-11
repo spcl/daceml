@@ -362,7 +362,7 @@ class ONNXModel:
         if self.apply_strict:
             sdfg.apply_strict_transformations()
 
-        self.sdfg(**inputs, **outputs, **params, **symbols)
+        sdfg(**inputs, **outputs, **params, **symbols)
 
         if len(outputs) == 1:
             return next(iter(outputs.values()))

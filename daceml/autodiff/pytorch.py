@@ -20,7 +20,8 @@ def make_backward_function(
         module: 'daceml.pytorch.DaceModule',
         model: ONNXModel,
         apply_strict=False) -> Type[torch.autograd.Function]:
-    """ Convert an ONNXModel to a PyTorch differentiable function.
+    """ Convert an ONNXModel to a PyTorch differentiable function. This method should not be used on it's own.
+        Instead use the ``backward=True`` parameter of :class:`daceml.pytorch.DaceModule`.
 
         :param module: the parent pytorch module.
         :param model: the model to convert.

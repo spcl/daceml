@@ -43,6 +43,7 @@ doctest_global_setup = '''
 import torch
 import torch.nn as nn
 import os
+import dace
 '''
 
 html_sidebars = {

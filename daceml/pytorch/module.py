@@ -43,7 +43,7 @@ class DaceModule(nn.Module):
             >>> dace_module(torch.ones(2))
             Automatically expanded library node "ONNX_Log_0" with implementation "onnxruntime".
             Automatically expanded library node "ONNX_Sqrt_1" with implementation "onnxruntime".
-            array([0., 0.], dtype=float32)
+            tensor([0., 0.])
     """
     def __init__(
             self,
@@ -119,7 +119,15 @@ class DaceModule(nn.Module):
         return outputs
 
 
-def dace_module(moduleclass):
+@dace.dtypes.paramdec
+def dace_module(
+        moduleclass,
+        dummy_inputs: typing.Optional[typing.Tuple[torch.Tensor]] = None,
+        cuda: bool = False,
+        train: bool = False,
+        backward=False,
+        apply_strict: bool = False,
+        sdfg_name: typing.Optional[str] = None):
     """ Decorator to apply on a definition of a ``torch.nn.Module`` to
         convert it to a data-centric module upon construction.
 
@@ -136,10 +144,25 @@ def dace_module(moduleclass):
             >>> module(torch.ones(2))
             Automatically expanded library node "ONNX_Log_0" with implementation "onnxruntime".
             Automatically expanded library node "ONNX_Sqrt_1" with implementation "onnxruntime".
-            array([0., 0.], dtype=float32)
+            tensor([0., 0.])
+
+        :param moduleclass: the model to wrap.
+        :param dummy_inputs: a tuple of tensors to use as input when tracing ``model``.
+        :param cuda: if ``True``, the module will execute using CUDA.
+        :param train: whether to use train mode when tracing ``model``.
+        :param backward: whether to enable the backward pass.
+        :param apply_strict: whether to apply strict transforms after conversion (this generally improves performance,
+                             but can be slow).
+        :param sdfg_name: the name to give to the sdfg (defaults to ``dace_model``).
     """
     @wraps(moduleclass)
     def _create(*args, **kwargs):
-        return DaceModule(moduleclass(*args, **kwargs))
+        return DaceModule(moduleclass(*args, **kwargs),
+                          dummy_inputs=dummy_inputs,
+                          cuda=cuda,
+                          train=train,
+                          backward=backward,
+                          apply_strict=apply_strict,
+                          sdfg_name=sdfg_name)
 
     return _create

@@ -8,11 +8,10 @@ import dace.sdfg.nodes as nd
 import daceml.onnx as donnx
 import daceml.autodiff.utils as butils
 from daceml.autodiff.base_abc import BackwardImplementation, BackwardContext, BackwardResult
-import daceml.util.utils as utils
 
 
 @autoregister_params(op="Softmax", name="default")
-class DefaultSoftmax(BackwardImplementation):
+class DefaultSoftmaxBackward(BackwardImplementation):
     @staticmethod
     def backward(
         forward_node: nd.Node, context: BackwardContext,
@@ -57,7 +56,7 @@ class DefaultSoftmax(BackwardImplementation):
 
 
 @autoregister_params(op="LogSoftmax", name="default")
-class DefaultLogSoftmax(BackwardImplementation):
+class DefaultLogSoftmaxBackward(BackwardImplementation):
     @staticmethod
     def backward(
         forward_node: nd.Node, context: BackwardContext,
@@ -96,7 +95,7 @@ class DefaultLogSoftmax(BackwardImplementation):
 
 
 @autoregister_params(op="Relu", name="pure")
-class PureRelu(BackwardImplementation):
+class PureReluBackward(BackwardImplementation):
     @staticmethod
     def backward(
         forward_node: nd.Node, context: BackwardContext,
