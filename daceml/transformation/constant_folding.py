@@ -1,4 +1,5 @@
 import copy
+import logging
 from collections import deque
 from typing import Dict
 
@@ -16,6 +17,8 @@ import daceml.onnx as donnx
 from daceml.onnx.converters import clean_onnx_name
 from daceml.onnx.nodes.onnx_op import ONNXOp
 from daceml.onnx import ONNXModel
+
+log = logging.getLogger(__name__)
 
 # blocklist of nondeterministic ops
 # yapf: disable
@@ -102,6 +105,7 @@ class ConstantFolding(transformation.Transformation):
         parent: ONNXModel = sdfg._parent_onnx_model
         state = sdfg.nodes()[self.state_id]
         node = state.nodes()[self.subgraph[ConstantFolding._onnx_node]]
+        log.debug(f"Applying constant folding: {node} in {state}")
 
         if isinstance(node, donnx.ONNXShape):
             # if we have a shape node, replace it with a constant
@@ -199,6 +203,12 @@ class ConstantFolding(transformation.Transformation):
 
             sub_sdfg(**outputs, **inputs)
 
+            outputs = {
+                name: tensor.cpu().numpy()
+                if isinstance(tensor, torch.Tensor) else tensor
+                for name, tensor in outputs.items()
+            }
+
             for edge in state.out_edges(node):
                 desc = copy.deepcopy(sdfg.arrays[edge.data.data])
                 desc.transient = False
@@ -218,8 +228,8 @@ class ConstantFolding(transformation.Transformation):
                 state.add_edge(access_constant, None, edge.dst, edge.dst_conn,
                                sdfg.make_array_memlet(clean_constant_name))
 
-            # remove all now useless nodes with a reverse BFS
-            remove_node_and_computation(sdfg, state, node)
+        # remove all now useless nodes with a reverse BFS
+        remove_node_and_computation(sdfg, state, node)
 
 
 def remove_node_and_computation(sdfg: dace.SDFG, state: dace.SDFGState,
