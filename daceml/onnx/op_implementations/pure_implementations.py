@@ -54,6 +54,7 @@ def program_for_node(program, sdfg: SDFG, state: SDFGState,
     program.__annotations__ = annotations
 
     result = DaceProgram(program, (), {})
+    result.name = node.label + "_expansion"
 
     return result
 

@@ -8,8 +8,9 @@ from daceml.pytorch import DaceModule
 from daceml.transformation import ConstantFolding
 
 
+@pytest.mark.slow
 def test_bert_encoder_backward():
-    batch_size = 8
+    batch_size = 2
     seq_len = 512
     hidden_size = 768
 
@@ -26,8 +27,7 @@ def test_bert_encoder_backward():
     dace_input.requires_grad = True
     dace_model(dace_input).sum().backward()
 
-    assert np.allclose(dace_input.grad, ptinput.grad)
+    diff = np.abs(dace_input.grad.detach().numpy() -
+                  ptinput.grad.detach().numpy())
 
-
-if __name__ == "__main__":
-    test_bert_encoder_backward()
+    assert np.max(diff) < 1e-4

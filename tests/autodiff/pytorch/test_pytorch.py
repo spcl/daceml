@@ -93,6 +93,37 @@ def test_reshape_on_memlet_path(sdfg_name):
     run_pytorch_module(Module(), sdfg_name, shape=(9, ), apply_strict=True)
 
 
+def test_weights_ln(sdfg_name):
+    class Module(torch.nn.Module):
+        def __init__(self):
+            super(Module, self).__init__()
+            self.fc1 = nn.Linear(784, 120)
+            self.fc2 = nn.Linear(120, 32)
+            self.ln = nn.LayerNorm(32)
+            self.fc3 = nn.Linear(32, 10)
+
+        def forward(self, x):
+            x = F.relu(self.fc1(x))
+            x = F.relu(self.fc2(x))
+            x = self.ln(x)
+            x = self.fc3(x)
+            return x
+
+    run_pytorch_module(Module(), sdfg_name, shape=(4, 784), use_max=False)
+
+
+def test_layernorm(sdfg_name):
+    class Module(torch.nn.Module):
+        def __init__(self):
+            super(Module, self).__init__()
+            self.ln = nn.LayerNorm(3)
+
+        def forward(self, x):
+            return self.ln(x)
+
+    run_pytorch_module(Module(), sdfg_name, shape=(1, 3), use_max=True)
+
+
 def test_weights(sdfg_name):
     class Module(torch.nn.Module):
         def __init__(self):
