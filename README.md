@@ -66,7 +66,7 @@ dace_model = ONNXModel("mymodel", model)
 [Importing ONNX models](https://daceml.readthedocs.io/en/latest/overviews/onnx.html#importing-onnx-models).*
 
 ## Training
-DaceML modules support training:
+DaceML modules support training using a symbolic automatic differentiation engine:
 ```python
 import torch.nn.functional as F
 from daceml.pytorch import dace_module
