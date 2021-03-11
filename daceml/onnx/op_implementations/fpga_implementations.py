@@ -16,7 +16,8 @@ from daceml.onnx.implementation_abc import ONNXForward
 import numpy as np
 import math
 
-from daceml.util.utils import in_desc_with_name, out_desc_with_name
+from daceml.util.utils import in_desc_with_name, out_desc_with_name, in_edge_with_name
+from daceml.transformation import constant_folding
 
 
 def _2d_sliding_window_index_expr(x_or_y, stride, kernel_size):
@@ -696,7 +697,7 @@ class FPGAIm2ColConv(ONNXForward):
                 transient=True,
                 storage=dace.dtypes.StorageType.FPGA_Local)
             Y_buffer_in = state.add_read("Y_buffer")
-            Y_buffer_out = state.add_write("Y_buffer")
+            Y_buffer_out = state.add_access("Y_buffer")
 
             # Buffering of im2col data (B)
             sdfg.add_array("im2col_reg",
@@ -867,6 +868,9 @@ else:
                                   memlet=dace.Memlet())
             state.add_memlet_path(compute_entry,
                                   Y_buffer_in,
+                                  memlet=dace.Memlet())
+            state.add_memlet_path(Y_buffer_out,
+                                  compute_exit,
                                   memlet=dace.Memlet())
 
         # build the compute State
@@ -1099,19 +1103,19 @@ class FPGAMaxPool2D(ONNXForward):
             filter_height - 1) + (filter_width - 1) + 1
 
         new_sdfg.add_array("shift_register", [shift_register_size],
-                           X.dtype,
+                           X.dtype.type,
                            storage=dace.StorageType.FPGA_ShiftRegister,
                            transient=True)
         # variable for reduction
         new_sdfg.add_array("max_res", [1],
-                           X.dtype,
+                           X.dtype.type,
                            storage=dace.StorageType.FPGA_Registers,
                            transient=True)
         new_sdfg.add_array('vec_data',
                            shape=[
                                vec_width,
                            ],
-                           dtype=X.dtype,
+                           dtype=X.dtype.type,
                            transient=True,
                            storage=dace.dtypes.StorageType.FPGA_Registers)
         # temporary storage for unpacked vector data type
@@ -1769,20 +1773,32 @@ class FPGAReshape(ONNXForward):
             raise ValueError(
                 "Expected input and output to have the same dtype.")
 
-        expansion = dace.SDFG("_reshape_expansion_")
-        expansion.add_datadesc(
-            "shape",
-            copy.deepcopy(in_desc_with_name(node, state, sdfg, "shape")))
         indata = in_desc_with_name(node, state, sdfg, "data")
         outdata = out_desc_with_name(node, state, sdfg, "reshaped")
-        expansion.add_datadesc("data", copy.deepcopy(indata))
-        expansion.add_datadesc("reshaped", copy.deepcopy(outdata))
-        expansion.arrays["shape"].transient = False
-        expansion.arrays["data"].transient = False
-        expansion.arrays["reshaped"].transient = False
-        state = expansion.add_state()
-
+        # expansion = dace.SDFG("_reshape_expansion_")
+        # expansion.add_datadesc(
+        #     "shape",
+        #     copy.deepcopy(in_desc_with_name(node, state, sdfg, "shape")))
+        # expansion.add_datadesc("data", copy.deepcopy(indata))
+        # expansion.add_datadesc("reshaped", copy.deepcopy(outdata))
+        # expansion.arrays["shape"].transient = False
+        # expansion.arrays["data"].transient = False
+        # expansion.arrays["reshaped"].transient = False
+        # state = expansion.add_state()
+        # TMP
         if len(indata.shape) == 4 and len(outdata.shape) == 2:
+
+            new_shape = out_desc_with_name(node, state, sdfg, "reshaped").shape
+            node.remove_in_connector("shape")
+
+            shape_node = in_edge_with_name(node, state, "shape").src
+            constant_folding.remove_node_and_computation(sdfg, state, shape_node)
+
+            def prog(data, reshaped):
+                reshaped[:] = np.reshape(data, new_shape)
+
+            return program_for_node(prog, sdfg, state, node).to_sdfg()
+
             # TODO
             # We can not directly copy from container to container, as this gives problem with SDFG nesting
             # ad hoc for lenet
