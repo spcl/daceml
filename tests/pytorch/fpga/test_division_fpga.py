@@ -21,7 +21,7 @@ class Model(nn.Module):
         super(Model, self).__init__()
 
     def forward(self, x, y):
-        return torch.add(x, y)
+        return torch.div(x, y)
 
 
 if __name__ == "__main__":
@@ -48,8 +48,8 @@ if __name__ == "__main__":
 
     data_shape = (10000, 4, 32, 32)
     # x = torch.FloatTensor(1000,4,32,32).random_(-5, 5)
-    x = torch.rand(data_shape) - 0.5
-    y = torch.rand(data_shape) - 0.5
+    x = torch.rand(data_shape) + 0.1
+    y = torch.rand(data_shape) + 0.1
 
     # Create dace model and run in dace
     dace_model = DaceModule(ptmodel)

@@ -2814,110 +2814,173 @@ class FPGAReduceSum(ONNXForward):
 # -----------------------------
 # New implementations: burgerm
 # -----------------------------
+def binary_forward(node: ONNXOp, state: SDFGState, sdfg: SDFG,
+                   operator: str) -> typing.Union[Node, SDFG]:
+
+    node.validate(sdfg, state)
+
+    op_map = {'+': 'add', '-': 'sub', '*': 'mul', '/': 'div'}
+    op_name = op_map[operator]
+
+    # TODO: support streaming
+    streaming_node = False
+
+    # Get inputs and outputs names
+    A = in_desc_with_name(node, state, sdfg, "A")
+    B = in_desc_with_name(node, state, sdfg, "B")
+    C = out_desc_with_name(node, state, sdfg, "C")
+
+    # Create inner SDFG
+    op_sdfg = dace.SDFG(node.name)
+    compute_state = op_sdfg.add_state("compute_{}".format(op_name))
+
+    a_inner = A.clone()
+    a_inner.transient = False
+    b_inner = B.clone()
+    b_inner.transient = False
+    c_inner = C.clone()
+    c_inner.transient = False
+
+    op_sdfg.add_datadesc("A", a_inner)
+    op_sdfg.add_datadesc("B", b_inner)
+    op_sdfg.add_datadesc("C", c_inner)
+
+    # Create map and tasklet
+    map_ranges = {'__i%d' % i: '0:%s' % n for i, n in enumerate(A.shape)}
+    outer_me, outer_mx = compute_state.add_map(
+        '{}_map'.format(op_name),
+        map_ranges,
+        schedule=dace.ScheduleType.FPGA_Device)
+
+    tasklet = compute_state.add_tasklet(
+        '{}_task'.format(op_name), ['a_con', 'b_con'], ['c_con'],
+        'c_con = a_con {} b_con'.format(operator))
+
+    # Add data descriptors
+    a_in = compute_state.add_read("A")
+    b_in = compute_state.add_read("B")
+    c_out = compute_state.add_write("C")
+
+    # Connect map
+    if not streaming_node:
+        compute_state.add_memlet_path(
+            a_in,
+            outer_me,
+            tasklet,
+            dst_conn='a_con',
+            memlet=dace.Memlet("A[{}]".format(",".join(
+                ['__i%d' % i for i in range(len(A.shape))]))))
+
+        compute_state.add_memlet_path(
+            b_in,
+            outer_me,
+            tasklet,
+            dst_conn='b_con',
+            memlet=dace.Memlet("B[{}]".format(",".join(
+                ['__i%d' % i for i in range(len(B.shape))]))))
+
+        compute_state.add_memlet_path(
+            tasklet,
+            outer_mx,
+            c_out,
+            src_conn='c_con',
+            memlet=dace.Memlet("C[{}]".format(",".join(
+                ['__i%d' % i for i in range(len(C.shape))]))))
+
+    else:
+        #memlet from stream
+        compute_state.add_memlet_path(a_in,
+                                      outer_me,
+                                      tasklet,
+                                      dst_conn='a_con',
+                                      memlet=dace.Memlet("A[0,0,0,0]"))
+
+        #memlet from stream
+        compute_state.add_memlet_path(b_in,
+                                      outer_me,
+                                      tasklet,
+                                      dst_conn='b_con',
+                                      memlet=dace.Memlet("B[0,0,0,0]"))
+
+        compute_state.add_memlet_path(tasklet,
+                                      outer_mx,
+                                      c_out,
+                                      src_conn='c_con',
+                                      memlet=dace.Memlet("C[0,0,0,0]"))
+
+    return op_sdfg
+
+
+def binary_operator_general_checks(node: ONNXOp, state: SDFGState,
+                                   sdfg: SDFG) -> bool:
+
+    A = in_desc_with_name(node, state, sdfg, "A")
+    B = in_desc_with_name(node, state, sdfg, "B")
+    C = out_desc_with_name(node, state, sdfg, "C")
+
+    if A.veclen == B.veclen and A.veclen == C.veclen:
+        vec_width_mismatch = False
+    else:
+        vec_width_mismatch = True
+
+    return not vec_width_mismatch
+
+
 @autoregister_params(op="Add", name="fpga")
 class FPGAAdd(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
 
-        A = in_desc_with_name(node, state, sdfg, "A")
-        B = in_desc_with_name(node, state, sdfg, "B")
-        C = out_desc_with_name(node, state, sdfg, "C")
-
-        if A.veclen == B.veclen and A.veclen == C.veclen:
-            vec_width_mismatch = False
-        else:
-            vec_width_mismatch = True
-
-        return not vec_width_mismatch
+        return binary_operator_general_checks(node, state, sdfg)
 
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
-        node.validate(sdfg, state)
+        return binary_forward(node, state, sdfg, "+")
 
-        # TODO: support streaming
-        streaming_node = False
 
-        # Get inputs and outputs names
-        A = in_desc_with_name(node, state, sdfg, "A")
-        B = in_desc_with_name(node, state, sdfg, "B")
-        C = out_desc_with_name(node, state, sdfg, "C")
+@autoregister_params(op="Sub", name="fpga")
+class FPGASub(ONNXForward):
+    @staticmethod
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
 
-        # Create inner SDFG
-        add_sdfg = dace.SDFG(node.name)
-        add_state = add_sdfg.add_state("compute_add")
+        return binary_operator_general_checks(node, state, sdfg)
 
-        a_inner = A.clone()
-        a_inner.transient = False
-        b_inner = B.clone()
-        b_inner.transient = False
-        c_inner = C.clone()
-        c_inner.transient = False
+    @staticmethod
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
-        add_sdfg.add_datadesc("A", a_inner)
-        add_sdfg.add_datadesc("B", b_inner)
-        add_sdfg.add_datadesc("C", c_inner)
+        return binary_forward(node, state, sdfg, "-")
 
-        # Create map and tasklet
-        map_ranges = {'__i%d' % i: '0:%s' % n for i, n in enumerate(A.shape)}
-        outer_me, outer_mx = add_state.add_map(
-            'add_map', map_ranges, schedule=dace.ScheduleType.FPGA_Device)
 
-        tasklet = add_state.add_tasklet('add_task', ['a_con', 'b_con'],
-                                        ['c_con'], 'c_con = a_con + b_con')
+@autoregister_params(op="Mul", name="fpga")
+class FPGAMul(ONNXForward):
+    @staticmethod
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
 
-        # Add data descriptors
-        a_in = add_state.add_read("A")
-        b_in = add_state.add_read("B")
-        c_out = add_state.add_write("C")
+        return binary_operator_general_checks(node, state, sdfg)
 
-        # Connect map
-        if not streaming_node:
-            add_state.add_memlet_path(
-                a_in,
-                outer_me,
-                tasklet,
-                dst_conn='a_con',
-                memlet=dace.Memlet("A[{}]".format(",".join(
-                    ['__i%d' % i for i in range(len(A.shape))]))))
+    @staticmethod
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
-            add_state.add_memlet_path(
-                b_in,
-                outer_me,
-                tasklet,
-                dst_conn='b_con',
-                memlet=dace.Memlet("B[{}]".format(",".join(
-                    ['__i%d' % i for i in range(len(B.shape))]))))
+        return binary_forward(node, state, sdfg, "*")
 
-            add_state.add_memlet_path(
-                tasklet,
-                outer_mx,
-                c_out,
-                src_conn='c_con',
-                memlet=dace.Memlet("C[{}]".format(",".join(
-                    ['__i%d' % i for i in range(len(C.shape))]))))
 
-        else:
-            #memlet from stream
-            add_state.add_memlet_path(a_in,
-                                      outer_me,
-                                      tasklet,
-                                      dst_conn='a_con',
-                                      memlet=dace.Memlet("A[0,0,0,0]"))
+@autoregister_params(op="Div", name="fpga")
+class FPGADiv(ONNXForward):
+    @staticmethod
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
 
-            #memlet from stream
-            add_state.add_memlet_path(b_in,
-                                      outer_me,
-                                      tasklet,
-                                      dst_conn='b_con',
-                                      memlet=dace.Memlet("B[0,0,0,0]"))
+        return binary_operator_general_checks(node, state, sdfg)
 
-            add_state.add_memlet_path(tasklet,
-                                      outer_mx,
-                                      c_out,
-                                      src_conn='c_con',
-                                      memlet=dace.Memlet("C[0,0,0,0]"))
+    @staticmethod
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
-        return add_sdfg
+        return binary_forward(node, state, sdfg, "/")
