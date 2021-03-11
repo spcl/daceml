@@ -1,6 +1,9 @@
 import typing
 import copy
 import inspect
+import ast
+
+import astunparse
 
 import dace
 import dace.sdfg.nodes as nd
@@ -157,3 +160,26 @@ def connect_output_from_forward(forward_node: nd.Node, backward_node: nd.Node,
     context.backward_state.add_edge(read, None, backward_node,
                                     output_connector_name,
                                     copy.deepcopy(output_edge.data))
+
+
+def cast_consts_to_type(code: str, dtype: dace.typeclass) -> str:
+    """ Convert a piece of code so that constants are wrapped in casts to ``dtype``.
+
+        For example:
+
+            x * ( 3 / 2)
+
+        becomes:
+
+            x * (dace.float32(3) / dace.float32(2))
+
+        :param code: the code string to convert.
+        :param dtype: the dace typeclass to wrap cast to
+        :return: a string of the converted code.
+    """
+    class CastConsts(ast.NodeTransformer):
+        def visit_Constant(self, node):
+            return ast.parse(
+                f"dace.{dtype.to_string()}({astunparse.unparse(node)})")
+
+    return astunparse.unparse(CastConsts().visit(ast.parse(code)))

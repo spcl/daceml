@@ -4,6 +4,7 @@
 """
 import collections
 import copy
+import logging
 import typing
 
 import dace
@@ -18,11 +19,14 @@ from dace.sdfg import graph as dgraph, state as dstate, utils as dutils
 from daceml.autodiff.base_abc import (BackwardContext, BackwardResult,
                                       AutoDiffException,
                                       find_backward_implementation)
+from daceml.autodiff.utils import cast_consts_to_type
 from daceml.onnx.forward_implementation_abc import ONNXForward
 from daceml.onnx.nodes.onnx_op import ONNXOp
 from daceml.util.utils import find_str_not_in_set, in_edge_with_name
 
 ReverseNodeReturnType = typing.Tuple[nd.Node, BackwardResult]
+
+log = logging.getLogger(__name__)
 
 
 def _strings_to_symbols(strings: typing.Set[str]) -> typing.Set[sp.Symbol]:
@@ -931,7 +935,7 @@ class BackwardPassGenerator:
             :param required_gradients: input name on the forward node that the gradient should be generated for
             :return: the reversed node and gradient names for the connectors
         """
-        print("Reversing {}".format(node))
+        log.debug("Reversing {}".format(node))
 
         # (1)
         if hasattr(self, "_reverse_" + type(node).__name__):
@@ -1215,9 +1219,23 @@ class BackwardPassGenerator:
                 rev_inputs |= _symbols_to_strings(
                     diff_expr.free_symbols) | {rev_input_grad_name}
 
-                rev_code[rev_output_grad_name].append(
-                    "{input} * ({diff_expr})".format(input=rev_input_grad_name,
-                                                     diff_expr=str(diff_expr)))
+                diff_code_str = "{input} * ({diff_expr})".format(
+                    input=rev_input_grad_name, diff_expr=str(diff_expr))
+
+                # get the the final type of the gradient: this is just the type of the input connector we creating the
+                # gradient for
+
+                cands = list(
+                    self.forward_state.in_edges_by_connector(tasklet, inp))
+                if len(cands) != 1:
+                    raise AutoDiffException(
+                        f"Unexpected graph structure, could not find input edge for connector {inp} on tasklet {tasklet}"
+                    )
+
+                converted_code = cast_consts_to_type(
+                    diff_code_str, self.sdfg.arrays[cands[0].data.data].dtype)
+                converted_code = converted_code.replace("\n", " ")
+                rev_code[rev_output_grad_name].append(converted_code)
 
         code = ""
         for output, exprs in rev_code.items():
