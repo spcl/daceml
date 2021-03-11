@@ -101,8 +101,8 @@ if __name__ == "__main__":
     sdfg = dace_model.sdfg
 
     # Set vendor
-    vendor=args["vendor"]
-    mode="simulation"
+    vendor = args["vendor"]
+    mode = "simulation"
     if vendor == 'intel_fpga':
         mode = "emulator"
     dace.config.Config.set("compiler", "fpga_vendor", value=vendor)

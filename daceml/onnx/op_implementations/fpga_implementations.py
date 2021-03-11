@@ -335,7 +335,6 @@ class FPGAConv2D(ONNXForward):
         output_memlet = dace.Memlet("Y[b, m, out_x, out_y]", dynamic=True)
         write_Y = new_state.add_write("Y")
 
-
         new_state.add_memlet_path(compute_tasklet,
                                   inner_mx,
                                   mid_mx,
@@ -539,8 +538,7 @@ class FPGAIm2ColConv(ONNXForward):
                     "hx": "0:{}".format(filter_hx),
                     "hy": "0:{}".format(filter_hy),
                     "x": "0:{}".format(output_size_x),
-                    "y0": "0:{}/{}".format(output_size_x,
-                                           vec_width),
+                    "y0": "0:{}/{}".format(output_size_x, vec_width),
                 },
                 schedule=dace.ScheduleType.FPGA_Device)
 
@@ -656,7 +654,6 @@ class FPGAIm2ColConv(ONNXForward):
             im2col_pipe_out = state.add_write("im2col_pipe")
             Y_pipe_in = state.add_read("Y_pipe")
             Y_pipe_out = state.add_write("Y_pipe")
-
 
             # Create a single pipeline with all the flattened loops
 
@@ -902,7 +899,6 @@ else:
 
 @autoregister_params(op="Relu", name="fpga")
 class FPGARelu(ONNXForward):
-   
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
@@ -949,7 +945,6 @@ class FPGARelu(ONNXForward):
         # Unrolled map to compute the elementwise max
         inner_me, inner_mx = new_state.add_map(
             'inner_relu_map', dict(i="0:{}".format(vec_width)), unroll=True)
-
 
         tasklet = new_state.add_tasklet('relu_task', ['x_con'], ['y_con'],
                                         'y_con = max(0.0, x_con)')
@@ -1961,7 +1956,7 @@ class FPGAReshape(ONNXForward):
             expansion.save('/tmp/exp.sdfg')
             return expansion
         else:
-            assert(False)
+            assert (False)
             expansion.add_view('Av', outdata.shape, dtype=outdata.dtype)
             data = state.add_read("data")
             reshaped = state.add_write("reshaped")
@@ -2198,7 +2193,7 @@ class FPGAMatMul(ONNXForward):
             #its strides are (sAB, sAN, sAK)
 
             # Matrix B has shape ([BATCH,] K, M)
-            M = B.shape[-1] # Note, this accounts for vectorization
+            M = B.shape[-1]  # Note, this accounts for vectorization
             # its strides are (sBB, sBK, sBM)
 
             #Matrix Y, the result has shape (BATCH, N, M)
@@ -2326,7 +2321,6 @@ class FPGAMatMul(ONNXForward):
                 else:
                     different_vec_width = False
 
-
                 entry_map, exit_map = state.add_map(
                     "write_Y",
                     {
@@ -2334,8 +2328,7 @@ class FPGAMatMul(ONNXForward):
                         "n0": "0:{}/{}".format(N, P),
                         "tm": "0:{}/{}".format(M, T),
                         "n1": "0:{}".format(P),
-                        "m": "0:{}".format(
-                            T)  # considers also vectorization
+                        "m": "0:{}".format(T)  # considers also vectorization
                     },
                     schedule=dace.ScheduleType.FPGA_Device)
 
@@ -2357,18 +2350,18 @@ class FPGAMatMul(ONNXForward):
                         mem,
                         src_conn="to_memory",
                         memlet=dace.Memlet(
-                            "Y[b, n0 * {} + n1, tm*{}+ m]".format(
-                                P, T)))
+                            "Y[b, n0 * {} + n1, tm*{}+ m]".format(P, T)))
                 else:
                     entry_write_map, exit_write_map = state.add_map(
-                        "write_Y_unrolled",
-                        {"i": "0:{}".format(B.veclen)},unroll=True)
+                        "write_Y_unrolled", {"i": "0:{}".format(B.veclen)},
+                        unroll=True)
                     # local storage to unpack vectorized data
-                    new_sdfg.add_array('vec_res',
-                                   shape=[B.veclen],
-                                   dtype=Y.dtype,
-                                   transient=True,
-                                   storage=dace.dtypes.StorageType.FPGA_Registers)
+                    new_sdfg.add_array(
+                        'vec_res',
+                        shape=[B.veclen],
+                        dtype=Y.dtype,
+                        transient=True,
+                        storage=dace.dtypes.StorageType.FPGA_Registers)
                     vec_res = state.add_access("vec_res")
                     state.add_memlet_path(pipe,
                                           entry_map,
@@ -2390,7 +2383,6 @@ class FPGAMatMul(ONNXForward):
                         memlet=dace.Memlet(
                             "Y[b, n0 * {} + n1, (tm*{}+ m)*{} + i]".format(
                                 P, T, vec_width)))
-
 
             def make_compute(sdfg, state, vec_width=1):
                 vec_type = dace.vector(dace.float32, vec_width)
@@ -2807,15 +2799,11 @@ class FPGAReduceSum(ONNXForward):
                                   memlet=dace.Memlet("sum_res[0]"))
         new_state.add_memlet_path(outer_me, init_tasklet, memlet=dace.Memlet())
 
-
         new_state.add_memlet_path(store_tasklet,
                                   outer_mx,
                                   out_data,
                                   src_conn="out_res",
                                   memlet=dace.Memlet("reduced[o0, o1, o2]"))
-
-
-
 
         new_sdfg.fill_scope_connectors()
         new_sdfg.validate()
@@ -2823,14 +2811,11 @@ class FPGAReduceSum(ONNXForward):
         return new_sdfg
 
 
-
-
 # -----------------------------
 # New implementations: burgerm
 # -----------------------------
 @autoregister_params(op="Add", name="fpga")
 class FPGAAdd(ONNXForward):
-
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
@@ -2877,9 +2862,11 @@ class FPGAAdd(ONNXForward):
 
         # Create map and tasklet
         map_ranges = {'__i%d' % i: '0:%s' % n for i, n in enumerate(A.shape)}
-        outer_me, outer_mx = add_state.add_map('add_map', map_ranges, schedule=dace.ScheduleType.FPGA_Device)
+        outer_me, outer_mx = add_state.add_map(
+            'add_map', map_ranges, schedule=dace.ScheduleType.FPGA_Device)
 
-        tasklet = add_state.add_tasklet('add_task', ['a_con', 'b_con'], ['c_con'], 'c_con = a_con + b_con')
+        tasklet = add_state.add_tasklet('add_task', ['a_con', 'b_con'],
+                                        ['c_con'], 'c_con = a_con + b_con')
 
         # Add data descriptors
         a_in = add_state.add_read("A")
@@ -2917,19 +2904,20 @@ class FPGAAdd(ONNXForward):
             add_state.add_memlet_path(a_in,
                                       outer_me,
                                       tasklet,
+                                      dst_conn='a_con',
                                       memlet=dace.Memlet("A[0,0,0,0]"))
 
             #memlet from stream
             add_state.add_memlet_path(b_in,
                                       outer_me,
                                       tasklet,
+                                      dst_conn='b_con',
                                       memlet=dace.Memlet("B[0,0,0,0]"))
 
-            add_state.add_memlet_path(
-                tasklet,
-                outer_mx,
-                c_out,
-                memlet=dace.Memlet("C[0,0,0,0]"))
-
+            add_state.add_memlet_path(tasklet,
+                                      outer_mx,
+                                      c_out,
+                                      src_conn='c_con',
+                                      memlet=dace.Memlet("C[0,0,0,0]"))
 
         return add_sdfg
