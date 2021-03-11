@@ -1760,9 +1760,9 @@ else:
 @autoregister_params(op="Reshape", name="fpga")
 class FPGAReshape(ONNXForward):
     '''
-        Reshape expansion: this currently supports an handful of cases, manually coded
+        Reshape expansion: this relies on views
 
-        TODO: can we use view to get rid of reshapes? On device they should be useless.
+        TODO: can we get rid of reshapes? On device they should be useless.
     '''
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
@@ -1773,153 +1773,18 @@ class FPGAReshape(ONNXForward):
             raise ValueError(
                 "Expected input and output to have the same dtype.")
 
-        indata = in_desc_with_name(node, state, sdfg, "data")
-        outdata = out_desc_with_name(node, state, sdfg, "reshaped")
-        # expansion = dace.SDFG("_reshape_expansion_")
-        # expansion.add_datadesc(
-        #     "shape",
-        #     copy.deepcopy(in_desc_with_name(node, state, sdfg, "shape")))
-        # expansion.add_datadesc("data", copy.deepcopy(indata))
-        # expansion.add_datadesc("reshaped", copy.deepcopy(outdata))
-        # expansion.arrays["shape"].transient = False
-        # expansion.arrays["data"].transient = False
-        # expansion.arrays["reshaped"].transient = False
-        # state = expansion.add_state()
-        # TMP
-        if len(indata.shape) == 4 and len(outdata.shape) == 2:
 
-            new_shape = out_desc_with_name(node, state, sdfg, "reshaped").shape
-            node.remove_in_connector("shape")
+        new_shape = out_desc_with_name(node, state, sdfg, "reshaped").shape
+        node.remove_in_connector("shape")
 
-            shape_node = in_edge_with_name(node, state, "shape").src
-            constant_folding.remove_node_and_computation(sdfg, state, shape_node)
+        shape_node = in_edge_with_name(node, state, "shape").src
+        constant_folding.remove_node_and_computation(sdfg, state, shape_node)
 
-            def prog(data, reshaped):
-                reshaped[:] = np.reshape(data, new_shape)
+        def prog(data, reshaped):
+            reshaped[:] = np.reshape(data, new_shape)
 
-            return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node).to_sdfg()
 
-            # TODO
-            # We can not directly copy from container to container, as this gives problem with SDFG nesting
-            # ad hoc for lenet
-            assert (len(indata.shape) == 4)
-            assert (len(outdata.shape) == 2)
-            map_ranges = {
-                '__i%d' % i: '0:%s' % n
-                for i, n in enumerate(indata.shape)
-            }
-            me, mx = state.add_map("reshaping", map_ranges)
-            tasklet = state.add_tasklet('reshape_task', ['_in'], ['_out'],
-                                        '_out = _in')
-
-            data = state.add_read("data")
-            reshaped = state.add_write("reshaped")
-            state.add_memlet_path(
-                data,
-                me,
-                tasklet,
-                dst_conn="_in",
-                memlet=dace.Memlet("data[{}]".format(",".join(
-                    ['__i%d' % i for i in range(len(indata.shape))]))))
-
-            state.add_memlet_path(
-                tasklet,
-                mx,
-                reshaped,
-                src_conn="_out",
-                memlet=dace.Memlet(
-                    "reshaped[__i0, __i1*{} + __i2*{} +__i3 ]".format(
-                        indata.shape[2] * indata.shape[3], indata.shape[3])))
-
-            # state.add_edge(data, None, reshaped, None, memlet)
-            expansion.fill_scope_connectors()
-            return expansion
-        elif len(indata.shape) == 3 and len(outdata.shape) == 4:
-            map_ranges = {
-                '__i%d' % i: '0:%s' % n
-                for i, n in enumerate(indata.shape)
-            }
-            me, mx = state.add_map("reshaping", map_ranges)
-            tasklet = state.add_tasklet('reshape_task', ['_in'], ['_out'],
-                                        '_out = _in')
-
-            data = state.add_read("data")
-            reshaped = state.add_write("reshaped")
-            state.add_memlet_path(
-                data,
-                me,
-                tasklet,
-                dst_conn="_in",
-                memlet=dace.Memlet("data[{}]".format(",".join(
-                    ['__i%d' % i for i in range(len(indata.shape))]))))
-
-            state.add_memlet_path(
-                tasklet,
-                mx,
-                reshaped,
-                src_conn="_out",
-                memlet=dace.Memlet(
-                    "reshaped[__i0//{}, __i0%{},  __i1,__i2 ]".format(
-                        outdata.shape[1], outdata.shape[1])))
-            # memlet = expansion.make_array_memlet("data")
-            # memlet.allow_oob = True
-
-            # state.add_edge(data, None, reshaped, None, memlet)
-            expansion.fill_scope_connectors()
-            expansion.save('/tmp/exp.sdfg')
-            return expansion
-        elif len(indata.shape) == len(
-                outdata.shape) == 3 and indata.shape[0] == outdata.shape[0]:
-            # TODO: tmp this is just for MHA, till we get views
-            map_ranges = {
-                '__i%d' % i: '0:%s' % n
-                for i, n in enumerate(indata.shape)
-            }
-            me, mx = state.add_map("reshaping", map_ranges)
-            tasklet = state.add_tasklet('reshape_task', ['_in'], ['_out'],
-                                        '_out = _in')
-
-            data = state.add_read("data")
-            reshaped = state.add_write("reshaped")
-            state.add_memlet_path(
-                data,
-                me,
-                tasklet,
-                dst_conn="_in",
-                memlet=dace.Memlet("data[{}]".format(",".join(
-                    ['__i%d' % i for i in range(len(indata.shape))]))))
-
-            state.add_memlet_path(
-                tasklet,
-                mx,
-                reshaped,
-                src_conn="_out",
-                memlet=dace.Memlet(
-                    f"reshaped[__i0, (__i1*{indata.shape[2]}+__i2)//{outdata.shape[2]},  (__i1*{indata.shape[2]}+__i2)%{outdata.shape[2]} ]"
-                ))
-
-            expansion.fill_scope_connectors()
-            expansion.save('/tmp/exp.sdfg')
-            return expansion
-        else:
-            assert(False)
-            expansion.add_view('Av', outdata.shape, dtype=outdata.dtype)
-            data = state.add_read("data")
-            reshaped = state.add_write("reshaped")
-            view = state.add_access('Av')
-
-            state.add_nedge(data, view, dace.Memlet(data='data'))
-            state.add_nedge(view, reshaped, dace.Memlet(data='reshaped'))
-
-            #
-            # data = state.add_read("data")
-            # reshaped = state.add_write("reshaped")
-            # memlet = expansion.make_array_memlet("data")
-            # memlet.allow_oob = True
-            # state.add_edge(data, None, reshaped, None, memlet)
-            expansion.save("/tmp/reshape.sdfg")
-            expansion.validate()
-            return expansion
 
 
 @autoregister_params(op="Softmax", name="fpga")
@@ -1927,7 +1792,7 @@ class FPGASoftmax(ONNXForward):
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[nodes.Node, SDFG]:
-        # FIRST ATTEMPT
+        # TODO: Attempt
         # try to avoid max computation, this could have
         # problems for numerical stability
         # https://stackoverflow.com/questions/34968722/how-to-implement-the-softmax-function-in-python

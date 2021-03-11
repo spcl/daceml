@@ -44,14 +44,11 @@ def run(data_shape: tuple, reshaped_shape: tuple, vec_width=1, queue=None):
     dace_model = DaceModule(ptmodel)
     out = dace_model(x)
     sdfg = dace_model.sdfg
-    sdfg.save('/tmp/out.sdfg')
     sdfg.apply_transformations([FPGATransformSDFG])
 
     donnx.ONNXReshape.default_implementation = 'fpga'
     sdfg.expand_library_nodes()
     sdfg.apply_transformations_repeated([InlineSDFG])
-    # sdfg.apply_transformations([InlineSDFG])
-    sdfg.save('/tmp/out_fpga.sdfg')
 
     dace_output_fpga = dace_model(x)
     dace_output_fpga = dace_output_fpga.reshape(
@@ -85,9 +82,9 @@ def test():
     # (But not in parallel)
 
     # each position of this lists contains a test configuration
-    vec_width = [1, 1, 1]
-    x_shapes = [(16, 2, 32), (16, 8, 8), (8, 16, 16)]
-    y_shapes = [(16, 8, 8), (16, 2, 32), (2, 4, 16, 16)]  # reshpaed
+    vec_width = [1, 1, 1, 1]
+    x_shapes = [(16, 4, 4, 4), (16, 2, 32), (16, 8, 8), (8, 16, 16)]
+    y_shapes = [(16,64), (16, 8, 8), (16, 2, 32), (2, 4, 16, 16)]  # reshpaed
 
     for i in range(0, len(vec_width)):
         print("##########################################################")
@@ -123,6 +120,6 @@ if __name__ == "__main__":
     if t:
         test()
     else:
-        data_shape = (2, 4, 4)
-        reshaped_shape = (2, 2, 8)
+        data_shape = (16, 4, 4, 4)
+        reshaped_shape = (16, 64)
         run(data_shape, reshaped_shape)
