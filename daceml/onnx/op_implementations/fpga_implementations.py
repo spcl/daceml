@@ -2821,3 +2821,115 @@ class FPGAReduceSum(ONNXForward):
         new_sdfg.validate()
         new_sdfg.save('/tmp/reduce_sum.sdfg')
         return new_sdfg
+
+
+
+
+# -----------------------------
+# New implementations: burgerm
+# -----------------------------
+@autoregister_params(op="Add", name="fpga")
+class FPGAAdd(ONNXForward):
+
+    @staticmethod
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
+
+        A = in_desc_with_name(node, state, sdfg, "A")
+        B = in_desc_with_name(node, state, sdfg, "B")
+        C = out_desc_with_name(node, state, sdfg, "C")
+
+        if A.veclen == B.veclen and A.veclen == C.veclen:
+            vec_width_mismatch = False
+        else:
+            vec_width_mismatch = True
+
+        return not vec_width_mismatch
+
+    @staticmethod
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+
+        node.validate(sdfg, state)
+
+        # TODO: support streaming
+        streaming_node = False
+
+        # Get inputs and outputs names
+        A = in_desc_with_name(node, state, sdfg, "A")
+        B = in_desc_with_name(node, state, sdfg, "B")
+        C = out_desc_with_name(node, state, sdfg, "C")
+
+        # Create inner SDFG
+        add_sdfg = dace.SDFG(node.name)
+        add_state = add_sdfg.add_state("compute_add")
+
+        a_inner = A.clone()
+        a_inner.transient = False
+        b_inner = B.clone()
+        b_inner.transient = False
+        c_inner = C.clone()
+        c_inner.transient = False
+
+        add_sdfg.add_datadesc("A", a_inner)
+        add_sdfg.add_datadesc("B", b_inner)
+        add_sdfg.add_datadesc("C", c_inner)
+
+        # Create map and tasklet
+        map_ranges = {'__i%d' % i: '0:%s' % n for i, n in enumerate(A.shape)}
+        outer_me, outer_mx = add_state.add_map('add_map', map_ranges, schedule=dace.ScheduleType.FPGA_Device)
+
+        tasklet = add_state.add_tasklet('add_task', ['a_con', 'b_con'], ['c_con'], 'c_con = a_con + b_con')
+
+        # Add data descriptors
+        a_in = add_state.add_read("A")
+        b_in = add_state.add_read("B")
+        c_out = add_state.add_write("C")
+
+        # Connect map
+        if not streaming_node:
+            add_state.add_memlet_path(
+                a_in,
+                outer_me,
+                tasklet,
+                dst_conn='a_con',
+                memlet=dace.Memlet("A[{}]".format(",".join(
+                    ['__i%d' % i for i in range(len(A.shape))]))))
+
+            add_state.add_memlet_path(
+                b_in,
+                outer_me,
+                tasklet,
+                dst_conn='b_con',
+                memlet=dace.Memlet("B[{}]".format(",".join(
+                    ['__i%d' % i for i in range(len(B.shape))]))))
+
+            add_state.add_memlet_path(
+                tasklet,
+                outer_mx,
+                c_out,
+                src_conn='c_con',
+                memlet=dace.Memlet("C[{}]".format(",".join(
+                    ['__i%d' % i for i in range(len(C.shape))]))))
+
+        else:
+            #memlet from stream
+            add_state.add_memlet_path(a_in,
+                                      outer_me,
+                                      tasklet,
+                                      memlet=dace.Memlet("A[0,0,0,0]"))
+
+            #memlet from stream
+            add_state.add_memlet_path(b_in,
+                                      outer_me,
+                                      tasklet,
+                                      memlet=dace.Memlet("B[0,0,0,0]"))
+
+            add_state.add_memlet_path(
+                tasklet,
+                outer_mx,
+                c_out,
+                memlet=dace.Memlet("C[0,0,0,0]"))
+
+
+        return add_sdfg
