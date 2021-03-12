@@ -468,10 +468,6 @@ class PureCast(ONNXForward):
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
 
-        if node.schedule is dtypes.ScheduleType.GPU_Default:
-            # TODO fix this (this breaks bert_full) because of a GPU scalar cast. Issue #20
-            return False
-
         target_type = node.to
         try:
             converters.onnx_tensor_type_to_typeclass(target_type)
