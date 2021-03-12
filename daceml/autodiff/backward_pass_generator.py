@@ -492,6 +492,25 @@ class BackwardPassGenerator:
             self.sdfg.apply_strict_transformations()
             forward_subgraph = self._find_subgraph_to_differentiate()
 
+        # check that all edges are float
+        for edge, parent_subgraph in forward_subgraph.all_edges_recursive():
+            if isinstance(parent_subgraph, SDFGState):
+                parent_sdfg = parent_subgraph.parent
+            elif isinstance(parent_subgraph, dstate.StateSubgraphView):
+                parent_sdfg = parent_subgraph.graph.parent
+            elif isinstance(parent_subgraph, SDFG):
+                # if there are any fancy things on the interstate edges we should probably throw an error
+                continue
+            else:
+                raise AutoDiffException("Unexpected subgraph structure")
+
+            if edge.data.data:
+                edge_type = parent_sdfg.arrays[edge.data.data].dtype
+                if edge_type not in [dace.float16, dace.float32, dace.float64]:
+                    raise AutoDiffException(
+                        f"Expected Subgraph to differentiate to only contain float edges, but data {edge.data}"
+                        f" on edge {edge} has type {edge_type}")
+
         self._disambiguate_direction_dependent_views()
 
         # recursively reverse the subgraph
@@ -520,7 +539,7 @@ class BackwardPassGenerator:
                                 given_grad_names=given_grad_names)
         return result, self.backward_grad_arrays, self.backward_input_arrays
 
-    def _find_subgraph_to_differentiate(self):
+    def _find_subgraph_to_differentiate(self) -> dstate.StateSubgraphView:
         """ Determine which nodes we need to reverse; this forms the subgraph we will differentiate:
             we do a reverse bfs and a forward bfs, then take the intersection of nodes found
         """

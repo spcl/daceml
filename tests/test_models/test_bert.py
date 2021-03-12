@@ -39,3 +39,8 @@ def test_bert_full(gpu, default_implementation, sdfg_name):
 
     assert np.all(np.abs(outputs[1] - unstack_0) < 1e-4)
     assert np.all(np.abs(outputs[0] - unstack_1) < 1e-4)
+
+
+if __name__ == '__main__':
+    donnx.default_implementation = "pure"
+    test_bert_full(True, "pure", "debugging_bert_full")

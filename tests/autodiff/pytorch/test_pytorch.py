@@ -50,7 +50,7 @@ def run_pytorch_module(module,
     print(dace_input.grad)
     diff = np.abs(pytorch_input.grad.numpy() - dace_input.grad.numpy())
 
-    assert np.max(diff) < 1e-5
+    assert np.max(diff) < 1e-4
 
 
 def test_simple(sdfg_name):
