@@ -185,7 +185,7 @@ def test_complex_tasklet():
         return dict(X_gradient=X.grad, Y_gradient=Y.grad)
 
     @dace.program
-    def dace_sum(
+    def dace_sum_complex(
         X: dace.float32[3, 3],
         Y: dace.float32[3, 3],
         Z: dace.float32[3, 3],
@@ -205,7 +205,7 @@ def test_complex_tasklet():
             # hello world 1, 2, 3
             s = z1 * z2
 
-    sdfg = dace_sum.to_sdfg()
+    sdfg = dace_sum_complex.to_sdfg()
     state = sdfg.nodes()[0]
 
     return (
@@ -220,7 +220,7 @@ def test_complex_tasklet():
 
 def test_inplace_error():
     @dace.program
-    def dace_inplace(
+    def dace_inplace1(
         X: dace.float32[3, 3],
         Y: dace.float32[3, 3],
         Z: dace.float32[3, 3],
@@ -242,11 +242,11 @@ def test_inplace_error():
             s = z
 
     with pytest.raises(AutoDiffException) as execinfo:
-        SDFGBackwardRunner(dace_inplace.to_sdfg(), "S")
+        SDFGBackwardRunner(dace_inplace1.to_sdfg(), "S")
     assert "Inplace" in str(execinfo.value)
 
     @dace.program
-    def dace_inplace(
+    def dace_inplace2(
         X: dace.float32[3, 3],
         Y: dace.float32[3, 3],
         Z: dace.float32[3, 3],
@@ -265,12 +265,12 @@ def test_inplace_error():
             s = z
 
     with pytest.raises(AutoDiffException) as execinfo:
-        SDFGBackwardRunner(dace_inplace.to_sdfg(), "S")
+        SDFGBackwardRunner(dace_inplace2.to_sdfg(), "S")
     assert "Inplace" in str(execinfo.value)
 
 
-def test_reused_scalar_inplace_error():
-    sdfg = dace.SDFG("dace_func")
+def test_reused_scalar_inplace_error(sdfg_name):
+    sdfg = dace.SDFG(sdfg_name)
     state = sdfg.add_state()
 
     sdfg.add_array(
@@ -371,7 +371,7 @@ def test_tasklets_only_reuse():
         return dict(A_gradient=A.grad)
 
     @dace.program
-    def dace_func(A: dace.float32[1], C: dace.float32[1]):
+    def tasklets_only_reuse(A: dace.float32[1], C: dace.float32[1]):
         tmp_a = dace.define_local_scalar(dace.float32)
         tmp_b = dace.define_local_scalar(dace.float32)
 
@@ -393,7 +393,7 @@ def test_tasklets_only_reuse():
             c >> C[0]
             c = a * b
 
-    sdfg = dace_func.to_sdfg(strict=False)
+    sdfg = tasklets_only_reuse.to_sdfg(strict=False)
     sdfg.apply_strict_transformations()
 
     return (
@@ -415,7 +415,8 @@ def test_tasklets_multioutput():
         return dict(A_gradient=A.grad, B_gradient=B.grad)
 
     @dace.program
-    def dace_func(A: dace.float32[1], B: dace.float32[1], C: dace.float32[1]):
+    def tasklets_multioutput(A: dace.float32[1], B: dace.float32[1],
+                             C: dace.float32[1]):
         tmp_a = dace.define_local_scalar(dace.float32)
         tmp_b = dace.define_local_scalar(dace.float32)
         tmp_d = dace.define_local_scalar(dace.float32)
@@ -441,7 +442,7 @@ def test_tasklets_multioutput():
             c >> C[0]
             c = a * b * d
 
-    sdfg = dace_func.to_sdfg(strict=False)
+    sdfg = tasklets_multioutput.to_sdfg(strict=False)
     sdfg.apply_strict_transformations()
 
     return (
@@ -466,7 +467,8 @@ def test_tasklets_only():
         return dict(A_gradient=A.grad, B_gradient=B.grad)
 
     @dace.program
-    def dace_func(A: dace.float32[1], B: dace.float32[1], C: dace.float32[1]):
+    def tasklets_only(A: dace.float32[1], B: dace.float32[1],
+                      C: dace.float32[1]):
         tmp_a = dace.define_local_scalar(dace.float32)
         tmp_b = dace.define_local_scalar(dace.float32)
 
@@ -488,7 +490,7 @@ def test_tasklets_only():
             c >> C[0]
             c = a * b
 
-    sdfg = dace_func.to_sdfg(strict=False)
+    sdfg = tasklets_only.to_sdfg(strict=False)
     sdfg.apply_strict_transformations()
 
     return (
@@ -515,7 +517,7 @@ def test_add_mmul_transpose_log():
         return dict(X_gradient=X.grad, Y_gradient=Y.grad, W_gradient=W.grad)
 
     @dace.program
-    def dace_func(
+    def add_mmul_transpose_log(
         X: dace.float32[4, 5],
         Y: dace.float32[4, 3],
         W: dace.float32[4, 3],
@@ -532,7 +534,7 @@ def test_add_mmul_transpose_log():
             z << Z[i, j]
             s = log(z + 1)
 
-    sdfg = dace_func.to_sdfg()
+    sdfg = add_mmul_transpose_log.to_sdfg()
 
     return (
         SDFGBackwardRunner(sdfg, "S"),
@@ -559,8 +561,9 @@ def test_reduce_node_1_axis_and_none_axis():
         return dict(X_gradient=X.grad, Y_gradient=Y.grad, W_gradient=W.grad)
 
     @dace.program
-    def dace_func(X: dace.float32[4, 5], Y: dace.float32[4, 3],
-                  W: dace.float32[7, 4, 3]):
+    def reduce_node_1_axis_and_none_axis(X: dace.float32[4, 5],
+                                         Y: dace.float32[4, 3],
+                                         W: dace.float32[7, 4, 3]):
 
         Xt[:] = np.transpose(X)
         YW[:] = np.sum(W, axis=0) * Y
@@ -570,7 +573,7 @@ def test_reduce_node_1_axis_and_none_axis():
         S = np.sum(Zl)
         return S
 
-    sdfg = dace_func.to_sdfg()
+    sdfg = reduce_node_1_axis_and_none_axis.to_sdfg()
 
     return (
         SDFGBackwardRunner(sdfg, "__return"),
@@ -594,13 +597,13 @@ def test_reduce_max_simple():
         return dict(W_gradient=W.grad)
 
     @dace.program
-    def dace_func(W: dace.float32[4, 5]):
+    def reduce_max_simple(W: dace.float32[4, 5]):
 
         Z = np.max(W, axis=1)
         S = np.sum(Z)
         return S
 
-    sdfg = dace_func.to_sdfg()
+    sdfg = reduce_max_simple.to_sdfg()
 
     return (
         SDFGBackwardRunner(sdfg, "__return"),
@@ -651,8 +654,8 @@ def test_reduce_max_node_1_axis():
 @run_correctness
 def test_reshape():
     @dace.program
-    def add_reshape_grad_test(inp: dace.float64[9], bias: dace.float64[3],
-                              target_shape: dace.int64[2]):
+    def single_state_reshape(inp: dace.float64[9], bias: dace.float64[3],
+                             target_shape: dace.int64[2]):
         reshaped = dace.define_local([3, 3], dace.float64)
         donnx.ONNXReshape(data=inp, shape=target_shape, reshaped=reshaped)
         Z = reshaped + bias
@@ -660,7 +663,7 @@ def test_reshape():
         S = np.sum(Zl)
         return S
 
-    sdfg = add_reshape_grad_test.to_sdfg(strict=False)
+    sdfg = single_state_reshape.to_sdfg(strict=False)
 
     sdfg.apply_transformations_repeated([StateFusion])
 
@@ -685,8 +688,9 @@ def test_reshape_on_memlet_path():
     donnx.default_implementation = "pure"
 
     @dace.program
-    def add_reshape_grad_test(inp: dace.float64[9], bias: dace.float64[3],
-                              target_shape: dace.int64[2]):
+    def single_state_reshape_memlet_path(inp: dace.float64[9],
+                                         bias: dace.float64[3],
+                                         target_shape: dace.int64[2]):
         reshaped = dace.define_local([3, 3], dace.float64)
         donnx.ONNXReshape(data=inp, shape=target_shape, reshaped=reshaped)
         Z = reshaped + bias
@@ -694,7 +698,7 @@ def test_reshape_on_memlet_path():
         S = np.sum(Zl)
         return S
 
-    sdfg = add_reshape_grad_test.to_sdfg(strict=False)
+    sdfg = single_state_reshape_memlet_path.to_sdfg(strict=False)
 
     sdfg.expand_library_nodes()
     sdfg.apply_strict_transformations()
@@ -722,15 +726,15 @@ def test_reshape_reuse_in_same_state():
     donnx.default_implementation = "pure"
 
     @dace.program
-    def add_reshape_grad_test(inp: dace.float64[9],
-                              target_shape: dace.int64[2]):
+    def single_state_reshape_same_state(inp: dace.float64[9],
+                                        target_shape: dace.int64[2]):
         reshaped = dace.define_local([3, 3], dace.float64)
         donnx.ONNXReshape(data=inp, shape=target_shape, reshaped=reshaped)
         Zl = dace.elementwise(lambda x: log(x + 1), reshaped)
         S = np.sum(Zl)
         return S
 
-    sdfg = add_reshape_grad_test.to_sdfg(strict=False)
+    sdfg = single_state_reshape_same_state.to_sdfg(strict=False)
 
     sdfg.expand_library_nodes()
     sdfg.apply_strict_transformations()
