@@ -2893,12 +2893,20 @@ def binary_operator_general_checks(node: ONNXOp, state: SDFGState,
     B = in_desc_with_name(node, state, sdfg, "B")
     C = out_desc_with_name(node, state, sdfg, "C")
 
+    # Check for matching vector widths
     if A.veclen == B.veclen and A.veclen == C.veclen:
         vec_width_mismatch = False
     else:
         vec_width_mismatch = True
 
-    return not vec_width_mismatch
+    # Check for exact matching datashapes
+    # TODO: support broadcasting
+    shape_mismatch = False
+    for dim_a, dim_b, dim_c in zip(A._shape, B._shape, C._shape):
+        if not (dim_a == dim_b and dim_b == dim_c):
+            shape_mismatch = True
+
+    return not vec_width_mismatch and not shape_mismatch
 
 
 @autoregister_params(op="Add", name="fpga")
