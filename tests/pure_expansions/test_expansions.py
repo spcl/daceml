@@ -205,7 +205,7 @@ def test_reduce(keepdims, reduce_type, axes, sdfg_name):
 
     result = sdfg(X=X)
 
-    assert np.allclose(numpy_result, result)
+    assert np.allclose(numpy_result, result, rtol=1e-5, atol=1e-5)
 
 
 @pytest.mark.pure
