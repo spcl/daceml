@@ -4,7 +4,7 @@ PYTEST ?= pytest
 PIP ?= pip
 YAPF ?= yapf
 
-TORCH_VERSION ?= torch==1.7.1+cpu torchvision==0.8.2+cpu torchaudio==0.7.2 -f https://download.pytorch.org/whl/torch_stable.html
+TORCH_VERSION ?= torch==1.7.1 torchvision==0.8.2 torchaudio==0.7.2
 UPDATE_PIP ?= python -m pip install --upgrade pip
 
 ifeq ($(VENV_PATH),)

@@ -48,7 +48,7 @@ There are two main ways to generate backward passes in DaceML.
         loss = criterion(prediction, y)
         print(f"gradients before: {model.model.fc3.weight.grad}")
 
-        # gradients can flow through dace_module!
+        # gradients can flow through model!
         loss.backward()
 
         print(f"gradients after: {model.model.fc3.weight.grad}")

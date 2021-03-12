@@ -148,8 +148,8 @@ class ONNXModel:
                 self.value_infos[value.name] = value
 
         # add weights
-        self.weights: typing.Dict[str, np.ndarray] = {
-        }  #: mapping from weight name to numpy array
+        self.weights: typing.Dict[str, torch.Tensor] = {
+        }  #: mapping from weight name to array
         for init in graph.initializer:
             self._add_constant_tensor(init)
 
@@ -239,9 +239,13 @@ class ONNXModel:
                                                data_desc))
 
         if self.cuda:
-            self.sdfg.apply_strict_transformations()
+            # set all weights to be GPU_Global
+            # this was messing with the ORT arena allocator, probably because PT has it's own
+            # for name, tensor in self.weights.items():
+            #     self.weights[name] = self.weights[name].cuda()
+            #     self.sdfg.arrays[clean_onnx_name(name)].storage = StorageType.GPU_Global
+
             self.sdfg.apply_gpu_transformations()
-            self.sdfg.apply_strict_transformations()
 
             # set all gpu transients to be persistent
             for _, _, arr in self.sdfg.arrays_recursive():
@@ -285,7 +289,9 @@ class ONNXModel:
                         "Invalid ONNX model; found two values with name '{}', but different dimensions ({} and {})"
                         .format(name, existing_arr.shape, dims))
 
-        self.weights[tensor.name] = numpy_helper.to_array(tensor)
+        weight_arr = numpy_helper.to_array(tensor)
+        # we need to copy here because the weight_arr tensor is not writable
+        self.weights[tensor.name] = torch.from_numpy(weight_arr.copy())
 
     def _add_value_info(self, value_info: onnx.ValueInfoProto):
         if not value_info.HasField("name"):
@@ -427,10 +433,11 @@ class ONNXModel:
         # add the weights
         params = {}
         for name, arr in self.weights.items():
-            if len(arr.shape) == 0:
-                params[clean_onnx_name(name)] = arr[()]
+            desc = self.sdfg.arrays[clean_onnx_name(name)]
+            if type(desc) is dt.Scalar:
+                params[clean_onnx_name(name)] = arr.cpu().numpy()[()]
             else:
-                params[clean_onnx_name(name)] = arr.copy()
+                params[clean_onnx_name(name)] = arr.clone()
 
         inferred_symbols = infer_symbols_from_shapes(self.sdfg, {
             **clean_inputs,

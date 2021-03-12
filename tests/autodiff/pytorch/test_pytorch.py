@@ -48,7 +48,7 @@ def run_pytorch_module(module,
     s.backward()
     print("Dace output:")
     print(dace_input.grad)
-    diff = pytorch_input.grad.numpy() -  dace_input.grad.numpy()
+    diff = pytorch_input.grad.numpy() - dace_input.grad.numpy()
 
     assert np.max(diff) < 1e-5
 

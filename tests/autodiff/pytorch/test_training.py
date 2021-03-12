@@ -36,10 +36,7 @@ def mnist_trainloader():
     return trainloader
 
 
-def training_step(dace_model,
-                  pt_model,
-                  train_batch,
-                  train_criterion=None):
+def training_step(dace_model, pt_model, train_batch, train_criterion=None):
 
     # copy over the weights
     dace_model.load_state_dict(pt_model.state_dict())
