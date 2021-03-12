@@ -469,7 +469,7 @@ def expand_node(node, state, sdfg):
             "OrtExecutableKernel *ort_kernel_{};\n".format(unique_id),
         ]
         dependencies = [
-            ONNXRuntimeCUDA if actual_node_schedule in dtypes.GPU_SCHEDULES +
+            ONNXRuntimeCUDA if node.schedule in dtypes.GPU_SCHEDULES +
             [dtypes.ScheduleType.GPU_Default] else ONNXRuntime
         ]
         headers = []
