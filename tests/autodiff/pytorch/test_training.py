@@ -20,22 +20,6 @@ def torch_tensors_close(name, torch_v, dace_v):
         assert False, f"{name} was not close (max diff={np.max(diff)})"
 
 
-@pytest.fixture
-def mnist_trainloader():
-    transform = transforms.Compose(
-        [transforms.ToTensor(),
-         transforms.Normalize((0.5, ), (0.5, ))])
-    data_directory = os.path.join(os.path.dirname(__file__), "data")
-    trainset = datasets.MNIST(data_directory,
-                              download=True,
-                              train=True,
-                              transform=transform)
-    trainloader = torch.utils.data.DataLoader(trainset,
-                                              batch_size=64,
-                                              shuffle=False)
-    return trainloader
-
-
 def training_step(dace_model,
                   pt_model,
                   train_batch,
@@ -82,7 +66,7 @@ def training_step(dace_model,
         torch_tensors_close(name, pt_param.detach(), dace_param.detach())
 
 
-def test_mnist(mnist_trainloader, sdfg_name):
+def test_mnist(sdfg_name):
     input_size = 784
     hidden_sizes = [128, 64]
     output_size = 10
@@ -107,8 +91,8 @@ def test_mnist(mnist_trainloader, sdfg_name):
     # yapf: enable
 
     # check forward pass using loss
-    images, labels = next(iter(mnist_trainloader))
-    images = images.view(images.shape[0], -1)
+    images = torch.randn(64, 784)
+    labels = torch.randint(0, 10, [64], dtype=torch.long)
 
     training_step(dace_model, model, (images, labels), sdfg_name)
 
