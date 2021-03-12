@@ -2812,7 +2812,7 @@ class FPGAReduceSum(ONNXForward):
 
 
 # -----------------------------
-# New implementations: burgerm
+# Binary element-wise operators
 # -----------------------------
 def binary_forward(node: ONNXOp, state: SDFGState, sdfg: SDFG,
                    operator: str) -> typing.Union[Node, SDFG]:
@@ -2822,7 +2822,6 @@ def binary_forward(node: ONNXOp, state: SDFGState, sdfg: SDFG,
     op_map = {'+': 'add', '-': 'sub', '*': 'mul', '/': 'div'}
     op_name = op_map[operator]
 
-    # TODO: support streaming
     streaming_node = False
 
     # Get inputs and outputs names

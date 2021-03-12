@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # Simple test for binary operator for FPGA
 
 from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
