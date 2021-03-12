@@ -9,7 +9,7 @@ from daceml.transformation import ConstantFolding
 
 
 @pytest.mark.slow
-def test_bert_encoder_backward():
+def test_bert_encoder_backward(sdfg_name):
     batch_size = 2
     seq_len = 512
     hidden_size = 768
@@ -17,7 +17,11 @@ def test_bert_encoder_backward():
     input = torch.randn([batch_size, seq_len, hidden_size])
     ptmodel = BertLayer(BertConfig(hidden_act="relu")).eval()
 
-    dace_model = DaceModule(ptmodel, cuda=False, train=False, backward=True)
+    dace_model = DaceModule(ptmodel,
+                            cuda=False,
+                            train=False,
+                            backward=True,
+                            sdfg_name=sdfg_name)
 
     ptinput = torch.clone(input)
     ptinput.requires_grad = True

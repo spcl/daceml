@@ -12,7 +12,7 @@ from daceml.pytorch import DaceModule
 
 
 def torch_tensors_close(name, torch_v, dace_v):
-    diff = torch_v.numpy() - dace_v.numpy()
+    diff = np.abs(torch_v.numpy() - dace_v.numpy())
     if np.max(diff) > 1e-4:
         print("torch value: ", torch_v)
         print("dace value: ", dace_v)
@@ -36,7 +36,11 @@ def mnist_trainloader():
     return trainloader
 
 
-def training_step(dace_model, pt_model, train_batch, train_criterion=None):
+def training_step(dace_model,
+                  pt_model,
+                  train_batch,
+                  sdfg_name,
+                  train_criterion=None):
 
     # copy over the weights
     dace_model.load_state_dict(pt_model.state_dict())
@@ -44,7 +48,7 @@ def training_step(dace_model, pt_model, train_batch, train_criterion=None):
                                  dace_model.state_dict().values()):
         assert np.allclose(dace_value, value)
 
-    dace_model = DaceModule(dace_model, backward=True)
+    dace_model = DaceModule(dace_model, backward=True, sdfg_name=sdfg_name)
 
     x, y = train_batch
     train_criterion = train_criterion or nn.NLLLoss()
@@ -78,7 +82,7 @@ def training_step(dace_model, pt_model, train_batch, train_criterion=None):
         torch_tensors_close(name, pt_param.detach(), dace_param.detach())
 
 
-def test_mnist(mnist_trainloader):
+def test_mnist(mnist_trainloader, sdfg_name):
     input_size = 784
     hidden_sizes = [128, 64]
     output_size = 10
@@ -106,10 +110,10 @@ def test_mnist(mnist_trainloader):
     images, labels = next(iter(mnist_trainloader))
     images = images.view(images.shape[0], -1)
 
-    training_step(dace_model, model, (images, labels))
+    training_step(dace_model, model, (images, labels), sdfg_name)
 
 
-def test_bert():
+def test_bert(sdfg_name):
     batch_size = 2
     seq_len = 512
     hidden_size = 768
@@ -129,4 +133,4 @@ def test_bert():
     labels = torch.tensor([0, 123], dtype=torch.long)
 
     training_step(BertTokenSoftmaxClf(), BertTokenSoftmaxClf(),
-                  (input, labels))
+                  (input, labels), sdfg_name)
