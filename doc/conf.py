@@ -15,9 +15,9 @@ if on_rtd:
 
 # -- Project information -----------------------------------------------------
 
-project = 'DaceML'
+project = 'DaCeML'
 copyright = '2020, Scalable Parallel Computing Laboratory, ETH Zurich'
-author = 'Scalable Parallel Computing Laboratory, ETH Zurich, and the DaceML authors'
+author = 'Scalable Parallel Computing Laboratory, ETH Zurich, and the DaCeML authors'
 
 # -- Configuration -----------------------------------------------------------
 

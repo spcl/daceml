@@ -5,12 +5,12 @@ Automatic Differentiation
 
     The symbolic automatic differentiation feature still experimental.
 
-DaceML takes a different approach to automatic differentation than most deep learning frameworks. Instead of
-hand-writing backward passes for all differentiable operators, DaceML has a symbolic reverse-mode differentation engine.
+DaCeML takes a different approach to automatic differentation than most deep learning frameworks. Instead of
+hand-writing backward passes for all differentiable operators, DaCeML has a symbolic reverse-mode differentation engine.
 
 Using Autodiff
 --------------
-There are two main ways to generate backward passes in DaceML.
+There are two main ways to generate backward passes in DaCeML.
 
 :class:`~daceml.pytorch.DaceModule`
     This class includes a ``backward`` parameter. If ``True``, the autodiff engine will be used to add a backward pass

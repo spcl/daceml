@@ -1,4 +1,4 @@
-DaceML documentation
+DaCeML documentation
 ==================================
 Machine learning powered by data-centric parallel programming.
 
