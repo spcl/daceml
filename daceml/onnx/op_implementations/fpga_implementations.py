@@ -2822,8 +2822,6 @@ def binary_forward(node: ONNXOp, state: SDFGState, sdfg: SDFG,
     op_map = {'+': 'add', '-': 'sub', '*': 'mul', '/': 'div'}
     op_name = op_map[operator]
 
-    streaming_node = False
-
     # Get inputs and outputs names
     A = in_desc_with_name(node, state, sdfg, "A")
     B = in_desc_with_name(node, state, sdfg, "B")
@@ -2861,51 +2859,29 @@ def binary_forward(node: ONNXOp, state: SDFGState, sdfg: SDFG,
     c_out = compute_state.add_write("C")
 
     # Connect map
-    if not streaming_node:
-        compute_state.add_memlet_path(
-            a_in,
-            outer_me,
-            tasklet,
-            dst_conn='a_con',
-            memlet=dace.Memlet("A[{}]".format(",".join(
-                ['__i%d' % i for i in range(len(A.shape))]))))
+    compute_state.add_memlet_path(
+        a_in,
+        outer_me,
+        tasklet,
+        dst_conn='a_con',
+        memlet=dace.Memlet("A[{}]".format(",".join(
+            ['__i%d' % i for i in range(len(A.shape))]))))
 
-        compute_state.add_memlet_path(
-            b_in,
-            outer_me,
-            tasklet,
-            dst_conn='b_con',
-            memlet=dace.Memlet("B[{}]".format(",".join(
-                ['__i%d' % i for i in range(len(B.shape))]))))
+    compute_state.add_memlet_path(
+        b_in,
+        outer_me,
+        tasklet,
+        dst_conn='b_con',
+        memlet=dace.Memlet("B[{}]".format(",".join(
+            ['__i%d' % i for i in range(len(B.shape))]))))
 
-        compute_state.add_memlet_path(
-            tasklet,
-            outer_mx,
-            c_out,
-            src_conn='c_con',
-            memlet=dace.Memlet("C[{}]".format(",".join(
-                ['__i%d' % i for i in range(len(C.shape))]))))
-
-    else:
-        #memlet from stream
-        compute_state.add_memlet_path(a_in,
-                                      outer_me,
-                                      tasklet,
-                                      dst_conn='a_con',
-                                      memlet=dace.Memlet("A[0,0,0,0]"))
-
-        #memlet from stream
-        compute_state.add_memlet_path(b_in,
-                                      outer_me,
-                                      tasklet,
-                                      dst_conn='b_con',
-                                      memlet=dace.Memlet("B[0,0,0,0]"))
-
-        compute_state.add_memlet_path(tasklet,
-                                      outer_mx,
-                                      c_out,
-                                      src_conn='c_con',
-                                      memlet=dace.Memlet("C[0,0,0,0]"))
+    compute_state.add_memlet_path(
+        tasklet,
+        outer_mx,
+        c_out,
+        src_conn='c_con',
+        memlet=dace.Memlet("C[{}]".format(",".join(
+            ['__i%d' % i for i in range(len(C.shape))]))))
 
     return op_sdfg
 
