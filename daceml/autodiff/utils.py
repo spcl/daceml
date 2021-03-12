@@ -178,6 +178,10 @@ def cast_consts_to_type(code: str, dtype: dace.typeclass) -> str:
         :return: a string of the converted code.
     """
     class CastConsts(ast.NodeTransformer):
+        def visit_Num(self, node):
+            return ast.parse(
+                f"dace.{dtype.to_string()}({astunparse.unparse(node)})")
+
         def visit_Constant(self, node):
             return ast.parse(
                 f"dace.{dtype.to_string()}({astunparse.unparse(node)})")

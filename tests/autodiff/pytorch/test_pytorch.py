@@ -28,10 +28,10 @@ def run_pytorch_module(module,
     dace_input.requires_grad = True
 
     if use_max:
-        s = module(pytorch_input).max()
+        pytorch_s = module(pytorch_input).max()
     else:
-        s = module(pytorch_input).sum()
-    s.backward()
+        pytorch_s = module(pytorch_input).sum()
+    pytorch_s.backward()
 
     print("Pytorch output:")
     print(pytorch_input.grad)
@@ -42,10 +42,10 @@ def run_pytorch_module(module,
                              apply_strict=apply_strict)
 
     if use_max:
-        s = dace_module(dace_input).max()
+        dace_s = dace_module(dace_input).max()
     else:
-        s = dace_module(dace_input).sum()
-    s.backward()
+        dace_s = dace_module(dace_input).sum()
+    dace_s.backward()
     print("Dace output:")
     print(dace_input.grad)
     diff = np.abs(pytorch_input.grad.numpy() - dace_input.grad.numpy())
