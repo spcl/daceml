@@ -83,11 +83,14 @@ def evaluate(in_channels,
     # Transform for FPGA and Inline
     donnx.ONNXConv.default_implementation = "fpga"
     sdfg.apply_transformations([FPGATransformSDFG])
-    sdfg.apply_transformations_repeated([InlineSDFG])
+
+
+    # sdfg.apply_transformations_repeated([InlineSDFG])
 
 
     ###################################
     sdfg.expand_library_nodes()
+    sdfg.save("/tmp/out_fpga_expand.sdfg")
     sdfg.apply_transformations_repeated([InlineSDFG])
 
     # ###################################################################
@@ -121,7 +124,7 @@ def run(input_to_constant):
     '''
     #evaluate(6, 16, 5, 4, (1000, 6, 12, 12), input_to_constant, False)
     #second conv
-    evaluate(1, 6, 5, 1, (1000, 1, 28, 28), input_to_constant, False)
+    evaluate(1, 6, 5, 1, (100, 1, 28, 28), input_to_constant, False)
 
 def test(input_to_constant):
     '''

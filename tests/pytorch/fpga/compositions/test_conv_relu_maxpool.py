@@ -40,9 +40,9 @@ class Model(nn.Module):
     def __init__(self, input_to_constant=False):
         super(Model, self).__init__()
         #first conv
-        # self.conv = nn.Conv2d(1, 6, 5)
+        self.conv = nn.Conv2d(1, 6, 5)
         #second conv
-        self.conv = nn.Conv2d(6, 16, 5)
+        # self.conv = nn.Conv2d(6, 16, 5)
         if input_to_constant:
             #fix the weight otherwise everytime they are randomized
             self.conv.weight.data.fill_(0.1)
@@ -75,9 +75,9 @@ if __name__ == "__main__":
 
     ptmodel = Model(input_to_constant)
     #first conv
-    # data_shape = (1000, 1, 28, 28)
+    data_shape = (100, 1, 28, 28)
     #second conv
-    data_shape = (1000, 6, 12, 12)
+    # data_shape = (100, 6, 12, 12)
     x = torch.rand(data_shape)
 
 
@@ -89,7 +89,13 @@ if __name__ == "__main__":
 
     assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
 
+    donnx.ONNXConv.default_implementation = "fpga"
+    donnx.ONNXRelu.default_implementation = "fpga"
+    donnx.ONNXMaxPool.default_implementation = "fpga"
+
+
     sdfg = dace_model.sdfg
+    sdfg.save('/tmp/fpga_model.sdfg')
     ##################################
     # Vectorize input and output container
     vec_width = vec_width
@@ -116,8 +122,9 @@ if __name__ == "__main__":
 
     sdfg.apply_transformations([FPGATransformSDFG])
     sdfg.expand_library_nodes()
-    sdfg.apply_transformations_repeated([InlineSDFG])
     sdfg.save('/tmp/out_fpga_expanded.sdfg')
+    sdfg.apply_transformations_repeated([InlineSDFG])
+    sdfg.save('/tmp/out_fpga_inlined.sdfg')
 
     if input_to_constant:
         sdfg.apply_transformations_repeated([InputToConstant],
