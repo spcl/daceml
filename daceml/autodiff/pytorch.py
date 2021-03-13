@@ -17,13 +17,11 @@ log = logging.getLogger(__name__)
 
 
 def make_backward_function(
-        module: 'daceml.pytorch.DaceModule',
         model: ONNXModel,
         apply_strict=False) -> Type[torch.autograd.Function]:
     """ Convert an ONNXModel to a PyTorch differentiable function. This method should not be used on it's own.
         Instead use the ``backward=True`` parameter of :class:`daceml.pytorch.DaceModule`.
 
-        :param module: the parent pytorch module.
         :param model: the model to convert.
         :param apply_strict: whether to apply strict transformations before creating the backward pass.
         :return: the PyTorch compatible :class:`torch.autograd.Function`.
@@ -65,7 +63,7 @@ def make_backward_function(
         # Views should not be forwarded. Instead the backward pass generator should forward the source of the view,
         # and rebuild the sequence of required views in the backward pass.
         assert type(forward_desc) is not dt.View
-        if type(forward_desc) is dt.Scalar:
+        if isinstance(forward_desc, dt.Scalar):
             # we can't return scalars from SDFGs, so we add a copy to an array of size 1
             arr_name, _ = forward_sdfg.add_array(name + "_array", [1],
                                                  forward_desc.dtype,

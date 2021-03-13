@@ -475,7 +475,7 @@ class PureCast(ONNXForward):
         target_type = node.to
         try:
             converters.onnx_tensor_type_to_typeclass(target_type)
-        except ValueError as v:
+        except ValueError:
             return False
 
         return True
@@ -506,7 +506,6 @@ class PureGemm(ONNXForward):
         assert node.alpha == 1.0 and node.beta == 1.0 and node.transA == 0 and node.transB == 1
 
         # the gemm libnode is broken for now, so we just do it manually
-        atype = in_desc_with_name(node, state, sdfg, "A")
         if "C" in node.in_connectors:
 
             def prog(A, B, C, Y):

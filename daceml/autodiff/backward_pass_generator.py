@@ -75,8 +75,8 @@ def code_to_exprs(code: str, inputs: typing.Set[str],
         supports only code consisting of assignment statements.
 
         :param code: the code to convert
-        :param code: the inputs (i.e. the defined variables) for the code
-        :param code: the outputs to generate simplified expressions for
+        :param inputs: the inputs (i.e. the defined variables) for the code
+        :param outputs: the outputs to generate simplified expressions for
         :return: map from outputs to symbolic expressions
     """
 
@@ -238,6 +238,12 @@ def _walk_up_memlet_tree_through_view_nodes(
             forwarded_name = current_node.data
 
     return sdfg.arrays[forwarded_name], forwarded_name, view_nodes_to_clone
+
+
+def _path_src_node_in_subgraph(edge: dgraph.MultiConnectorEdge,
+                               subgraph: dstate.StateSubgraphView):
+    path_src = subgraph.memlet_path(edge)[0].src
+    return path_src in subgraph.nodes()
 
 
 class BackwardPassGenerator:
@@ -590,11 +596,6 @@ class BackwardPassGenerator:
             raise AutoDiffException(
                 "Unsupported data descriptor {}".format(arr))
 
-    def _path_src_node_in_subgraph(self, edge: dgraph.MultiConnectorEdge,
-                                   subgraph: dstate.StateSubgraphView):
-        path_src = subgraph.memlet_path(edge)[0].src
-        return path_src in subgraph.nodes()
-
     def _reverse_subgraph(self, subgraph: dstate.StateSubgraphView):
         """ Reverse a given subgraph. All nodes in the subgraph will be reversed. """
 
@@ -609,13 +610,13 @@ class BackwardPassGenerator:
                 # (for which the gradient will be connected as an input on the reverse node)
                 given_gradients = [
                     edge.src_conn for edge in subgraph.out_edges(node)
-                    if self._path_src_node_in_subgraph(edge, subgraph)
+                    if _path_src_node_in_subgraph(edge, subgraph)
                 ]
 
                 # input names on the forward node that gradients should be generated for
                 required_gradients = [
                     edge.dst_conn for edge in subgraph.in_edges(node)
-                    if self._path_src_node_in_subgraph(edge, subgraph)
+                    if _path_src_node_in_subgraph(edge, subgraph)
                 ]
 
                 reversed_node, backward_result = self._get_reverse_node(
@@ -628,7 +629,7 @@ class BackwardPassGenerator:
                 # the gradients ...
                 self._connect_given_gradients(subgraph, node)
                 # ... and any required input values from the forward pass
-                self._connect_forward_inputs(subgraph, node)
+                self._connect_forward_inputs(node)
 
                 if isinstance(node, nd.AccessNode):
                     # this means we are writing out a grad to an array.
@@ -696,7 +697,7 @@ class BackwardPassGenerator:
         """ Connect the gradients of the outputs of forward_node as inputs to the corresponding reverse node. """
 
         for edge in subgraph.out_edges(forward_node):
-            if not self._path_src_node_in_subgraph(edge, subgraph):
+            if not _path_src_node_in_subgraph(edge, subgraph):
                 # skip connecting edges for which we don't need to generate grads.
                 continue
 
@@ -728,8 +729,7 @@ class BackwardPassGenerator:
                 memlet,
             )
 
-    def _connect_forward_inputs(self, subgraph: dstate.StateSubgraphView,
-                                forward_node):
+    def _connect_forward_inputs(self, forward_node):
         """ Connect the reversed node of `forward_node` to all required non-gradient inputs.
 
             There are non-trivial points to handle:
@@ -1134,19 +1134,19 @@ class BackwardPassGenerator:
             assert rev.add_out_connector(conn)
 
         self.backward_state.add_node(rev)
-        # yapf: enable
+        # yapf: disable
         return (
             rev,
             BackwardResult(required_grad_names={
                 n: _invert_map_connector(n)
                 for n in required_gradients
             },
-            given_grad_names={
-                n: _invert_map_connector(n)
-                for n in given_gradients
-            }),
+                given_grad_names={
+                    n: _invert_map_connector(n)
+                    for n in given_gradients
+                }),
         )
-        # yapf: disable
+        # yapf: enable
 
     def _reverse_Tasklet(
         self,

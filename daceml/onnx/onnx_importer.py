@@ -478,7 +478,6 @@ def create_output_array(
 
         When `self.force_torch_outputs` is True, the outputs will be tensors. Otherwise, the outputs will be tensors
         :param inferred_symbols: the symbols inferred from `infer_symbols_from_shapes`.
-        :param clean_output_name: the name to generate the output for.
         :param desc: the data descriptor for the array
         :param use_torch: whether to return a numpy array or a torch tensor.
         :param zeros: if true init with zeros else empty.

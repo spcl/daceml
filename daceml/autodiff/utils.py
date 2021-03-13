@@ -179,11 +179,11 @@ def cast_consts_to_type(code: str, dtype: dace.typeclass) -> str:
     """
     class CastConsts(ast.NodeTransformer):
         def visit_Num(self, node):
-            return ast.parse(
-                f"dace.{dtype.to_string()}({astunparse.unparse(node)})")
+            return ast.copy_location(ast.parse(
+                f"dace.{dtype.to_string()}({astunparse.unparse(node)})").body[0].value, node)
 
         def visit_Constant(self, node):
-            return ast.parse(
-                f"dace.{dtype.to_string()}({astunparse.unparse(node)})")
+            return ast.copy_location(ast.parse(
+                f"dace.{dtype.to_string()}({astunparse.unparse(node)})").body[0].value, node)
 
     return astunparse.unparse(CastConsts().visit(ast.parse(code)))

@@ -99,7 +99,7 @@ class DaceModule(nn.Module):
 
             if self.backward:
                 function = make_backward_function(
-                    self, dace_model, apply_strict=self.apply_strict)
+                    dace_model, apply_strict=self.apply_strict)
 
                 def forward(*args):
                     args_and_params = list(args)

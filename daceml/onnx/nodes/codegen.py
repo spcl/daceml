@@ -146,7 +146,7 @@ def _gen_attr_init_code(kernel_context: str, attr: ONNXAttribute,
 
 def check_required_copies(
     node: nd.Node, state: SDFGState, sdfg: SDFG, outputs_on_host: List[bool],
-    inputs_on_host: List[bool], actual_node_schedule: dtypes.ScheduleType
+    inputs_on_host: List[bool]
 ) -> Tuple[Dict[str, dtypes.StorageType], Dict[str, dtypes.StorageType]]:
     """ Check whether copies are required for all parameters.
         :param node: the node.
@@ -154,8 +154,6 @@ def check_required_copies(
         :param sdfg: the sdfg.
         :param outputs_on_host: boolean list, where the ith bool indicates if the ith output should be on host.
         :param inputs_on_host: boolean list, where the ith bool indicates if the ith input should be on host.
-        :param actual_node_schedule: the actual schedule we will use for expansion. This is != node.schedule when
-                                     the ORT does not support running that node with that schedule.
         :return: two dicts containing storage types for each of the connectors that require copies. The first
                  dict is for the inputs, the second is for the outputs.
     """
@@ -352,8 +350,7 @@ def expand_node(node, state, sdfg):
     ##########################################
 
     input_copy_required, output_copy_required = check_required_copies(
-        node, state, sdfg, outputs_on_host, inputs_on_host,
-        actual_node_schedule)
+        node, state, sdfg, outputs_on_host, inputs_on_host)
 
     # begin codegen
     ##########################################

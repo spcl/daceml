@@ -260,6 +260,9 @@ class ConstantFolding(transformation.Transformation):
 def remove_node_and_computation(sdfg: dace.SDFG, state: dace.SDFGState,
                                 node: nd.Node):
     """ Remove a node and the parent nodes that compute this node, if the outputs are not used elsewhere.
+
+        :param sdfg: the sdfg containing the node.
+        :param state: the state containing the node.
         :param node: the node to remove
     """
     queue = deque([node])

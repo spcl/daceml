@@ -150,7 +150,6 @@ class ONNXOp(nd.LibraryNode):
         out_edges: List[MultiConnectorEdge] = state.out_edges(self)
 
         def get_idx(parameters, name):
-            full_name = name
             if '__' in name:
                 name, number = parse_variadic_param(name)
             else:

@@ -2,6 +2,7 @@
 Abstract Base Classes for Autodiff
 """
 import abc
+import dataclasses
 import typing
 
 from dace import SDFG, SDFGState
@@ -16,7 +17,8 @@ class AutoDiffException(Exception):
     pass
 
 
-class BackwardContext(typing.NamedTuple):
+@dataclasses.dataclass
+class BackwardContext:
     """ A tuple holding the graph context required to construct reverse nodes """
     forward_sdfg: SDFG  #: the forward SDFG
     forward_state: SDFGState  #: the forward SDFG state
@@ -25,8 +27,11 @@ class BackwardContext(typing.NamedTuple):
     backward_generator: 'daceml.autodiff.BackwardPassGenerator'  #: the backward pass generator
 
 
-class BackwardResult(typing.NamedTuple):
-    """ The return type of a differentiated node. It contains the names of the gradients the node calculates and requires. """
+@dataclasses.dataclass
+class BackwardResult:
+    """ The return type of a differentiated node. It contains the names of the gradients the node calculates and
+     requires.
+    """
 
     #: mapping from names of output connectors to the connector name of the gradient for that connector.
     required_grad_names: typing.Dict[typing.Optional[str],
@@ -45,8 +50,8 @@ class BackwardImplementation(abc.ABC):
     """ ABC for ONNX op forward implementations.
 
         This registry accepts two types of registrations.
-        The register function expects an argument ``node_type=TYPE`` where ``TYPE`` is the type of node that this backward
-        implementation supports.
+        The register function expects an argument ``node_type=TYPE`` where ``TYPE`` is the type of node that this
+        backward implementation supports.
         It can also take an argument ``op=node_name`` where ``node_name`` is the string of the ONNX op it supports,
         e.g. ``"Conv"``.
     """
@@ -70,8 +75,8 @@ class BackwardImplementation(abc.ABC):
     ) -> typing.Tuple[nd.Node, BackwardResult]:
         """ Add the reverse node for a node from the forward pass to the backward pass, and return it.
 
-            For each input connector with name ``n`` of the forward in required_grads, the returned backward node must add
-            an output connector with name ``required_grads[n]`` that will output the gradient for that input.
+            For each input connector with name ``n`` of the forward in required_grads, the returned backward node must
+            add an output connector with name ``required_grads[n]`` that will output the gradient for that input.
 
             If any input from the forward pass is required, simply add a connector with the same name as the connector
             on the forward node. The input will later be connected as required.

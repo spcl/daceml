@@ -26,8 +26,8 @@ def add_backward_pass(
         * NestedSDFGs containing a single SDFGState (subject to the same constraints). NestedSDFGs may contain multiple
           states as long as all other states are only used for zero initialization.
 
-        When differentiating an :class:`~daceml.onnx.nodes.onnx_op.ONNXOp`, the ONNXBackward registry will be checked for
-        any matching backward pass implementations. If none are found, the ONNXForward registry will be checked for
+        When differentiating an :class:`~daceml.onnx.nodes.onnx_op.ONNXOp`, the ONNXBackward registry will be checked
+        for any matching backward pass implementations. If none are found, the ONNXForward registry will be checked for
         matching pure implementations. If one is found, symbolic differentiation of the pure implementation will be
         attempted. If this fails, or no pure forward implementation is found, the method will fail.
 
@@ -36,9 +36,6 @@ def add_backward_pass(
         :param state: the state to add the backward pass to. This is also the state of the forward pass.
         :param outputs: the forward pass outputs of the function to differentiate.
         :param inputs: the inputs w.r.t. which the gradient will be returned.
-        :param grads: A list of array names of outputs for which grads will be provided. For each name in the list,
-                      the backward state will contain a non-transient array corresponding to the gradient for that array.
-                      If the output is a single scalar, this parameter is not required.
     """
     sdfg.validate()
 

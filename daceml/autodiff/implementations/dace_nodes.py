@@ -21,6 +21,7 @@ class ReverseReduce(BackwardImplementation):
 
         return True
 
+    @staticmethod
     def backward(
         forward_node: Node, context: BackwardContext,
         given_gradients: typing.List[typing.Optional[str]],
@@ -39,14 +40,10 @@ class ReverseReduce(BackwardImplementation):
                 .format(forward_node))
 
         input_name = next(iter(required_gradients))
-        in_edge = in_edge_with_name(forward_node, context.forward_state,
-                                    input_name)
         in_desc = in_desc_with_name(forward_node, context.forward_state,
                                     context.forward_sdfg, input_name)
 
         output_name = next(iter(given_gradients))
-        out_edge = out_edge_with_name(forward_node, context.forward_state,
-                                      output_name)
         out_desc = out_desc_with_name(forward_node, context.forward_state,
                                       context.forward_sdfg, output_name)
 

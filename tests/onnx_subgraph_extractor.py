@@ -27,11 +27,11 @@ if __name__ == "__main__":
     def get_node_idx(name):
         cands = [
             i for i, n in enumerate(input_model.graph.node)
-            if n.name == args.target
+            if n.name == name
         ]
         if len(cands) != 1:
             raise ValueError(
-                f"Expected 1 node with name {args.target}, found {len(cands)}")
+                f"Expected 1 node with name {name}, found {len(cands)}")
         return cands[0]
 
     g_inputs = {p.name: p for p in input_model.graph.input}

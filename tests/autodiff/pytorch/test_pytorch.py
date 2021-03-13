@@ -50,8 +50,8 @@ def run_pytorch_module(module,
     print(dace_input.grad)
     assert torch.allclose(pytorch_input.grad,
                           dace_input.grad,
-                          rtol=1e-4,
-                          atol=1e-06)
+                          rtol=1e-6,
+                          atol=1e-4)
 
 
 def test_simple(sdfg_name):
