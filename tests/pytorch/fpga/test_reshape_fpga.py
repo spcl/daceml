@@ -84,7 +84,7 @@ def test():
     # each position of this lists contains a test configuration
     vec_width = [1, 1, 1, 1]
     x_shapes = [(16, 4, 4, 4), (16, 2, 32), (16, 8, 8), (8, 16, 16)]
-    y_shapes = [(16,64), (16, 8, 8), (16, 2, 32), (2, 4, 16, 16)]  # reshpaed
+    y_shapes = [(16, 64), (16, 8, 8), (16, 2, 32), (2, 4, 16, 16)]  # reshpaed
 
     for i in range(0, len(vec_width)):
         print("##########################################################")

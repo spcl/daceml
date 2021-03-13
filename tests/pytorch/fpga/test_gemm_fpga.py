@@ -39,7 +39,6 @@ class Model(nn.Module):
             if weights is not None:
                 self.fc.weight.data = torch.from_numpy(weights)
 
-
     def forward(self, x):
         return self.fc(x)
 
@@ -101,13 +100,11 @@ def run(vec_width,
         sdfg.apply_transformations_repeated([InputToConstant],
                                             print_report=True)
 
-
-
     dace_output_fpga = dace_model(torch.clone(x))
     # reshape if vec_width is different than 1
     dace_output_fpga = dace_output_fpga.reshape(torch_output.shape)
     torch_output_np = torch_output.detach().numpy()
-    diff = np.linalg.norm( torch_output_np -
+    diff = np.linalg.norm(torch_output_np -
                           dace_output_fpga) / dace_output_fpga.size
     print("Difference: ", diff)
 
@@ -137,21 +134,21 @@ def test(input_to_constant):
     vec_width = [1, 4, 8]
     batch_size = [1000, 1000, 400]
     in_features = [120, 120, 256]
-    out_features = [84,  84, 120]
+    out_features = [84, 84, 120]
 
     for i in range(0, len(vec_width)):
         print("##########################################################")
-        print(f"# Configuration: vw={vec_width[i]}, bs={batch_size[i]}, in_f={in_features[i]}, out_f={out_features[i]}")
+        print(
+            f"# Configuration: vw={vec_width[i]}, bs={batch_size[i]}, in_f={in_features[i]}, out_f={out_features[i]}"
+        )
         print("##########################################################")
         queue = Queue()
         p = Process(target=run,
-                    args=(
-                    vec_width[i], input_to_constant, batch_size[i], in_features[i], out_features[i], False, queue))
+                    args=(vec_width[i], input_to_constant, batch_size[i],
+                          in_features[i], out_features[i], False, queue))
         p.start()
         p.join()
         assert (queue.get() < 1e-6)
-
-
 
 
 if __name__ == "__main__":
@@ -177,5 +174,4 @@ if __name__ == "__main__":
     if t:
         test(input_to_constant)
     else:
-        run(vec_width,
-            input_to_constant=input_to_constant)
+        run(vec_width, input_to_constant=input_to_constant)

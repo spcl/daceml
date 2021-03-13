@@ -1,8 +1,6 @@
 # Simple test for reduce_sum for FPGA
 
-
 # NOTE: for the moment being it supports only the last axis
-
 
 from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
 
@@ -54,7 +52,8 @@ def run(data_shape: tuple, axis, queue=None):
 
     dace_output_fpga = dace_model(torch.clone(x))
 
-    diff = np.linalg.norm(torch_output.detach().numpy() - dace_output_fpga) / dace_output_fpga.size
+    diff = np.linalg.norm(torch_output.detach().numpy() -
+                          dace_output_fpga) / dace_output_fpga.size
 
     print("Difference: ", diff)
     if queue is not None:
@@ -68,8 +67,10 @@ def run(data_shape: tuple, axis, queue=None):
 
     del dace_model, ptmodel, x
 
+
 def test():
-    pass #NYI
+    pass  #NYI
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -93,4 +94,3 @@ if __name__ == "__main__":
     else:
         data_shape = (2, 4, 16, 16)
         run(data_shape, 1)
-

@@ -84,10 +84,12 @@ def test():
     data_shapes = [(4, 8, 16), (100, 4, 16, 32), (8, 16, 16),
                    (1000, 4, 32, 32)]
     for i in range(0, len(vec_width)):
-        print("###############################################################")
+        print(
+            "###############################################################")
         print(
             f"# Configuration: vw={vec_width[i]}, data_shape={data_shapes[i]}")
-        print("###############################################################")
+        print(
+            "###############################################################")
         queue = Queue()
         p = Process(target=run, args=(data_shapes[i], vec_width[i], queue))
         p.start()

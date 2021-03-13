@@ -24,11 +24,15 @@ def test_bert_cf():
     batch_size = 8
     seq_len = 16
     hidden_size = N
-    vocab_size=1024
+    vocab_size = 1024
 
     input = torch.randn([B, seq_len, hidden_size])
 
-    ptmodel = BertLayer(BertConfig(vocab_size=vocab_size, hidden_size=hidden_size, num_hidden_layers=H, num_attention_heads=H)).eval()
+    ptmodel = BertLayer(
+        BertConfig(vocab_size=vocab_size,
+                   hidden_size=hidden_size,
+                   num_hidden_layers=H,
+                   num_attention_heads=H)).eval()
     pt_outputs = ptmodel(input.clone())
     donnx.ONNXCast.default_implementation = "onnxruntime"
     dace_model = DaceModule(ptmodel, train=False)
@@ -44,7 +48,6 @@ def test_bert_cf():
     diff = np.abs(dace_outputs0 - pt_outputs[0].detach().numpy())
     assert np.max(diff) < 1e-5
     assert np.allclose(dace_outputs1, dace_outputs0)
-
 
     #### FPGA
     sdfg = dace_model.sdfg
@@ -70,8 +73,7 @@ def test_bert_cf():
     dace_output_fpga = dace_model(input.clone())
     diff = np.abs(dace_output_fpga - pt_outputs[0].detach().numpy())
     print("Diff: ", diff)
-    assert diff<1e-6
-
+    assert diff < 1e-6
 
 
 test_bert_cf()

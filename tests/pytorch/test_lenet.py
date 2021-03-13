@@ -58,10 +58,9 @@ def test_lenet(conv_impl):
         [transformation.InputToConstant], print_report=True)
     dace_net.sdfg.view()
 
-
-
     diff = np.linalg.norm(torch_output.detach().numpy() - dace_output)
     assert diff < 1e-5
+
 
 @pytest.mark.pure
 def test_lenet_input_toconstant():
@@ -78,13 +77,17 @@ def test_lenet_input_toconstant():
 
     state = dace_net.sdfg.nodes()[0]
 
-    access = [n for n in state.nodes() if isinstance(n, nodes.AccessNode) and n.data == "ONNX_inputDOT1"][0]
+    access = [
+        n for n in state.nodes()
+        if isinstance(n, nodes.AccessNode) and n.data == "ONNX_inputDOT1"
+    ][0]
 
     def print_tree(tree):
         return "{} -> {}".format(tree.edge.src, tree.edge.dst) + "".join(
             "\n |\n +- {}".format(print_tree(c)) for c in tree.children)
 
-    print(print_tree(forward_memlet_tree_with_nested_and_copies(state, state.out_edges(access)[0])))
-
-
-
+    print(
+        print_tree(
+            forward_memlet_tree_with_nested_and_copies(
+                state,
+                state.out_edges(access)[0])))

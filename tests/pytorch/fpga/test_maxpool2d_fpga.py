@@ -2,7 +2,6 @@
 
 # TODO: conform to pytest syntax if needed
 
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -25,7 +24,6 @@ class Model(nn.Module):
         return F.max_pool2d(x, 2)
 
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("W",
@@ -43,7 +41,6 @@ if __name__ == "__main__":
     ptmodel = Model()
     data_shape = (1000, 6, 32, 32)
     x = torch.rand(data_shape)
-
 
     dace_model = DaceModule(ptmodel)
     dace_output = dace_model(x)

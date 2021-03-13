@@ -1,6 +1,5 @@
 # Tests for evaluating 2D convolutions for FPGA
 
-
 from dace.transformation.interstate import FPGATransformSDFG
 
 import torch
@@ -26,7 +25,8 @@ donnx.ONNXConv.default_implementation = 'im2col'
 
 
 class Model(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, input_to_constant):
+    def __init__(self, in_channels, out_channels, kernel_size,
+                 input_to_constant):
         super(Model, self).__init__()
         self.conv = nn.Conv2d(in_channels=in_channels,
                               out_channels=out_channels,
@@ -117,6 +117,7 @@ def run(input_to_constant):
     #evaluate(6, 16, 5, 4, (1000, 6, 12, 12), input_to_constant, False)
     #second conv
     evaluate(1, 6, 5, 1, (100, 1, 28, 28), input_to_constant, False)
+
 
 def test(input_to_constant):
     '''

@@ -1,6 +1,5 @@
 # Simple test for softmax for FPGA
 
-
 # NOTE: for the moment being it supports only the last axis
 
 # TODO: conform to pytest syntax if needed
@@ -36,7 +35,7 @@ def run(data_shape: tuple, axis, queue=None):
     donnx.default_implementation = "pure"
 
     ptmodel = Model(axis)
-    x = torch.rand(data_shape,)
+    x = torch.rand(data_shape, )
 
     dace_model = DaceModule(ptmodel)
     dace_output = dace_model(x)
@@ -56,7 +55,8 @@ def run(data_shape: tuple, axis, queue=None):
 
     dace_output_fpga = dace_model(torch.clone(x))
 
-    diff = np.linalg.norm(torch_output.detach().numpy() - dace_output_fpga) / dace_output_fpga.size
+    diff = np.linalg.norm(torch_output.detach().numpy() -
+                          dace_output_fpga) / dace_output_fpga.size
 
     print("Difference: ", diff)
     if queue is not None:
@@ -70,8 +70,10 @@ def run(data_shape: tuple, axis, queue=None):
 
     del dace_model, ptmodel, x
 
+
 def test():
-    pass #NYI
+    pass  #NYI
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -93,6 +95,5 @@ if __name__ == "__main__":
     if t:
         test()
     else:
-        data_shape = (1000, 10,10)
+        data_shape = (1000, 10, 10)
         run(data_shape, 2)
-
