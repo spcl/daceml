@@ -336,7 +336,6 @@ class FPGAConv2D(ONNXForward):
         output_memlet = dace.Memlet("Y[b, m, out_x, out_y]", dynamic=True)
         write_Y = new_state.add_write("Y")
 
-
         new_state.add_memlet_path(compute_tasklet,
                                   inner_mx,
                                   mid_mx,
@@ -465,6 +464,7 @@ class FPGAIm2ColConv(ONNXForward):
 
         # GEMM Parameters
         vec_width = Y.veclen
+        x_base_type = X.dtype.base_type
 
         K = num_channels * filter_hx * filter_hy
         M = output_size_y * output_size_x
@@ -540,8 +540,7 @@ class FPGAIm2ColConv(ONNXForward):
                     "hx": "0:{}".format(filter_hx),
                     "hy": "0:{}".format(filter_hy),
                     "x": "0:{}".format(output_size_x),
-                    "y0": "0:{}/{}".format(output_size_x,
-                                           vec_width),
+                    "y0": "0:{}/{}".format(output_size_x, vec_width),
                 },
                 schedule=dace.ScheduleType.FPGA_Device)
 
@@ -553,7 +552,7 @@ class FPGAIm2ColConv(ONNXForward):
             # local storage to accumulate data
             sdfg.add_array('vec_data_im2col',
                            shape=[vec_width],
-                           dtype=dace.float32,
+                           dtype=x_base_type,
                            transient=True,
                            storage=dace.dtypes.StorageType.FPGA_Registers)
 
@@ -651,13 +650,12 @@ class FPGAIm2ColConv(ONNXForward):
                                   memlet=dace.Memlet("Y[b, n, x, y]"))
 
         def make_compute(sdfg, state, vec_width=1):
-            vec_type = dace.vector(dace.float32, vec_width)
+            vec_type = dace.vector(x_base_type, vec_width)
             W_pipe_in = state.add_read("W_pipe")
             im2col_pipe_in = state.add_read("im2col_pipe")
             im2col_pipe_out = state.add_write("im2col_pipe")
             Y_pipe_in = state.add_read("Y_pipe")
             Y_pipe_out = state.add_write("Y_pipe")
-
 
             # Create a single pipeline with all the flattened loops
 
@@ -683,7 +681,7 @@ class FPGAIm2ColConv(ONNXForward):
 
             # Instantiate buffers
             sdfg.add_scalar("W_reg",
-                            dtype=dace.float32,
+                            dtype=W.dtype.base_type,
                             transient=True,
                             storage=dace.dtypes.StorageType.FPGA_Registers)
             W_reg_init = state.add_access("W_reg")
@@ -874,10 +872,10 @@ else:
                                   memlet=dace.Memlet())
 
         # build the compute State
-        vec_type = dace.vector(dace.float32, vec_width)
+        vec_type = dace.vector(x_base_type, vec_width)
 
         new_sdfg.add_stream("W_pipe",
-                            dace.float32,
+                            W.dtype.base_type,
                             transient=True,
                             shape=(P, ),
                             storage=dace.dtypes.StorageType.FPGA_Local,
@@ -906,7 +904,6 @@ else:
 
 @autoregister_params(op="Relu", name="fpga")
 class FPGARelu(ONNXForward):
-
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
@@ -939,11 +936,11 @@ class FPGARelu(ONNXForward):
         outer_me, outer_mx = new_state.add_map('relu_map', map_ranges)
 
         new_sdfg.add_array("vec_data_in", [vec_width],
-                           dtype=dace.float32,
+                           dtype=X.dtype.base_type,
                            transient=True,
                            storage=dace.dtypes.StorageType.FPGA_Registers)
         new_sdfg.add_array("vec_data_out", [1],
-                           dtype=X.dtype,
+                           dtype=X.dtype.base_type,
                            transient=True,
                            storage=dace.dtypes.StorageType.FPGA_Registers)
 
@@ -954,7 +951,6 @@ class FPGARelu(ONNXForward):
         inner_me, inner_mx = new_state.add_map(
             'inner_relu_map', dict(i="0:{}".format(vec_width)), unroll=True)
 
-
         tasklet = new_state.add_tasklet('relu_task', ['x_con'], ['y_con'],
                                         'y_con = max(0.0, x_con)')
         x_read = new_state.add_read("X")
@@ -962,12 +958,12 @@ class FPGARelu(ONNXForward):
 
         #unpack vector data
         #memlet from memory
-        new_state.add_memlet_path(
-            x_read,
-            outer_me,
-            vec_data_in,
-            memlet=dace.Memlet("X[{}]".format(",".join(
-                ['__i%d' % i for i in range(len(X.shape))]))))
+        new_state.add_memlet_path(x_read,
+                                  outer_me,
+                                  vec_data_in,
+                                  memlet=dace.Memlet("X[{}]".format(",".join([
+                                      '__i%d' % i for i in range(len(X.shape))
+                                  ]))))
 
         # connect to tasklet
         new_state.add_memlet_path(vec_data_in,
@@ -1065,13 +1061,12 @@ class FPGAMaxPool2D(ONNXForward):
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
-        # MAX Pool: the current implementation exploit a sliding window. Considering a single batch and a single
+        # Max Pool: the current implementation exploit a sliding window. Considering a single batch and a single
         # channel, we will read one input element at a time, shifting
 
         # TODO: this implementation depends on how data will be streamed
         #  for the moment being we assume it sends one channel after the other
         # TODO: support Xilinx
-
 
         X = in_desc_with_name(node, state, sdfg, "X")
         Y = out_desc_with_name(node, state, sdfg, "Y")
@@ -1152,7 +1147,6 @@ class FPGAMaxPool2D(ONNXForward):
             "compute_entry",
             inputs={"image_in", "max_in"},
             outputs={"output", "max_out"},
-            #code="output = image_in"
             code="if hx == 0 and hy == 0: max_in = {}\n"  #init
             "max_out = float(max(max_in, image_in))\n"
             "if hy == {} - 1 and hx == {} -1 and  in_y % {} == {} - 1 and (in_x *{}+w) % {} == {} -1: output = max_out"
@@ -1281,7 +1275,7 @@ class FPGAGemm(ONNXForward):
         N = A.shape[0]
         K = A.shape[1]
 
-        # TODO
+        # TODO: generalize
         # for Lenet, the sake of optimization, the input C is non vectorized
         # while the output Y can be vectorized
         M_C = C.shape[0]
@@ -1291,14 +1285,13 @@ class FPGAGemm(ONNXForward):
 
         # Tile size, for the moment being the same as M_Y, the output size
         T = M_Y
-        #safe delay
+        # safe delay
         L = max(10 - M_Y, 0)
 
         ####################################################
         # Build the SDFG: starting point: gemm_fpga_systolic vectorized sample
 
         def make_read_A(state):
-
             # TODO: vectorize also this (same rationale of Conv)
             entry, exit = state.add_map(
                 "read_A",
@@ -1359,7 +1352,7 @@ class FPGAGemm(ONNXForward):
             # local storage to accumulate data
             sdfg.add_array('vec_data_B',
                            shape=[vec_width],
-                           dtype=dace.float32,
+                           dtype=B.dtype.base_type,
                            transient=True,
                            storage=dace.dtypes.StorageType.FPGA_Registers)
             mem = state.add_read("B")
@@ -1434,7 +1427,7 @@ class FPGAGemm(ONNXForward):
                 # local storage to accumulate data
                 sdfg.add_array('vec_data_C',
                                shape=[vec_width],
-                               dtype=dace.float32,
+                               dtype=C.dtype.base_type,
                                transient=True,
                                storage=dace.dtypes.StorageType.FPGA_Registers)
 
@@ -1442,7 +1435,7 @@ class FPGAGemm(ONNXForward):
                 # local storage to accumulate data
                 sdfg.add_array('vec_res',
                                shape=[vec_width],
-                               dtype=dace.float32,
+                               dtype=C.dtype.base_type,
                                transient=True,
                                storage=dace.dtypes.StorageType.FPGA_Registers)
                 vect_res = state.add_access("vec_res")
@@ -1514,10 +1507,9 @@ class FPGAGemm(ONNXForward):
                                       src_conn="to_memory",
                                       memlet=dace.Memlet("Y[n, m]"))
 
-
         def make_compute(sdfg, state, vec_width=1):
 
-            vec_type = dace.vector(dace.float32, vec_width)
+            vec_type = dace.vector(B.dtype.base_type, vec_width)
             A_pipe_in = state.add_read("A_pipe")
             # A_pipe_out = state.add_write("A_pipe")
             B_pipe_in = state.add_read("B_pipe")
@@ -1542,7 +1534,7 @@ class FPGAGemm(ONNXForward):
 
             # Instantiate buffers
             sdfg.add_scalar("A_reg",
-                            dtype=dace.float32,
+                            dtype=A.dtype,
                             transient=True,
                             storage=dace.dtypes.StorageType.FPGA_Registers)
             A_reg = state.add_write("A_reg")
@@ -1726,10 +1718,10 @@ else:
                                   memlet=dace.Memlet())
 
         # build the compute State
-        vec_type = dace.vector(dace.float32, vec_width)
+        vec_type = dace.vector(B.dtype.base_type, vec_width)
 
         new_sdfg.add_stream("A_pipe",
-                            dace.float32,
+                            A.dtype.base_type,
                             transient=True,
                             shape=(P, ),
                             storage=dace.dtypes.StorageType.FPGA_Local,
@@ -1761,8 +1753,7 @@ else:
 class FPGAReshape(ONNXForward):
     '''
         Reshape expansion: this relies on views
-
-        TODO: can we get rid of reshapes? On device they should be useless.
+        TODO: have a transformation to get rid of reshapes. On device they should be useless.
     '''
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
@@ -1772,7 +1763,6 @@ class FPGAReshape(ONNXForward):
                 out_desc_with_name(node, state, sdfg, "reshaped")):
             raise ValueError(
                 "Expected input and output to have the same dtype.")
-
 
         new_shape = out_desc_with_name(node, state, sdfg, "reshaped").shape
         node.remove_in_connector("shape")
@@ -1786,13 +1776,21 @@ class FPGAReshape(ONNXForward):
         return program_for_node(prog, sdfg, state, node).to_sdfg()
 
 
-
 @autoregister_params(op="Softmax", name="fpga")
 class FPGASoftmax(ONNXForward):
     @staticmethod
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
+
+        inparr = in_desc_with_name(node, state, sdfg, "input")
+        axis = node.axis
+        # ad hoc implementation, which accepts only the last axis needs to be generalized
+        return len(inparr.shape) - 1 == axis
+
+    @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[nodes.Node, SDFG]:
-        # TODO: Attempt
+        # TODO: check stability
         # try to avoid max computation, this could have
         # problems for numerical stability
         # https://stackoverflow.com/questions/34968722/how-to-implement-the-softmax-function-in-python
@@ -1811,11 +1809,6 @@ class FPGASoftmax(ONNXForward):
 
         if axis < 0:
             axis += len(inparr.shape)
-        out_tmp_shape = inparr.shape
-        out_tmp_dtype = inparr.dtype
-
-        #ad hoc implementation, wich accepts only the last axis needs to be generalized
-        assert (len(inparr.shape) - 1 == axis)
 
         new_sdfg = dace.SDFG("fpga_softmax")
         new_state = new_sdfg.add_state("compute")
@@ -1823,13 +1816,13 @@ class FPGASoftmax(ONNXForward):
         new_sdfg.add_datadesc("output", copy.deepcopy(outarr))
 
         # Add registers to store exp results
-        # TODO: ok in small models since we are not working with large input size
+        # TODO: ok in small models
         new_sdfg.add_array("exp_data", [inparr.shape[-1]],
-                           dtype=dace.float32,
+                           dtype=inparr.dtype.base_type,
                            transient=True,
                            storage=dace.dtypes.StorageType.FPGA_Registers)
         new_sdfg.add_array("sum_data", [1],
-                           dtype=dace.float32,
+                           dtype=inparr.dtype.base_type,
                            transient=True,
                            storage=dace.dtypes.StorageType.FPGA_Registers)
 
@@ -1932,7 +1925,6 @@ class FPGASoftmax(ONNXForward):
             propagate=False)
 
         new_sdfg.fill_scope_connectors()
-        new_sdfg.save('/tmp/softmax.sdfg')
         return new_sdfg
 
 
@@ -1940,18 +1932,18 @@ class FPGASoftmax(ONNXForward):
 class FPGAMatMul(ONNXForward):
     '''
         Matmul expansion. It is currently based on the same systolic architecture of Conv/GEMM
-        This expanions deal with specific EINSUM configuration
+        This expansion deal with specific EINSUM configurations
 
         TODO: improve expansion. Right now the #PEs in certain case depends only on one axis
         '''
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
-        in_edges = state.in_edges(node)
+
         input0_dim = len(in_desc_with_name(node, state, sdfg, "A").shape)
         input1_dim = len(in_desc_with_name(node, state, sdfg, "B").shape)
         if input0_dim == 4 and input1_dim == 4:
-            return True
+            return False  # TODO
 
         if input0_dim == 3 and input1_dim == 2:
             return True
@@ -1971,30 +1963,11 @@ class FPGAMatMul(ONNXForward):
         in_edges = state.in_edges(node)
         out_edges = state.out_edges(node)
 
-        atype = None
-        btype = None
-        if in_edges[0].dst_conn == "A" and in_edges[1].dst_conn == "B":
-            atype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
-            btype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
-        if in_edges[0].dst_conn == "B" and in_edges[1].dst_conn == "A":
-            atype = copy.deepcopy(sdfg.arrays[in_edges[1].data.data])
-            btype = copy.deepcopy(sdfg.arrays[in_edges[0].data.data])
-
-        ctype = copy.deepcopy(sdfg.arrays[out_edges[0].data.data])
-
         A = in_desc_with_name(node, state, sdfg, "A")
         B = in_desc_with_name(node, state, sdfg, "B")
         Y = out_desc_with_name(node, state, sdfg, "Y")
         input0_dim = len(A.shape)
         input1_dim = len(B.shape)
-
-        if input0_dim == 4 and input1_dim == 4:
-            assert (False)
-            # @dace.program
-            # def einsumop(A: atype, B: btype, Y: ctype):
-            #     Y[:] = np.einsum('abik,abkj->abij', A, B)
-            #
-            # return einsumop.to_sdfg()
 
         if input0_dim == 3 and (input1_dim == 3 or input1_dim == 2):
             # This expansions performs the two following einsum:
@@ -2010,7 +1983,7 @@ class FPGAMatMul(ONNXForward):
             #its strides are (sAB, sAN, sAK)
 
             # Matrix B has shape ([BATCH,] K, M)
-            M = B.shape[-1] # Note, this accounts for vectorization
+            M = B.shape[-1]  # Note, this accounts for vectorization
             # its strides are (sBB, sBK, sBM)
 
             #Matrix Y, the result has shape (BATCH, N, M)
@@ -2026,8 +1999,7 @@ class FPGAMatMul(ONNXForward):
             new_sdfg.arrays["Y"].transient = False
 
             # TODO: tiling
-            # TODO: vectorization
-            # TODO: choOse PE in a wiser way, and deal with PEs that do not divide N (or whatever dimension is meaningul)
+            # TODO: choose PE in a wiser way, and deal with PEs that do not divide N (or whatever dimension is meaningul)
             #   For this, check the GEMM generic implementation on the "generic" branch
             T = M  #T is expressed in vector data type (e.g. float4)
 
@@ -2042,16 +2014,15 @@ class FPGAMatMul(ONNXForward):
             vec_width = B.veclen
 
             # In order to guarantee correctness an deadlock free:
-            # -  we have to ensure that the number of cycles needed to drain everything must be less or equal to the number
-            #    of cycles needed for a PE to compute one row of result
-
-            # If these conditions are not met, this will deadlock. It is quite complicated to accommodate them in current
-            # implementation.
+            # -  we have to ensure that the number of cycles needed to drain everything must be less or equal to
+            #    the number of cycles needed for a PE to compute one row of result
+            # If this condition is not met, this will return a wrong result/deadlock
+            # It is quite complicated to always satisfy this condition in current implementation.
 
             # We check this with asserts to track these cases
             #assert(N/P*M/T*K < P*T)
 
-            assert (K <= P * T)  # condition 2.
+            assert (K <= P * T)  # validity cehck.
 
             def make_read_A(state):
                 entry, exit = state.add_map(
@@ -2138,7 +2109,6 @@ class FPGAMatMul(ONNXForward):
                 else:
                     different_vec_width = False
 
-
                 entry_map, exit_map = state.add_map(
                     "write_Y",
                     {
@@ -2146,8 +2116,7 @@ class FPGAMatMul(ONNXForward):
                         "n0": "0:{}/{}".format(N, P),
                         "tm": "0:{}/{}".format(M, T),
                         "n1": "0:{}".format(P),
-                        "m": "0:{}".format(
-                            T)  # considers also vectorization
+                        "m": "0:{}".format(T)  # considers also vectorization
                     },
                     schedule=dace.ScheduleType.FPGA_Device)
 
@@ -2169,18 +2138,18 @@ class FPGAMatMul(ONNXForward):
                         mem,
                         src_conn="to_memory",
                         memlet=dace.Memlet(
-                            "Y[b, n0 * {} + n1, tm*{}+ m]".format(
-                                P, T)))
+                            "Y[b, n0 * {} + n1, tm*{}+ m]".format(P, T)))
                 else:
                     entry_write_map, exit_write_map = state.add_map(
-                        "write_Y_unrolled",
-                        {"i": "0:{}".format(B.veclen)},unroll=True)
+                        "write_Y_unrolled", {"i": "0:{}".format(B.veclen)},
+                        unroll=True)
                     # local storage to unpack vectorized data
-                    new_sdfg.add_array('vec_res',
-                                   shape=[B.veclen],
-                                   dtype=Y.dtype,
-                                   transient=True,
-                                   storage=dace.dtypes.StorageType.FPGA_Registers)
+                    new_sdfg.add_array(
+                        'vec_res',
+                        shape=[B.veclen],
+                        dtype=Y.dtype,
+                        transient=True,
+                        storage=dace.dtypes.StorageType.FPGA_Registers)
                     vec_res = state.add_access("vec_res")
                     state.add_memlet_path(pipe,
                                           entry_map,
@@ -2203,11 +2172,9 @@ class FPGAMatMul(ONNXForward):
                             "Y[b, n0 * {} + n1, (tm*{}+ m)*{} + i]".format(
                                 P, T, vec_width)))
 
-
             def make_compute(sdfg, state, vec_width=1):
-                vec_type = dace.vector(dace.float32, vec_width)
+                vec_type = dace.vector(Y.dtype.base_type, vec_width)
                 A_pipe_in = state.add_read("A_pipe")
-                # A_pipe_out = state.add_write("A_pipe")
                 B_pipe_in = state.add_read("B_pipe")
                 B_pipe_out = state.add_write("B_pipe")
                 Y_pipe_in = state.add_read("Y_pipe")
@@ -2234,7 +2201,7 @@ class FPGAMatMul(ONNXForward):
 
                 # Instantiate buffers
                 sdfg.add_scalar("A_reg",
-                                dtype=dace.float32,
+                                dtype=A.dtype.base_type,
                                 transient=True,
                                 storage=dace.dtypes.StorageType.FPGA_Registers)
                 A_reg = state.add_write("A_reg")
@@ -2430,10 +2397,10 @@ else:
                                       memlet=dace.Memlet())
 
             # build the compute State
-            vec_type = dace.vector(dace.float32, vec_width)
+            vec_type = dace.vector(Y.dtype.base_type, vec_width)
 
             new_sdfg.add_stream("A_pipe",
-                                dace.float32,
+                                A.dtype.base_type,
                                 transient=True,
                                 shape=(P, ),
                                 storage=dace.dtypes.StorageType.FPGA_Local,
@@ -2458,22 +2425,12 @@ else:
 
             new_sdfg.fill_scope_connectors()
             # Specialize the new sdfg, by using the input shapes
-            new_sdfg.save("/tmp/matmul.sdfg")
             new_sdfg.validate()
             return new_sdfg
 
-            # @dace.program
-            # def einsumop(A: atype, B: btype, Y: ctype):
-            #     Y[:] = np.einsum('bik,bkj->bij', A, B)
-            #
-            # # batched matmul 'bij,bjk->bik'
-            # # 'bik,bjd->bid'
-            # #                 Y[:] = np.einsum('bik,bkj->bij', A, B)
-            # # 'b i d , b j d -> b i  j'
-            # # 'b i j , b j d -> b i d'
-            # return einsumop.to_sdfg()
-
         if input0_dim == 2 and input1_dim == 2:
+            # TODO
+            # - optimize if needed
             sdfg_exp = dace.SDFG('matmulExpansion')
             ii = in_edges[0].data.subset.size()[0]
             kk = in_edges[0].data.subset.size()[1]
@@ -2524,20 +2481,35 @@ else:
 @autoregister_params(op="ReduceSum", name="fpga")
 class FPGAReduceSum(ONNXForward):
     @staticmethod
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
+        axes = node.axes
+        indata = in_desc_with_name(node, state, sdfg, "data")
+
+        # TODO: improve coverage
+        if axes[0] != 1:
+            return False
+
+        if len(indata.shape) != 4:
+            return False
+
+        if node.keepdims != False:
+            return False
+
+        return True
+
+    @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[nodes.Node, SDFG]:
         node.validate(sdfg, state)
         axes = node.axes
 
         # TODO: ad hoc implementation for MHA, needs to be generalized
+        # Take a look to Dace Reduce
         # It exploits single clock cycle accumulator of Intel
 
         indata = in_desc_with_name(node, state, sdfg, "data")
         outdata = out_desc_with_name(node, state, sdfg, "reduced")
-
-        assert (axes[0] == 1)
-        assert (len(indata.shape) == 4)
-        assert (node.keepdims == False)
 
         new_sdfg = dace.SDFG("fpga_reduce_sum_expansion")
         new_sdfg.add_datadesc("data", copy.deepcopy(indata))
@@ -2548,7 +2520,7 @@ class FPGAReduceSum(ONNXForward):
 
         # variable for reduction
         new_sdfg.add_array("sum_res", [1],
-                           dace.float32,
+                           indata.dtype.base_type,
                            storage=dace.StorageType.FPGA_Registers,
                            transient=True)
 
@@ -2581,8 +2553,6 @@ class FPGAReduceSum(ONNXForward):
         store_tasklet = new_state.add_tasklet('store_tasklet', {'in_res'},
                                               {'out_res'},
                                               code='out_res = in_res')
-
-        new_sdfg.save('/tmp/1.sdfg')
 
         # compute tasklet memlets
         # data in
@@ -2619,17 +2589,12 @@ class FPGAReduceSum(ONNXForward):
                                   memlet=dace.Memlet("sum_res[0]"))
         new_state.add_memlet_path(outer_me, init_tasklet, memlet=dace.Memlet())
 
-
         new_state.add_memlet_path(store_tasklet,
                                   outer_mx,
                                   out_data,
                                   src_conn="out_res",
                                   memlet=dace.Memlet("reduced[o0, o1, o2]"))
 
-
-
-
         new_sdfg.fill_scope_connectors()
         new_sdfg.validate()
-        new_sdfg.save('/tmp/reduce_sum.sdfg')
         return new_sdfg

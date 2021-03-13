@@ -1,7 +1,5 @@
-# Simple test for evaluating 2D convolutions for FPGA
+# Tests for evaluating 2D convolutions for FPGA
 
-# TODO: conform to pytest syntax if needed
-# TODO: render this a real test
 
 from dace.transformation.interstate import FPGATransformSDFG
 
@@ -84,13 +82,8 @@ def evaluate(in_channels,
     donnx.ONNXConv.default_implementation = "fpga"
     sdfg.apply_transformations([FPGATransformSDFG])
 
-
-    # sdfg.apply_transformations_repeated([InlineSDFG])
-
-
     ###################################
     sdfg.expand_library_nodes()
-    sdfg.save("/tmp/out_fpga_expand.sdfg")
     sdfg.apply_transformations_repeated([InlineSDFG])
 
     # ###################################################################
@@ -99,7 +92,6 @@ def evaluate(in_channels,
         sdfg.apply_transformations_repeated([InputToConstant],
                                             print_report=True)
 
-    sdfg.save("/tmp/out_fpga.sdfg")
     #################################
     # Execute
     dace_output_fpga = dace_model(torch.clone(x))

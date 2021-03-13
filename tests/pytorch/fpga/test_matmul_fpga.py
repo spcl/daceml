@@ -24,14 +24,13 @@ class Model(nn.Module):
     def __init__(self):
         super(Model, self).__init__()
 
-    def forward(self, x,y):
+    def forward(self, x, y):
         # equivalent to np.einsum('bik,bkj->bij', A, B)
         z = torch.matmul(x, y)
         return z
 
 
-def run(x_shape: tuple, y_shape:tuple, vec_width = 1,
-        queue=None):
+def run(x_shape: tuple, y_shape: tuple, vec_width=1, queue=None):
     '''
     Evaluates the given configuration
     :param x_shape:
@@ -55,7 +54,6 @@ def run(x_shape: tuple, y_shape:tuple, vec_width = 1,
     dace_output = dace_model(x, y)
     assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
     sdfg = dace_model.sdfg
-    sdfg.save('/tmp/out.sdfg')
 
     ##################################
     # Vectorize
@@ -67,7 +65,6 @@ def run(x_shape: tuple, y_shape:tuple, vec_width = 1,
         utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
         # vectorize output B
         utils.vectorize_array_and_memlet(sdfg, output_data_name, vec_type)
-        sdfg.save('/tmp/out_vectorized.sdfg')
     # ##################################
     # Transform to FPGA
 
@@ -77,13 +74,13 @@ def run(x_shape: tuple, y_shape:tuple, vec_width = 1,
     sdfg.apply_transformations_repeated([InlineSDFG])
 
     ###################################################
-    sdfg.save('/tmp/out_fpga_expanded.sdfg')
     dace_output_fpga = dace_model(x, y)
-    dace_output_fpga_reshaped = dace_output_fpga.reshape(torch_output.detach().numpy().shape)
-    diff = np.linalg.norm(torch_output.detach().numpy() - dace_output_fpga_reshaped) /  dace_output_fpga_reshaped.size
-    print(
-        "Difference: ", diff
-        )
+    dace_output_fpga_reshaped = dace_output_fpga.reshape(
+        torch_output.detach().numpy().shape)
+    diff = np.linalg.norm(
+        torch_output.detach().numpy() -
+        dace_output_fpga_reshaped) / dace_output_fpga_reshaped.size
+    print("Difference: ", diff)
 
     if queue is not None:
         # we are testing
@@ -109,12 +106,16 @@ def test():
 
     # each position of this lists contains a test configuration
     vec_width = [1, 1, 1, 1, 2, 4]
-    x_shapes = [(4,8,16), (8,16,32), (8,16,16), (8,16,8), (8,16,32),  (8,32,64)]
-    y_shapes = [(4,16,4), (8,32,64), (8,16,8), (8,8,16),  (8,32,64), (8, 64, 16)]
+    x_shapes = [(4, 8, 16), (8, 16, 32), (8, 16, 16), (8, 16, 8), (8, 16, 32),
+                (8, 32, 64)]
+    y_shapes = [(4, 16, 4), (8, 32, 64), (8, 16, 8), (8, 8, 16), (8, 32, 64),
+                (8, 64, 16)]
 
     for i in range(0, len(vec_width)):
         print("##########################################################")
-        print(f"# Configuration: vw={vec_width[i]}, x_shape={x_shapes[i]}, y_shape={y_shapes[i]}")
+        print(
+            f"# Configuration: vw={vec_width[i]}, x_shape={x_shapes[i]}, y_shape={y_shapes[i]}"
+        )
         print("##########################################################")
         queue = Queue()
         p = Process(target=run,
@@ -126,12 +127,15 @@ def test():
     print("----------- Testing Matmul (3Dx2D tensor) ---------------")
 
     vec_width = [1, 1, 1, 2, 4]
-    x_shapes = [(4, 8, 16), (8, 16, 32), (2, 16, 32), (16,2,32), (16,2,32), (16,2,32)]
-    y_shapes = [(4, 16, 4), (32, 64), (32, 16), (32,32), (32,64), (32,16)]
+    x_shapes = [(4, 8, 16), (8, 16, 32), (2, 16, 32), (16, 2, 32), (16, 2, 32),
+                (16, 2, 32)]
+    y_shapes = [(4, 16, 4), (32, 64), (32, 16), (32, 32), (32, 64), (32, 16)]
 
     for i in range(0, len(vec_width)):
         print("##########################################################")
-        print(f"# Configuration: vw={vec_width[i]}, x_shape={x_shapes[i]}, y_shape={y_shapes[i]}")
+        print(
+            f"# Configuration: vw={vec_width[i]}, x_shape={x_shapes[i]}, y_shape={y_shapes[i]}"
+        )
         print("##########################################################")
         queue = Queue()
         p = Process(target=run,
@@ -162,7 +166,6 @@ if __name__ == "__main__":
     if t:
         test()
     else:
-        data_shape_1 = (16,2, 32)
-        data_shape_2 = (32,32)
+        data_shape_1 = (16, 2, 32)
+        data_shape_2 = (32, 32)
         run(data_shape_1, data_shape_2, vec_width)
-

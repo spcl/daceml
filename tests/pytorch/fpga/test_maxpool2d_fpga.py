@@ -47,18 +47,10 @@ if __name__ == "__main__":
 
     dace_model = DaceModule(ptmodel)
     dace_output = dace_model(x)
-
     torch_output = ptmodel(x)
-
-
     assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
 
-
     # Transform to FPGA
-
-    sdfg = dace_model.sdfg
-    # Transform to FPGA
-
     sdfg = dace_model.sdfg
 
     ##################################
@@ -69,17 +61,12 @@ if __name__ == "__main__":
     utils.vectorize_array_and_memlet(sdfg, "ONNX_0", vec_type)
 
     ##########################################
-    dace_model.sdfg.save('/tmp/out.sdfg')
 
     donnx.ONNXMaxPool.default_implementation = "fpga"
-    sdfg.save('/tmp/out_fpga.sdfg')
 
     sdfg.apply_transformations([FPGATransformSDFG])
-    # sdfg.states()[0].location["is_FPGA_kernel"] = False
     sdfg.expand_library_nodes()
     sdfg.apply_transformations_repeated([InlineSDFG])
-
-    sdfg.save('/tmp/out_fpga_expanded.sdfg')
     dace_output_fpga = dace_model(torch.clone(x))
 
     print(

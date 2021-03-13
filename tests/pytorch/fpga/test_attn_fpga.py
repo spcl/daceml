@@ -105,7 +105,6 @@ def test_attn(batch_size, configuration_name, execute_cpu_dace=False):
 
     else:
         dace_model = DaceModule(ptmodel, dummy_inputs=(Q, K, V))
-
     dace_model.sdfg.save('/tmp/out_pre.sdfg')
 
     ################################################
@@ -115,7 +114,6 @@ def test_attn(batch_size, configuration_name, execute_cpu_dace=False):
         validate_all=True,
         print_report=True)
     dace_model.sdfg.save('/tmp/out.sdfg')
-
     if execute_cpu_dace:
         dace_outputs_1 = dace_model(Q, K, V)
         assert np.allclose(pt_outputs[0].detach().numpy(),
@@ -167,7 +165,9 @@ def test_attn(batch_size, configuration_name, execute_cpu_dace=False):
     sdfg.save('/tmp/out_fpga.sdfg')
 
     # Streaming composition (Prov. disabled)
-    #sdfg.apply_transformations_repeated([InlineSDFG, sm.StreamingComposition], [{}, {"storage": StorageType.FPGA_Local}], print_report=True)
+    sdfg.apply_transformations_repeated([InlineSDFG, sm.StreamingMemory],
+                                        [{}, {"storage": StorageType.FPGA_Local}], print_report=True)
+    sdfg.apply_transformations_repeated([InlineSDFG, sm.StreamingComposition], [{}, {"storage": StorageType.FPGA_Local}], print_report=True)
     sdfg.save('/tmp/out_fpga.sdfg')
 
     dace_output_fpga = dace_model(Q, K, V)

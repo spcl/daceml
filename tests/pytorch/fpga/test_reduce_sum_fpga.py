@@ -1,9 +1,8 @@
-# Simple test for softmax for FPGA
+# Simple test for reduce_sum for FPGA
 
 
 # NOTE: for the moment being it supports only the last axis
 
-# TODO: conform to pytest syntax if needed
 
 from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
 
@@ -42,20 +41,17 @@ def run(data_shape: tuple, axis, queue=None):
     dace_output = dace_model(x)
 
     torch_output = ptmodel(x)
-    dace_model.sdfg.save('/tmp/out.sdfg')
     assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
 
     # Transform to FPGA
 
     sdfg = dace_model.sdfg
-    sdfg.save('/tmp/out.sdfg')
 
     donnx.ONNXReduceSum.default_implementation = "fpga"
     sdfg.apply_transformations([FPGATransformSDFG])
     sdfg.expand_library_nodes()
     sdfg.apply_transformations_repeated([InlineSDFG])
 
-    sdfg.save('/tmp/out_fpga_expanded.sdfg')
     dace_output_fpga = dace_model(torch.clone(x))
 
     diff = np.linalg.norm(torch_output.detach().numpy() - dace_output_fpga) / dace_output_fpga.size
@@ -73,7 +69,7 @@ def run(data_shape: tuple, axis, queue=None):
     del dace_model, ptmodel, x
 
 def test():
-    pass
+    pass #NYI
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -95,6 +91,6 @@ if __name__ == "__main__":
     if t:
         test()
     else:
-        data_shape = (2, 4,16, 16)
+        data_shape = (2, 4, 16, 16)
         run(data_shape, 1)
 

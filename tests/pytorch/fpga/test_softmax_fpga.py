@@ -47,16 +47,13 @@ def run(data_shape: tuple, axis, queue=None):
     assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
 
     # Transform to FPGA
-
     sdfg = dace_model.sdfg
-    sdfg.save('/tmp/out.sdfg')
 
     donnx.ONNXSoftmax.default_implementation = "fpga"
     sdfg.apply_transformations([FPGATransformSDFG])
     sdfg.expand_library_nodes()
     sdfg.apply_transformations_repeated([InlineSDFG])
 
-    sdfg.save('/tmp/out_fpga_expanded.sdfg')
     dace_output_fpga = dace_model(torch.clone(x))
 
     diff = np.linalg.norm(torch_output.detach().numpy() - dace_output_fpga) / dace_output_fpga.size
@@ -74,7 +71,7 @@ def run(data_shape: tuple, axis, queue=None):
     del dace_model, ptmodel, x
 
 def test():
-    pass
+    pass #NYI
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
