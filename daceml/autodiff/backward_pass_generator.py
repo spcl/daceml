@@ -5,6 +5,7 @@
 import collections
 import copy
 import logging
+import numbers
 import typing
 
 import dace
@@ -70,12 +71,13 @@ def is_initialization_state(state: SDFGState) -> bool:
 
 def code_to_exprs(code: str, inputs: typing.Set[str],
                   outputs: typing.Set[str]) -> typing.Dict[str, sp.Expr]:
-    """Convert a python string to a set of (simplified) symbolic sympy expressions. Currently, this
-    supports only code consisting of assignment statements.
-    :param code: the code to convert
-    :param code: the inputs (i.e. the defined variables) for the code
-    :param code: the outputs to generate simplified expressions for
-    :return: map from outputs to symbolic expressions
+    """ Convert a python string to a set of (simplified) symbolic sympy expressions. Currently, this
+        supports only code consisting of assignment statements.
+
+        :param code: the code to convert
+        :param code: the inputs (i.e. the defined variables) for the code
+        :param code: the outputs to generate simplified expressions for
+        :return: map from outputs to symbolic expressions
     """
 
     inputs = list(inputs)
@@ -122,7 +124,7 @@ def symbolic_execution({}):
 
 
 def _is_int_value(value, target_value: int) -> bool:
-    if type(value) is int:
+    if isinstance(value, numbers.Integral):
         return value == target_value
 
     if len(value.free_symbols) > 0 or int(value) != target_value:
@@ -150,9 +152,9 @@ def _add_through_connector(node: typing.Union[nd.MapEntry, nd.MapExit]):
 
 
 def _invert_map_connector(conn):
-    if conn[:2] == "IN":
+    if conn.startswith("IN"):
         return "OUT" + conn[2:]
-    elif conn[:3] == "OUT":
+    elif conn.startswith("OUT"):
         return "IN" + conn[3:]
     else:
         raise AutoDiffException(
@@ -190,19 +192,6 @@ def _has_inplace_operation(state: dace.SDFGState) -> bool:
     return False
 
 
-def _get_matching_entry(state: SDFGState, map_exit: nd.MapExit) -> nd.MapEntry:
-    """Get the matching `MapEntry` for a `MapExit`"""
-    cands = [
-        node for node in state.nodes()
-        if isinstance(node, nd.MapEntry) and node.map is map_exit.map
-    ]
-
-    if len(cands) != 1:
-        raise AutoDiffException(
-            "More than one map entry found for map {}".format(map_exit.map))
-    return cands[0]
-
-
 def _walk_up_memlet_tree_through_view_nodes(
     sdfg, forward_state, start_name
 ) -> typing.Tuple[typing.Union[dt.Scalar, dt.Array], str,
@@ -219,11 +208,11 @@ def _walk_up_memlet_tree_through_view_nodes(
     forwarded_name = start_name
     view_nodes_to_clone: typing.Deque[typing.Tuple[
         str, dt.Data, Memlet]] = collections.deque()
-    if type(sdfg.arrays[start_name]) is dt.View:
+    if isinstance(sdfg.arrays[start_name], dt.View):
         # this is complicated slightly by views: we need to walk up the memlet path until we reach a
         # non-view access node. We then need to replicate the sequence of views in the backward SDFG.
         query = [
-            n for n, _ in forward_state.all_nodes_recursive()
+            n for n in forward_state.nodes()
             if isinstance(n, nd.AccessNode) and n.data == start_name
         ]
         if len(query) != 1:
@@ -231,17 +220,17 @@ def _walk_up_memlet_tree_through_view_nodes(
                 f"Could not find access node to forward with data {start_name}"
             )
         current_node = query[0]
-        while type(sdfg.arrays[current_node.data]) is dt.View:
+        while isinstance(sdfg.arrays[current_node.data], dt.View):
 
             in_edges = forward_state.in_edges(current_node)
             if len(in_edges) != 1:
                 raise AutoDiffException(
                     f"Expected view node with in degree 1, got {len(in_edges)} for view node {current_node}"
                 )
-            if type(in_edges[0].src) is not nd.AccessNode:
+            if not isinstance(in_edges[0].src, nd.AccessNode):
                 raise AutoDiffException(
-                    f"Expected view node {current_node} to be connected to access node, got {in_edges[0].src} (of type {type(in_edges[0].src)})"
-                )
+                    f"Expected view node {current_node} to be connected to access node, got {in_edges[0].src}"
+                    f" (of type {type(in_edges[0].src)})")
             view_nodes_to_clone.append(
                 (current_node.data, sdfg.arrays[current_node.data],
                  in_edges[0].data))
@@ -257,7 +246,8 @@ class BackwardPassGenerator:
         See autodiff.py, _reverse_NestedSDFG and pytorch.py for examples of usage.
 
         :param state: the forward pass to differentiate should be in this state
-        :param given_gradients: the outputs that gradients must be provided for (i.e. access nodes will be created for these)
+        :param given_gradients: the outputs that gradients must be provided for (i.e. access nodes will be created for
+               these)
         :param required_gradients: the inputs to generate gradients for
         :param backward_sdfg: the sdfg the backward pass will be contained in. If it is the same as the forward_sdfg,
                               outputs must be a list containing a single scalar.
@@ -404,21 +394,17 @@ class BackwardPassGenerator:
                         continue
 
             # This could later on be changed to check if the expansion is differentiable and if not, move
-            # on to the next expansion. For now we will just apply the first one that matches, prioritizing ones that have
-            # "pure" in the name
+            # on to the next expansion. For now we will just apply the first one that matches, prioritizing ones that
+            # have "pure" in the name
             if isinstance(node,
                           nd.LibraryNode) and not isinstance(node, ONNXOp):
                 # try to select an expansion
                 if hasattr(node, "implementations"):
                     implementations = node.implementations
 
-                    def contains_pure(name, impl):
-                        return "pure" in name.lower(
-                        ) or "pure" in impl.__name__.lower()
-
                     pure_candidates = [
                         name for name, impl in implementations.items()
-                        if contains_pure(name, impl)
+                        if "pure" in name
                     ]
                     if len(pure_candidates) > 0:
                         expansion = pure_candidates[0]
@@ -472,8 +458,8 @@ class BackwardPassGenerator:
             :return: tuple of:
                      * the backward result (see :class:`~daceml.autodiff.backward_implementation.BackwardResult`)
                      * dict of data descriptors for the gradients (i.e. the outputs of the backward pass)
-                     * dict of data descriptors of required outputs from the forward pass. These need to be added to the parent
-                       SDFG of the backward pass.
+                     * dict of data descriptors of required outputs from the forward pass. These need to be added to the
+                       parent SDFG of the backward pass.
         """
 
         if self._applied:
@@ -851,8 +837,8 @@ class BackwardPassGenerator:
                                 self.sdfg.arrays[data_name])
 
                             # if the descriptor is a view, we will rebuild the sequence of views that create this view
-                            # this involves walking up the path until we find a non-view access node, and then replicating
-                            # that path in the backward pass
+                            # this involves walking up the path until we find a non-view access node, and then
+                            # replicating that path in the backward pass
                             if type(data_desc) is dt.View:
                                 data_desc, data_name, view_nodes_to_clone = _walk_up_memlet_tree_through_view_nodes(
                                     self.sdfg, self.forward_state, data_name)
@@ -1148,14 +1134,19 @@ class BackwardPassGenerator:
             assert rev.add_out_connector(conn)
 
         self.backward_state.add_node(rev)
-        return rev, BackwardResult(required_grad_names={
-            n: _invert_map_connector(n)
-            for n in required_gradients
-        },
-                                   given_grad_names={
-                                       n: _invert_map_connector(n)
-                                       for n in given_gradients
-                                   })
+        # yapf: enable
+        return (
+            rev,
+            BackwardResult(required_grad_names={
+                n: _invert_map_connector(n)
+                for n in required_gradients
+            },
+            given_grad_names={
+                n: _invert_map_connector(n)
+                for n in given_gradients
+            }),
+        )
+        # yapf: disable
 
     def _reverse_Tasklet(
         self,
@@ -1248,8 +1239,8 @@ class BackwardPassGenerator:
                     self.forward_state.in_edges_by_connector(tasklet, inp))
                 if len(cands) != 1:
                     raise AutoDiffException(
-                        f"Unexpected graph structure, could not find input edge for connector {inp} on tasklet {tasklet}"
-                    )
+                        f"Unexpected graph structure, could not find input edge for connector {inp}"
+                        f" on tasklet {tasklet}")
 
                 converted_code = cast_consts_to_type(
                     diff_code_str, self.sdfg.arrays[cands[0].data.data].dtype)
