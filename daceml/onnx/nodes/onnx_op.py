@@ -372,8 +372,6 @@ class ONNXOp(nd.LibraryNode):
             elif matched.type_str in assigned_params and (assigned_params[
                     matched.type_str] != edge_dtype and assigned_params[
                     matched.type_str] != edge_dtype.base_type):
-                import pdb
-                pdb.set_trace()
                 raise ValueError(
                     "Could not solve type constraints;"
                     " excepted type '{expected}' for {param_type} '{conn_name}', got type '{actual}'"
