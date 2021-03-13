@@ -102,7 +102,7 @@ class ConstantFolding(transformation.Transformation):
 
     def apply(self, sdfg: dace.SDFG):
         # Extract the subgraph, execute it and insert an AccessNode to the result
-        # this method of execution is slow as hell, but easy. A better option would be to call the ORT
+        # this method of execution is slow but simple. A better option would be to call the ORT
         # C API from a python object (like the OpChecker).
 
         parent: ONNXModel = sdfg._parent_onnx_model

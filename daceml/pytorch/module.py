@@ -83,7 +83,7 @@ class DaceModule(nn.Module):
                 export_params=not self.backward,
                 # pytorch constant folding will add new unnamed inputs to the graph and remove some of the
                 # named parameters of the model: this means that we can't match with the state dict
-                # anymore, so we disable this. Our CF is better anyway ;)
+                # anymore, so we disable this. Our CF is more flexible.
                 do_constant_folding=False)
 
             onnx_model = infer_shapes(onnx.load(export_name))

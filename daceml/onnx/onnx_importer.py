@@ -240,7 +240,7 @@ class ONNXModel:
 
         if self.cuda:
             # set all weights to be GPU_Global
-            # this was messing with the ORT arena allocator, probably because PT has it's own
+            # this was messing with the ORT arena allocator, probably because PT has its own
             # for name, tensor in self.weights.items():
             #     self.weights[name] = self.weights[name].cuda()
             #     self.sdfg.arrays[clean_onnx_name(name)].storage = StorageType.GPU_Global

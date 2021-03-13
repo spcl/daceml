@@ -5,7 +5,7 @@ Automatic Differentiation
 
     The symbolic automatic differentiation feature still experimental.
 
-DaceML takes a different approach to automatic differentation than most deep learning frameworks. Instead of
+DaCeML takes a different approach to automatic differentiation than most deep learning frameworks. Instead of
 hand-writing backward passes for all differentiable operators, DaceML has a symbolic reverse-mode differentation engine.
 
 Using Autodiff

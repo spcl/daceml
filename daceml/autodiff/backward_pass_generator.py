@@ -161,7 +161,7 @@ def _invert_map_connector(conn):
 
 def _has_inplace_operation(state: dace.SDFGState) -> bool:
     """Returns true if state has any inplace operations
-    Note that this method is currently much stronger than required; some of the constrains can be
+    Note that this method is currently much stronger than required; some of the constraints can be
     loosened in the future.
     """
 
@@ -175,8 +175,8 @@ def _has_inplace_operation(state: dace.SDFGState) -> bool:
                 return True
             seen_accesses.add(node.data)
 
-    # edges with scalar memlets can be used to connect two code nodes together. If this feature is
-    # used, it should be done using a new scalar everytime.
+    # Edges with scalar memlets can be used to connect two code nodes together. If this feature is
+    # used, it should be done using a new scalar every time.
     # When a scalar is used in a code -> code edge, it should also have an AccessNode that refers to it.
     seen_scalars = set()
     for edge in state.edges():

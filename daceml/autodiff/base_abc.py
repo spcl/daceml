@@ -26,7 +26,7 @@ class BackwardContext(typing.NamedTuple):
 
 
 class BackwardResult(typing.NamedTuple):
-    """ The return type of reversing a node. It the names of the gradients the node calculates and requires. """
+    """ The return type of a differentiated node. It contains the names of the gradients the node calculates and requires. """
 
     #: mapping from names of output connectors to the connector name of the gradient for that connector.
     required_grad_names: typing.Dict[typing.Optional[str],
