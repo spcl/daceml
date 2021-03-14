@@ -279,7 +279,7 @@ class BackwardPassGenerator:
         def str_to_access(data: str, source: str) -> nd.AccessNode:
             matches = [
                 node for node in state.nodes()
-                if type(node) is nd.AccessNode and node.data == data
+                if isinstance(node, nd.AccessNode) and node.data == data
             ]
             if len(matches) != 1:
                 raise AutoDiffException(
@@ -289,11 +289,11 @@ class BackwardPassGenerator:
             return matches[0]
 
         given_gradients = [
-            n if type(n) is nd.AccessNode else str_to_access(n, "outputs")
+            n if isinstance(n, nd.AccessNode) else str_to_access(n, "outputs")
             for n in given_gradients
         ]
         required_gradients = [
-            n if type(n) is nd.AccessNode else str_to_access(n, "inputs")
+            n if isinstance(n, nd.AccessNode) else str_to_access(n, "inputs")
             for n in required_gradients
         ]
 
@@ -786,7 +786,7 @@ class BackwardPassGenerator:
                 raise NotImplementedError()
             else:
                 # otherwise we expect AccessNode -> MapEntry -> ... -> MapEntry -> CodeNode
-                if not (type(path[0].src) is nd.AccessNode
+                if not (isinstance(path[0].src, nd.AccessNode)
                         and isinstance(path[-1].dst, nd.CodeNode)):
                     raise AutoDiffException(
                         "Unexpected graph structure: expected memlet path that starts with an "
@@ -807,7 +807,7 @@ class BackwardPassGenerator:
                         new_edge_dst_conn = edge.dst_conn
                     else:
                         # if we have more than one edge, check that all intermediate nodes are MapEntry
-                        if type(path_edge.dst) is not nd.MapEntry:
+                        if not isinstance(path_edge.dst, nd.MapEntry):
                             raise AutoDiffException(
                                 "Unexpected graph structure")
 
@@ -822,7 +822,7 @@ class BackwardPassGenerator:
                     # Get the src node and connector
 
                     if i == 0:
-                        if type(path_edge.src) is not nd.AccessNode:
+                        if not isinstance(path_edge.src, nd.AccessNode):
                             raise AutoDiffException(
                                 "Unexpected graph structure: expected memlet path that starts with an "
                                 "AccessNode and ends with CodeNode")
@@ -880,7 +880,7 @@ class BackwardPassGenerator:
 
                     else:
                         # if we have more than one edge, check that all intermediate nodes are MapEntry
-                        if type(path_edge.src) is not nd.MapEntry:
+                        if not isinstance(path_edge.src, nd.MapEntry):
                             raise AutoDiffException(
                                 "Unexpected graph structure")
 
@@ -916,7 +916,7 @@ class BackwardPassGenerator:
         src_candidates = [
             typing.cast(nd.MapExit, node)
             for node in self.backward_state.nodes()
-            if type(node) is nd.MapEntry
+            if isinstance(node, nd.MapEntry)
             and node.map == self.reverse_map[entry_node.map]
         ]
         if len(src_candidates) != 1:

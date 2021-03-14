@@ -109,7 +109,7 @@ def make_backward_function(
 
             # create the empty tensors we need for the intermediate values
             for inp, val in backward_input_arrays.items():
-                if type(val) is dt.Scalar:
+                if isinstance(val, dt.Scalar):
                     # the value we need is actually in an array
                     inp = replaced_scalars[inp]
 
@@ -122,7 +122,7 @@ def make_backward_function(
                                              **outputs)
 
             def _get_arr(name, desc):
-                if type(desc) is dt.Scalar:
+                if isinstance(desc, dt.Scalar):
                     name = replaced_scalars[name]
                 if name in inputs:
                     value = inputs[name]
@@ -134,7 +134,7 @@ def make_backward_function(
                     raise AutoDiffException(
                         f"Could not get value of array {name}")
 
-                if type(desc) is dt.Scalar:
+                if isinstance(desc, dt.Scalar):
                     return value.numpy()[0]
                 else:
                     return value
