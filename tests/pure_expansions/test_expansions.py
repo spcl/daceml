@@ -5,9 +5,11 @@ import pytest
 import dace
 from dace import transformation
 import dace.transformation.interstate
+from dace.libraries import blas
 
 import daceml.onnx as donnx
 import daceml.onnx.converters as converters
+from daceml.util import utils
 
 
 #+yapf: disable
@@ -356,6 +358,28 @@ def test_reciprocal(sdfg_name):
     result = sdfg(X=X)
 
     assert np.allclose(numpy_result, result)
+
+
+@pytest.mark.pure
+def test_einsum():
+    @dace.program
+    def test_einsum(A: dace.float64[5, 4, 3], B: dace.float64[3, 2]):
+        Y = dace.define_local([5, 4, 2], dace.float64)
+        donnx.ONNXEinsum(Inputs__0=A,
+                         Inputs__1=B,
+                         Output=Y,
+                         equation="bij, jk -> bik")
+        return Y
+
+    sdfg = test_einsum.to_sdfg()
+    utils.expand_onnx_nodes(sdfg)
+    assert any(
+        isinstance(n, blas.MatMul) for n, _ in sdfg.all_nodes_recursive())
+
+    A = np.random.rand(5, 4, 3).astype(np.float64)
+    B = np.random.rand(3, 2).astype(np.float64)
+    result = test_einsum(A.copy(), B.copy())
+    assert np.allclose(result, np.einsum("bij ,jk -> bik", A, B))
 
 
 @pytest.mark.pure
