@@ -28,7 +28,8 @@ def test_bert_encoder(gpu, default_implementation, sdfg_name):
                             sdfg_name=sdfg_name)
     dace_outputs0 = dace_model(input.clone())
 
-    diff = np.abs(dace_outputs0 - pt_outputs[0].detach().numpy())
+    diff = np.abs(dace_outputs0.detach().numpy() -
+                  pt_outputs[0].detach().numpy())
 
     assert np.max(diff) < 1e-5
 
@@ -48,13 +49,16 @@ def test_bert_cf(sdfg_name):
     dace_outputs0 = dace_model(input.clone())
 
     dace_model.dace_model.sdfg.apply_transformations_repeated(
-        [ConstantFolding, RedundantSecondArray], validate_all=True)
+        [ConstantFolding, RedundantSecondArray],
+        validate_all=True,
+        strict=True)
     dace_model.dace_model.sdfg.expand_library_nodes()
     dace_model.dace_model.sdfg.apply_strict_transformations()
 
     dace_outputs1 = dace_model(input.clone())
 
-    diff = np.abs(dace_outputs0 - pt_outputs[0].detach().numpy())
+    diff = np.abs(dace_outputs0.detach().numpy() -
+                  pt_outputs[0].detach().numpy())
 
     assert np.max(diff) < 1e-5
     assert np.allclose(dace_outputs1, dace_outputs0)

@@ -65,6 +65,41 @@ dace_model = ONNXModel("mymodel", model)
 *Read more: [PyTorch Integration](https://daceml.readthedocs.io/en/latest/overviews/pytorch.html) and 
 [Importing ONNX models](https://daceml.readthedocs.io/en/latest/overviews/onnx.html#importing-onnx-models).*
 
+## Training
+DaceML modules support training using a symbolic automatic differentiation engine:
+```python
+import torch.nn.functional as F
+from daceml.pytorch import dace_module
+
+@dace_module(backward=True)
+class Net(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(784, 120)
+        self.fc2 = nn.Linear(120, 32)
+        self.fc3 = nn.Linear(32, 10)
+        self.ls = nn.LogSoftmax(dim=-1)
+
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+        x = self.ls(x)
+        return x
+
+x = torch.randn(8, 784)
+y = torch.tensor([0, 1, 2, 3, 4, 5, 6, 7], dtype=torch.long)
+
+model = Net()
+
+criterion = nn.NLLLoss()
+prediction = model(x)
+loss = criterion(prediction, y)
+# gradients can flow through model!
+loss.backward()
+```
+
+*Read more: [Automatic Differentiation](https://daceml.readthedocs.io/en/latest/overviews/autodiff.html)*
 
 ## Setup
 The easiest way to get started is to run

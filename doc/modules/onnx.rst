@@ -63,6 +63,12 @@ Pure ONNX Implementations
     :show-inheritance:
     :exclude-members: program_for_node, forward_can_be_applied, forward
 
+Dace CMake Environments
+-----------------------
+
+.. automodule:: daceml.onnx.environments.onnxruntime
+    :members:
+
 Supported ONNX Operators
 ------------------------
 The following documentation is mostly automatically generated from the ONNX documentation, except for the removal of unsupported attributes and nodes.
@@ -72,9 +78,3 @@ The following documentation is mostly automatically generated from the ONNX docu
     :exclude-members: Expansion, has_onnx_node, get_onnx_node, ONNXOp
     :show-inheritance:
     :no-undoc-members:
-
-Dace CMake Environments
------------------------
-
-.. automodule:: daceml.onnx.environments.onnxruntime
-    :members:

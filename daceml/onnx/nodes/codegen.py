@@ -1,5 +1,6 @@
 import logging
-from collections import Iterable, defaultdict
+from collections import defaultdict
+from collections.abc import Iterable
 from copy import deepcopy
 from functools import reduce
 from typing import Dict, NamedTuple, Tuple, List, Optional
@@ -9,12 +10,14 @@ import dace.data as dt
 from dace import dtypes, SDFGState, SDFG
 import dace.sdfg.nodes as nd
 import numpy as np
+import dace.library
 from dace.libraries.standard.nodes.code import _get_inputs_and_outputs
 
 from daceml.onnx.check_impl import check_op, ONNXOpValidationError
 from daceml.onnx.converters import clean_onnx_name, typeclass_to_onnx_str
 from daceml.onnx.nodes.node_utils import get_position
 from daceml.onnx.schema import ONNXAttributeType, _ATTR_TYPE_TO_PYTHON_TYPE, ONNXAttribute
+from daceml.onnx.environments import ONNXRuntime, ONNXRuntimeCUDA
 
 log = logging.getLogger(__name__)
 
@@ -22,6 +25,7 @@ log = logging.getLogger(__name__)
 def _gen_attr_init_code(kernel_context: str, attr: ONNXAttribute,
                         value) -> str:
     """ Get the code to setup an attribute on an onnx::NodeProto
+
         :param kernel_context: the variable name of the kernel context
         :param attr: the attribute to setup
     """
@@ -142,7 +146,7 @@ def _gen_attr_init_code(kernel_context: str, attr: ONNXAttribute,
 
 def check_required_copies(
     node: nd.Node, state: SDFGState, sdfg: SDFG, outputs_on_host: List[bool],
-    inputs_on_host: List[bool], actual_node_schedule: dtypes.ScheduleType
+    inputs_on_host: List[bool]
 ) -> Tuple[Dict[str, dtypes.StorageType], Dict[str, dtypes.StorageType]]:
     """ Check whether copies are required for all parameters.
         :param node: the node.
@@ -150,8 +154,6 @@ def check_required_copies(
         :param sdfg: the sdfg.
         :param outputs_on_host: boolean list, where the ith bool indicates if the ith output should be on host.
         :param inputs_on_host: boolean list, where the ith bool indicates if the ith input should be on host.
-        :param actual_node_schedule: the actual schedule we will use for expansion. This is != node.schedule when
-                                     the ORT does not support running that node with that schedule.
         :return: two dicts containing storage types for each of the connectors that require copies. The first
                  dict is for the inputs, the second is for the outputs.
     """
@@ -311,16 +313,6 @@ def expand_node(node, state, sdfg):
 
     unique_id = "{}_{}_{}_{}".format(clean_onnx_name(node.name), sdfg.sdfg_id,
                                      sdfg.node_id(state), state.node_id(node))
-    sdfg.append_global_code(
-        "OrtExecutableKernel *__ort_kernel_{};\n".format(unique_id))
-    sdfg.append_global_code(
-        "OrtExecutableKernelContext *__ort_context_{};\n".format(unique_id))
-
-    sdfg.append_init_code("""
-    {{
-    // Setup for {name}
-    __ort_check_status(__state->ort_api, __state->ort_api->CreateExecutableKernelContext("{name}", "{op_type}", &__ort_context_{name}));
-    """.format(name=unique_id, op_type=node.schema.name))
 
     # check if ORT supports CUDA for this node using the op checker
     ###############################################################
@@ -358,14 +350,16 @@ def expand_node(node, state, sdfg):
     ##########################################
 
     input_copy_required, output_copy_required = check_required_copies(
-        node, state, sdfg, outputs_on_host, inputs_on_host,
-        actual_node_schedule)
+        node, state, sdfg, outputs_on_host, inputs_on_host)
 
     # begin codegen
     ##########################################
     tasklet_setup_code = ""
     tasklet_code = ""
     tasklet_cleanup_code = ""
+    env_init_code = ("""
+    __ort_check_status(__state->ort_api, __state->ort_api->CreateExecutableKernelContext("{name}", "{op_type}", &__state->ort_context_{name}));
+    """.format(name=unique_id, op_type=node.schema.name))
 
     # emit code for inputs and outputs
     ##########################################
@@ -388,13 +382,13 @@ def expand_node(node, state, sdfg):
         input_output_string = "input" if is_input else "output"
         memlet = edge.data
         desc = sdfg.arrays[memlet.data]
-        sdfg.append_init_code("""
+        env_init_code += """
         // Add parameter {parameter_name}
-        __ort_check_status(__state->ort_api, __state->ort_api->ExecutableKernelContext_Add{input_output_string}(__ort_context_{id}, ONNX_TENSOR_ELEMENT_DATA_TYPE_{type_string}));
+        __ort_check_status(__state->ort_api, __state->ort_api->ExecutableKernelContext_Add{input_output_string}(__state->ort_context_{id}, ONNX_TENSOR_ELEMENT_DATA_TYPE_{type_string}));
         """.format(id=unique_id,
                    type_string=typeclass_to_onnx_str(desc.dtype).upper(),
                    parameter_name=parameter_name,
-                   input_output_string=input_output_string.capitalize()))
+                   input_output_string=input_output_string.capitalize())
 
         ort_value_name = "ort_value_{input_output_string}_{parameter_name}".format(
             input_output_string=input_output_string,
@@ -419,7 +413,7 @@ def expand_node(node, state, sdfg):
             connector_dict=in_connectors if is_input else out_connectors)
 
         tasklet_code += "__ort_check_status(__state->ort_api, __state->ort_api->ExecutableKernel_Set{input_output_string_capital}(" \
-                        "__ort_kernel_{unique_id}, {position}, {ort_value_name}));\n".format(
+                        "__state->ort_kernel_{unique_id}, {position}, {ort_value_name}));\n".format(
             input_output_string_capital=input_output_string.
                 capitalize(),
             ort_value_name=ort_value_name,
@@ -431,48 +425,63 @@ def expand_node(node, state, sdfg):
             input_output_string=input_output_string,
             parameter_name=parameter_name)
 
-    sdfg.append_init_code("// Setup attributes\n")
+    env_init_code += "// Setup attributes\n"
 
     for name, attr in node.schema.attributes.items():
         if hasattr(node, name):
-            sdfg.append_init_code(
-                _gen_attr_init_code("__ort_context_{}".format(unique_id),
-                                    node.schema.attributes[name],
-                                    getattr(node, name)))
+            env_init_code += _gen_attr_init_code(
+                "__state->ort_context_{}".format(unique_id),
+                node.schema.attributes[name], getattr(node, name))
 
-    sdfg.prepend_exit_code(
-        "__state->ort_api->ReleaseExecutableKernelContext(__ort_context_{});\n"
-        .format(unique_id))
-    sdfg.prepend_exit_code(
-        "__state->ort_api->ReleaseExecutableKernel(__ort_kernel_{});\n".format(
-            unique_id))
+    env_finalize_code = """
+        __state->ort_api->ReleaseExecutableKernel(__state->ort_kernel_{});\n
+        __state->ort_api->ReleaseExecutableKernelContext(__state->ort_context_{});\n
+    """.format(unique_id, unique_id)
 
     if logging.root.level <= logging.DEBUG:
         tasklet_code += 'fprintf(stderr, "Launching {}\\n");\n'.format(
             unique_id)
 
-    tasklet_code += "__ort_check_status(__state->ort_api, __state->ort_api->ExecutableKernel_Compute(__ort_kernel_{}));\n".format(
+    tasklet_code += "__ort_check_status(__state->ort_api, __state->ort_api->ExecutableKernel_Compute(__state->ort_kernel_{}));\n".format(
         unique_id)
 
-    sdfg.append_init_code(
+    env_init_code += (
         "__ort_check_status(__state->ort_api, __state->ort_api->CreateExecutableKernel("
-        "__state->ort_session, __ort_context_{id}, /*provider_index=*/{provider_index}, &__ort_kernel_{id}));\n"
+        "__state->ort_session, __state->ort_context_{id}, /*provider_index=*/{provider_index}, &__state->ort_kernel_{id}));\n"
         .format(provider_index=provider_index, id=unique_id))
-    sdfg.append_init_code("}} // end setup for context_{}".format(unique_id))
 
     tasklet_code = tasklet_setup_code + tasklet_code + tasklet_cleanup_code
+
+    class Environment:
+        cmake_minimum_version = None
+        cmake_packages = []
+        cmake_variables = {}
+        cmake_includes = []
+        cmake_libraries = []
+        cmake_compile_flags = []
+        cmake_link_flags = []
+        cmake_files = []
+        state_fields = [
+            "OrtExecutableKernelContext *ort_context_{};\n".format(unique_id),
+            "OrtExecutableKernel *ort_kernel_{};\n".format(unique_id),
+        ]
+        dependencies = [
+            ONNXRuntimeCUDA if node.schedule in dtypes.GPU_SCHEDULES +
+            [dtypes.ScheduleType.GPU_Default] else ONNXRuntime
+        ]
+        headers = []
+        init_code = env_init_code
+        finalize_code = env_finalize_code
+
+    Environment.__name__ = unique_id + "_environment"
+    dace.library.environment(Environment)
+
     tasklet = nd.Tasklet(unique_id + '_onnx_code',
                          in_connectors,
                          out_connectors,
                          tasklet_code,
                          language=dace.dtypes.Language.CPP)
-
-    if actual_node_schedule in dtypes.GPU_SCHEDULES + [
-            dtypes.ScheduleType.GPU_Default
-    ]:
-        tasklet.environments = {"ONNXRuntimeCUDA"}
-    else:
-        tasklet.environments = {"ONNXRuntime"}
+    tasklet.environments = {Environment.__name__}
 
     if return_nested_sdfg:
         nsdfg = dace.SDFG("nested_{}".format(unique_id))
