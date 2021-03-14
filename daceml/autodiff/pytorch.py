@@ -90,18 +90,11 @@ def make_backward_function(
         def forward(ctx, *inputs):
             # setup the intermediate buffers
 
-            copied_inputs = []
-            for inp in inputs:
-                if not isinstance(inp, torch.Tensor):
-                    raise ValueError(
-                        "Unsupported input with type {};"
-                        " currently only tensor inputs are supported".format(
-                            type(inp)))
-                if not inp.is_contiguous():
-                    log.warning(
-                        "forced to copy input since it was not contiguous")
-                    inp = inp.contiguous()
-                copied_inputs.append(inp)
+            if any(not inp.is_contiguous() for inp in inputs):
+                log.warning(
+                    "forced to copy input since it was not contiguous")
+
+            copied_inputs = tuple(inp if inp.is_contiguous else inp.contiguous() for inp in inputs)
 
             # prepare the arguments
             inputs, params, symbols, outputs = model._call_args(
