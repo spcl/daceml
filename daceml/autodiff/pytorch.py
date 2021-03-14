@@ -16,9 +16,9 @@ from daceml.onnx.onnx_importer import create_output_array, ONNXModel
 log = logging.getLogger(__name__)
 
 
-def make_backward_function(
-        model: ONNXModel,
-        apply_strict=False) -> Type[torch.autograd.Function]:
+def make_backward_function(model: ONNXModel,
+                           apply_strict=False
+                           ) -> Type[torch.autograd.Function]:
     """ Convert an ONNXModel to a PyTorch differentiable function. This method should not be used on it's own.
         Instead use the ``backward=True`` parameter of :class:`daceml.pytorch.DaceModule`.
 
@@ -42,7 +42,6 @@ def make_backward_function(
         sdfg=forward_sdfg,
         state=forward_state,
         given_gradients=[clean_onnx_name(name) for name in model.outputs],
-        # TODO filter inputs that don't require grad somehow...
         required_gradients=[clean_onnx_name(name) for name in model.inputs],
         backward_sdfg=backward_sdfg,
         backward_state=backward_state,
@@ -91,10 +90,11 @@ def make_backward_function(
             # setup the intermediate buffers
 
             if any(not inp.is_contiguous() for inp in inputs):
-                log.warning(
-                    "forced to copy input since it was not contiguous")
+                log.warning("forced to copy input since it was not contiguous")
 
-            copied_inputs = tuple(inp if inp.is_contiguous else inp.contiguous() for inp in inputs)
+            copied_inputs = tuple(
+                inp if inp.is_contiguous else inp.contiguous()
+                for inp in inputs)
 
             # prepare the arguments
             inputs, params, symbols, outputs = model._call_args(

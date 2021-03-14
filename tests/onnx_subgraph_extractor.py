@@ -26,8 +26,7 @@ if __name__ == "__main__":
 
     def get_node_idx(name):
         cands = [
-            i for i, n in enumerate(input_model.graph.node)
-            if n.name == name
+            i for i, n in enumerate(input_model.graph.node) if n.name == name
         ]
         if len(cands) != 1:
             raise ValueError(

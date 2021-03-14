@@ -107,10 +107,12 @@ def symbolic_execution({}):
     )
 
     try:
-        exec(code_fn)
+        # need to have dace so things like `dace.float32(1)` work
+        temp_globals = {'dace': dace}
+        exec(code_fn, temp_globals)
 
         # no idea why, but simply calling symbolic_execution doesn't work
-        results = vars()["symbolic_execution"](
+        results = temp_globals["symbolic_execution"](
             *[sp.symbols(inp) for inp in inputs])
 
         if len(outputs) > 1:
@@ -533,7 +535,12 @@ class BackwardPassGenerator:
 
     def _find_subgraph_to_differentiate(self) -> dstate.StateSubgraphView:
         """ Determine which nodes we need to reverse; this forms the subgraph we will differentiate:
-            we do a reverse bfs and a forward bfs, then take the intersection of nodes found
+            we do a reverse BFS and a forward BFS, then take the intersection of nodes found.
+
+            To calculate the gradients for a node x in ``required_gradients``, we need to sum up consider the gradient
+            contributions from every node y where x is used as an input. We thus first do a forward BFS. Also, the
+            gradient contributions of all nodes that are not connected by a path to a ``given_gradient`` node are
+            implicitly zero. Thus, we take the intersection of the two BFSs.
         """
         forward_nodes = {
             n
