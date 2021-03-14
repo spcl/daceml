@@ -2,10 +2,12 @@ import typing
 from functools import wraps
 
 import dace
-from dace.sdfg.nodes import Node
+from dace import nodes as nd
 from dace.sdfg.state import MultiConnectorEdge
 from dace import SDFG, SDFGState
 import dace.data as dt
+
+from daceml.onnx.nodes.onnx_op import ONNXOp
 
 
 def is_desc_contiguous(desc: dt.Data) -> bool:
@@ -21,7 +23,7 @@ def is_desc_contiguous(desc: dt.Data) -> bool:
             type(desc)))
 
 
-def in_desc_with_name(node: Node, state: SDFGState, sdfg: SDFG,
+def in_desc_with_name(node: nd.Node, state: SDFGState, sdfg: SDFG,
                       name: str) -> dt.Data:
     """ Find the descriptor of the data that connects to input connector `name`.
         :param node: the node.
@@ -33,7 +35,7 @@ def in_desc_with_name(node: Node, state: SDFGState, sdfg: SDFG,
     return sdfg.arrays[in_edge_with_name(node, state, name).data.data]
 
 
-def out_desc_with_name(node: Node, state: SDFGState, sdfg: SDFG,
+def out_desc_with_name(node: nd.Node, state: SDFGState, sdfg: SDFG,
                        name: str) -> dt.Data:
     """ Find the descriptor of the data that connects to output connector `name`.
         :param node: the node.
@@ -45,7 +47,7 @@ def out_desc_with_name(node: Node, state: SDFGState, sdfg: SDFG,
     return sdfg.arrays[out_edge_with_name(node, state, name).data.data]
 
 
-def in_edge_with_name(node: Node, state: SDFGState,
+def in_edge_with_name(node: nd.Node, state: SDFGState,
                       name: str) -> MultiConnectorEdge:
     """ Find the edge that connects to input connector `name` on `node`.
         :param node: the node.
@@ -62,7 +64,7 @@ def in_edge_with_name(node: Node, state: SDFGState,
     return cands[0]
 
 
-def out_edge_with_name(node: Node, state: SDFGState,
+def out_edge_with_name(node: nd.Node, state: SDFGState,
                        name: str) -> MultiConnectorEdge:
     """ Find the edge that connects to output connector `name` on `node`.
         :param node: the node.
@@ -95,3 +97,28 @@ def find_str_not_in_set(existing: typing.Set[str],
     while (base_name + "_" + str(i)) in existing:
         i += 1
     return base_name + "_" + str(i)
+
+
+def expand_onnx_nodes(sdfg: dace.SDFG):
+    """ Recursively expand all onnx library nodes in the SDFG, resulting in an SDFG that can be optimized by
+        dace transformations.
+
+        :param sdfg: the sdfg to expand nodes on.
+    """
+    states = list(sdfg.states())
+    while len(states) > 0:
+        state = states.pop()
+        expanded_something = False
+        for node in list(state.nodes()):  # Make sure we have a copy
+            if isinstance(node, nd.NestedSDFG):
+                expand_onnx_nodes(node.sdfg)
+            elif isinstance(node, ONNXOp):
+                impl_name = node.expand(sdfg, state)
+                print(
+                    "Automatically expanded library node \"{}\" with implementation \"{}\"."
+                    .format(str(node), impl_name))
+                # We made a copy of the original list of nodes, so we keep
+                # iterating even though this list has now changed
+                expanded_something = True
+        if expanded_something:
+            states.append(state)  # Nodes have changed. Check state again

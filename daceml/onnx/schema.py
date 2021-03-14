@@ -1,5 +1,6 @@
 import logging
 from itertools import chain
+from typing import List
 
 import aenum
 import numpy as np
@@ -270,6 +271,30 @@ class ONNXSchema:
 
     def __repr__(self):
         return self.domain + "." + self.name
+
+    def non_variadic_inputs(self) -> List[ONNXParameter]:
+        return [
+            i.name for i in self.inputs
+            if i.param_type is not ONNXParameterType.Variadic
+        ]
+
+    def variadic_inputs(self) -> List[ONNXParameter]:
+        return [
+            i.name for i in self.inputs
+            if i.param_type is ONNXParameterType.Variadic
+        ]
+
+    def non_variadic_outputs(self) -> List[ONNXParameter]:
+        return [
+            i.name for i in self.outputs
+            if i.param_type is not ONNXParameterType.Variadic
+        ]
+
+    def variadic_outputs(self) -> List[ONNXParameter]:
+        return [
+            i.name for i in self.outputs
+            if i.param_type is ONNXParameterType.Variadic
+        ]
 
     def validate(self):
         # check all parameters with a type str have a entry in the type constraints

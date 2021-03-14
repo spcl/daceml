@@ -13,6 +13,7 @@ from dace.sdfg.nodes import Node
 
 from daceml.transformation import constant_folding
 from daceml.onnx.nodes.onnx_op import ONNXOp
+from daceml.onnx.nodes.node_utils import parse_variadic_param
 from daceml.onnx import converters
 from daceml.onnx.forward_implementation_abc import ONNXForward
 import numpy as np
@@ -28,10 +29,13 @@ def program_for_node(program, sdfg: SDFG, state: SDFGState,
 
         The dtypes for the arguments will be extracted by matching the parameter names to edges.
     """
-    input_names = set(inp.name for inp in node.schema.inputs)
-    output_names = set(outp.name for outp in node.schema.outputs)
+    input_names = node.schema.non_variadic_inputs()
+    variadic_input_names = node.schema.variadic_inputs()
 
-    if input_names.intersection(output_names):
+    output_names = node.schema.non_variadic_outputs()
+    variadic_output_names = node.schema.variadic_outputs()
+
+    if set(input_names).intersection(output_names):
         # this is currently the case for only one onnx op
         raise ValueError(
             "program_for_node cannot be applied on nodes of this type;"
@@ -42,9 +46,13 @@ def program_for_node(program, sdfg: SDFG, state: SDFGState,
 
     annotations = {}
     for name, param in params.items():
-        if name in input_names:
+        if name in input_names or ("__" in name
+                                   and parse_variadic_param(name)[0]
+                                   in variadic_input_names):
             annotations[name] = in_desc_with_name(node, state, sdfg, name)
-        elif name in output_names:
+        elif name in output_names or ("__" in name
+                                      and parse_variadic_param(name)[0]
+                                      in variadic_output_names):
             annotations[name] = out_desc_with_name(node, state, sdfg, name)
         else:
             raise ValueError(
@@ -53,7 +61,7 @@ def program_for_node(program, sdfg: SDFG, state: SDFGState,
 
     program.__annotations__ = annotations
 
-    result = DaceProgram(program, (), {})
+    result = DaceProgram(program, (), {}, False, dace.DeviceType.CPU)
     result.name = node.label + "_expansion"
 
     return result

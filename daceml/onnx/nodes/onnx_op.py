@@ -410,19 +410,42 @@ def register_op_repo_replacement(cls: Type[ONNXOp], cls_name: str,
             name: value
             for name, value in kwargs.items() if name in dace_schema.attributes
         }
+        # remove used attrs
+        kwargs = {k: v for k, v in kwargs.items() if k not in attrs}
+
         onnx_node = cls(name=cls_name, **attrs)
         state.add_node(onnx_node)
 
-        input_names = {p.name for p in dace_schema.inputs}
-        output_names = {p.name for p in dace_schema.outputs}
+        input_names = dace_schema.non_variadic_inputs()
+        variadic_inputs = dace_schema.variadic_inputs()
+
+        output_names = dace_schema.non_variadic_outputs()
+        variadic_outputs = dace_schema.variadic_outputs()
+
         inputs = {
             name: arr_name
-            for name, arr_name in kwargs.items() if name in input_names
+            for name, arr_name in kwargs.items()
+            if (name in input_names or
+                # variadic params
+                ("__" in name
+                 and parse_variadic_param(name)[0] in variadic_inputs))
         }
+
+        kwargs = {k: v for k, v in kwargs.items() if k not in inputs}
+
         outputs = {
             name: arr_name
-            for name, arr_name in kwargs.items() if name in output_names
+            for name, arr_name in kwargs.items()
+            if (name in output_names or
+                # variadic params
+                ("__" in name
+                 and parse_variadic_param(name)[0] in variadic_outputs))
         }
+
+        kwargs = {k: v for k, v in kwargs.items() if k not in outputs}
+
+        if len(kwargs) > 0:
+            raise TypeError(f"Unknown arguments {', '.join(kwargs)}")
 
         for inp, arr_name in inputs.items():
             read = state.add_read(arr_name)

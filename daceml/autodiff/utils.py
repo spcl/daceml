@@ -113,7 +113,7 @@ def backward_program_for_node(
 
     program.__annotations__ = {**inputs, **outputs}
 
-    sdfg = DaceProgram(program, (), {}).to_sdfg()
+    sdfg = DaceProgram(program, (), {}, False, dace.DeviceType.CPU).to_sdfg()
 
     result_node = context.backward_state.add_nested_sdfg(
         sdfg, None, set(inputs), set(outputs))
