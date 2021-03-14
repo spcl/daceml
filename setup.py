@@ -19,12 +19,12 @@ setup(
         "License :: OSI Approved :: BSD License",
         "Operating System :: OS Independent",
     ],
-    python_requires='>=3.7',
+    python_requires='>=3.6',
     packages=['daceml'],
     package_data={'': ['*.cpp']},
     install_requires=[
         'dace@git+https://github.com/orausch/dace.git@daceml_branch',
-        'onnx == 1.7.0', 'torch'
+        'onnx == 1.7.0', 'torch', 'dataclasses; python_version < "3.7"'
     ],
     # install with pip and --find-links (see Makefile)
     # See https://github.com/pypa/pip/issues/5898
