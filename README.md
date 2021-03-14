@@ -3,13 +3,13 @@
 [![codecov](https://codecov.io/gh/spcl/daceml/branch/master/graph/badge.svg)](https://codecov.io/gh/spcl/daceml)
 [![Documentation Status](https://readthedocs.org/projects/daceml/badge/?version=latest)](https://daceml.readthedocs.io/en/latest/?badge=latest)
 
-# DaceML
+# DaCeML
 
 *Machine learning powered by data-centric parallel programming.*
 
 This project adds PyTorch and ONNX model loading support to [DaCe](https://github.com/spcl/dace), and adds ONNX
  operator library nodes to the SDFG IR. With access to DaCe's rich transformation library and
-productive development environment, **DaceML can generate highly efficient implementations that can be executed on CPUs, GPUs
+productive development environment, **DaCeML can generate highly efficient implementations that can be executed on CPUs, GPUs
 and FPGAs.**
 
 The white box approach allows us to see computation at **all levels of granularity**: from coarse operators, to kernel
@@ -18,8 +18,8 @@ implementations, and even down to every scalar operation and memory access.
 ![IR visual example](doc/ir.png)
 
 ## Library Nodes
-DaceML extends the DaCe IR with machine learning operators. The added nodes perform computation as specificed by the
-ONNX specification. DaceML leverages high performance kernels from ONNXRuntime, as well as pure SDFG implementations
+DaCeML extends the DaCe IR with machine learning operators. The added nodes perform computation as specificed by the
+ONNX specification. DaCeML leverages high performance kernels from ONNXRuntime, as well as pure SDFG implementations
 that are introspectable and transformable with data centric transformations.
 
 The nodes can be used from the DaCe python frontend.
@@ -66,7 +66,7 @@ dace_model = ONNXModel("mymodel", model)
 [Importing ONNX models](https://daceml.readthedocs.io/en/latest/overviews/onnx.html#importing-onnx-models).*
 
 ## Training
-DaceML modules support training using a symbolic automatic differentiation engine:
+DaCeML modules support training using a symbolic automatic differentiation engine:
 ```python
 import torch.nn.functional as F
 from daceml.pytorch import dace_module
@@ -99,14 +99,14 @@ loss = criterion(prediction, y)
 loss.backward()
 ```
 
-*Read more: [Automatic Differentiation](https://daceml.readthedocs.io/en/latest/overviews/autodiff.html)*
+*Read more: [Automatic Differentiation](https://daceml.readthedocs.io/en/latest/overviews/autodiff.html)*.
 
 ## Setup
 The easiest way to get started is to run
 
     make install
     
-This will setup DaceML in a newly created virtual environment.
+This will setup DaCeML in a newly created virtual environment.
 
 *For more detailed instructions, including ONNXRuntime installation, see [Installation](https://daceml.readthedocs.io/en/latest/overviews/installation.html).*
 

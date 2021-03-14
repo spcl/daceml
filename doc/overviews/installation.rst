@@ -1,7 +1,7 @@
 Installation
 ============
 
-DaceML can be installed by using ``pip install git+https://github.com/spcl/daceml``. It is recommended to install the desired version of PyTorch first.
+DaCeML can be installed by using ``pip install git+https://github.com/spcl/daceml``. It is recommended to install the desired version of PyTorch first.
 
 Alternatively, clone the repository and install using::
 
@@ -13,7 +13,7 @@ See :ref:`dev` for more details on the ``Makefile``.
 
 Installing ONNXRuntime
 ----------------------
-DaceML executes ONNX operators using `ONNXRuntime <https://github.com/microsoft/onnxruntime>`_ by default. To enable this, a patched version [#f1]_ of ONNXRuntime needs to be installed and setup.
+DaCeML executes ONNX operators using `ONNXRuntime <https://github.com/microsoft/onnxruntime>`_ by default. To enable this, a patched version [#f1]_ of ONNXRuntime needs to be installed and setup.
 
 ONNXRuntime can be installed from source or from a prebuilt release.
 
