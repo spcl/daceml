@@ -5,14 +5,15 @@ import logging
 import typing
 
 import dace
-from dace import SDFGState, SDFG, dtypes
+from dace import SDFGState, SDFG, dtypes, data as dt, nodes
+from dace.frontend.common import create_einsum_sdfg
 from dace.frontend.python.parser import DaceProgram
 from dace.registry import autoregister_params
 import dace.libraries.blas as blas
 from dace.sdfg.nodes import Node
 
 from daceml.transformation import constant_folding
-from daceml.onnx.nodes.onnx_op import ONNXOp
+from daceml.onnx.nodes import onnx_op
 from daceml.onnx.nodes.node_utils import parse_variadic_param
 from daceml.onnx import converters
 from daceml.onnx.forward_implementation_abc import ONNXForward
@@ -24,7 +25,7 @@ log = logging.getLogger(__name__)
 
 
 def program_for_node(program, sdfg: SDFG, state: SDFGState,
-                     node: ONNXOp) -> DaceProgram:
+                     node: onnx_op.ONNXOp) -> DaceProgram:
     """ Expand a function to a dace program.
 
         The dtypes for the arguments will be extracted by matching the parameter names to edges.
@@ -70,14 +71,14 @@ def program_for_node(program, sdfg: SDFG, state: SDFGState,
 @autoregister_params(op="Log", name="pure")
 class PureLog(ONNXForward):
     @staticmethod
-    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+    def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
         return in_desc_with_name(node, state, sdfg, 'input').dtype in [
             dace.float16, dace.float32, dace.float64
         ]
 
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState,
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
         def prog(input, output):
             output[:] = dace.elementwise(lambda x: log(x), input)
@@ -88,14 +89,14 @@ class PureLog(ONNXForward):
 @autoregister_params(op="Sqrt", name="pure")
 class PureSqrt(ONNXForward):
     @staticmethod
-    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+    def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
         return in_desc_with_name(node, state, sdfg, 'X').dtype in [
             dace.float16, dace.float32, dace.float64
         ]
 
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState,
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         node.validate(sdfg, state)
@@ -109,7 +110,7 @@ class PureSqrt(ONNXForward):
 @autoregister_params(op="Pow", name="pure")
 class PurePow(ONNXForward):
     @staticmethod
-    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+    def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
         if node.schedule is dtypes.ScheduleType.GPU_Default:
             # TODO fix this in a follow up PR (this returns NaN in the PT bert encoder test; check
@@ -121,7 +122,7 @@ class PurePow(ONNXForward):
         ]
 
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState,
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         node.validate(sdfg, state)
@@ -135,7 +136,7 @@ class PurePow(ONNXForward):
 @autoregister_params(op="Add", name="pure")
 class PureAdd(ONNXForward):
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState,
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         node.validate(sdfg, state)
@@ -149,7 +150,7 @@ class PureAdd(ONNXForward):
 @autoregister_params(op="Sub", name="pure")
 class PureSub(ONNXForward):
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState,
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         node.validate(sdfg, state)
@@ -163,7 +164,7 @@ class PureSub(ONNXForward):
 @autoregister_params(op="Mul", name="pure")
 class PureMul(ONNXForward):
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState,
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         node.validate(sdfg, state)
@@ -177,7 +178,7 @@ class PureMul(ONNXForward):
 @autoregister_params(op="Div", name="pure")
 class PureDiv(ONNXForward):
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState,
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         node.validate(sdfg, state)
@@ -191,7 +192,7 @@ class PureDiv(ONNXForward):
 @autoregister_params(op="ReduceMean", name="pure")
 class PureReduceMean(ONNXForward):
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState,
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         node.validate(sdfg, state)
@@ -209,14 +210,14 @@ class PureReduceMean(ONNXForward):
 @autoregister_params(op="Erf", name="pure")
 class PureErf(ONNXForward):
     @staticmethod
-    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+    def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
         return in_desc_with_name(node, state, sdfg, 'input').dtype in [
             dace.float16, dace.float32, dace.float64
         ]
 
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState,
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         node.validate(sdfg, state)
@@ -230,30 +231,25 @@ class PureErf(ONNXForward):
 @autoregister_params(op="MatMul", name="pure")
 class PureMatMul(ONNXForward):
     @staticmethod
-    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+    def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
         input0_dim = len(in_desc_with_name(node, state, sdfg, "A").shape)
         input1_dim = len(in_desc_with_name(node, state, sdfg, "B").shape)
 
-        # TODO remove these when dace reshapes work for nested SDFGs
-        if input0_dim == 4 and input1_dim == 4:
-            return True
-
-        if input0_dim == 3 and input1_dim == 2:
-            return True
-
-        if input0_dim == 2 and input1_dim == 2:
-            return True
-
-        return False
+        if input0_dim == 1 or input1_dim == 1:
+            return False
+        return True
 
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState,
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
         node.validate(sdfg, state)
 
-        input0_dim = in_desc_with_name(node, state, sdfg, "A").shape
-        input1_dim = in_desc_with_name(node, state, sdfg, "B").shape
+        A_desc = in_desc_with_name(node, state, sdfg, "A")
+        B_desc = in_desc_with_name(node, state, sdfg, "B")
+        Y_desc = out_desc_with_name(node, state, sdfg, "Y")
+        input0_dim = A_desc.shape
+        input1_dim = B_desc.shape
 
         # list containing letters from z-a
         letters = [chr(ord('z') - i) for i in range(26)]
@@ -279,8 +275,6 @@ class PureMatMul(ONNXForward):
             arg2 = 'kj'
             result = 'ij'
             if input0_dim[-2] != input0_dim[-1]:
-                A_desc = in_desc_with_name(node, state, sdfg, "A")
-                B_desc = in_desc_with_name(node, state, sdfg, "B")
                 if dace.symbolic.issymbolic(input0_dim[-2]):
                     log.warning(
                         f"overriding symbol {input0_dim[-2]} with value {input1_dim[-1]} in descriptor of input A of node {node}"
@@ -318,21 +312,74 @@ class PureMatMul(ONNXForward):
 
         einsum_str = '{},{}->{}'.format(arg1, arg2, result)
 
-        def einsumop(A, B, Y):
-            Y[:] = np.einsum(einsum_str, A, B)
+        nsdfg = dace.SDFG(node.label + "_expansion")
+        nstate = nsdfg.add_state()
+        einsum_node: nodes.LibraryNode = onnx_op.ONNXEinsum(
+            node.label + "_einsum_expansion", equation=einsum_str)
 
-        return program_for_node(einsumop, sdfg, state, node).to_sdfg()
+        nstate.add_node(einsum_node)
+        einsum_node.add_in_connector("Inputs__0")
+        einsum_node.add_in_connector("Inputs__1")
+        nsdfg.add_datadesc("A", copy.deepcopy(A_desc))
+        nsdfg.add_datadesc("B", copy.deepcopy(B_desc))
+        nsdfg.add_datadesc("Y", copy.deepcopy(Y_desc))
+        nsdfg.arrays["A"].transient = False
+        nsdfg.arrays["B"].transient = False
+        nsdfg.arrays["Y"].transient = False
+
+        nstate.add_edge(nstate.add_read("A"), None, einsum_node, "Inputs__0",
+                        nsdfg.make_array_memlet("A"))
+        nstate.add_edge(nstate.add_read("B"), None, einsum_node, "Inputs__1",
+                        nsdfg.make_array_memlet("B"))
+        nstate.add_edge(einsum_node, "Output", nstate.add_write("Y"), None,
+                        nsdfg.make_array_memlet("Y"))
+
+        return nsdfg
+
+
+@autoregister_params(op="Einsum", name="pure")
+class PureEinsum(ONNXForward):
+    @staticmethod
+    def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
+        if "..." in node.equation:
+            return False
+        return True
+
+    @staticmethod
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+        node.validate(sdfg, state)
+
+        nsdfg = dace.SDFG(node.label + "_expansion")
+        nstate = nsdfg.add_state()
+
+        for e in node.iter_inputs_in_onnx_order(state):
+            nsdfg.add_datadesc(
+                e.dst_conn, in_desc_with_name(node, state, sdfg, e.dst_conn))
+        for e in node.iter_outputs_in_onnx_order(state):
+            nsdfg.add_datadesc(
+                e.src_conn, out_desc_with_name(node, state, sdfg, e.src_conn))
+
+        create_einsum_sdfg(None,
+                           nsdfg,
+                           nstate,
+                           node.equation.replace(" ", ""),
+                           *(e.dst_conn
+                             for e in node.iter_inputs_in_onnx_order(state)),
+                           output="Output")
+        return nsdfg
 
 
 @autoregister_params(op="Identity", name="pure")
 class PureIdentity(ONNXForward):
     @staticmethod
-    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+    def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
         return True
 
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState,
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         node.validate(sdfg, state)
@@ -346,14 +393,14 @@ class PureIdentity(ONNXForward):
 @autoregister_params(op="Reciprocal", name="pure")
 class PureReciprocal(ONNXForward):
     @staticmethod
-    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+    def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
         return in_desc_with_name(node, state, sdfg, 'X').dtype in [
             dace.float16, dace.float32, dace.float64
         ]
 
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState,
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         node.validate(sdfg, state)
@@ -370,7 +417,7 @@ class PureReciprocal(ONNXForward):
 @autoregister_params(op="Tanh", name="pure")
 class PureTanh(ONNXForward):
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState,
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         node.validate(sdfg, state)
@@ -384,7 +431,7 @@ class PureTanh(ONNXForward):
 @autoregister_params(op="ReduceSum", name="pure")
 class PureReduceSum(ONNXForward):
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState,
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
         node.validate(sdfg, state)
 
@@ -401,7 +448,7 @@ class PureReduceSum(ONNXForward):
 @autoregister_params(op="ReduceMax", name="pure")
 class PureReduceMax(ONNXForward):
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState,
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
         node.validate(sdfg, state)
 
@@ -418,7 +465,7 @@ class PureReduceMax(ONNXForward):
 @autoregister_params(op="ReduceMin", name="pure")
 class PureReduceMin(ONNXForward):
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState,
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
         node.validate(sdfg, state)
 
@@ -435,7 +482,7 @@ class PureReduceMin(ONNXForward):
 @autoregister_params(op="Softmax", name="pure")
 class PureSoftmax(ONNXForward):
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState,
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         axis = node.axis
@@ -458,7 +505,7 @@ class PureSoftmax(ONNXForward):
 @autoregister_params(op="Transpose", name="pure")
 class PureTranspose(ONNXForward):
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState,
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         node.validate(sdfg, state)
@@ -473,7 +520,7 @@ class PureTranspose(ONNXForward):
 @autoregister_params(op="Cast", name="pure")
 class PureCast(ONNXForward):
     @staticmethod
-    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+    def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
 
         if node.schedule is dtypes.ScheduleType.GPU_Default:
@@ -489,7 +536,7 @@ class PureCast(ONNXForward):
         return True
 
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState,
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
         def prog(input, output):
             output[:] = dace.elementwise(lambda x: x, input)
@@ -500,14 +547,14 @@ class PureCast(ONNXForward):
 @autoregister_params(op="Gemm", name="pure")
 class PureGemm(ONNXForward):
     @staticmethod
-    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+    def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
         if node.alpha == 1.0 and node.beta == 1.0 and node.transA == 0 and node.transB == 1:
             return True
         return False
 
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState,
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
         node.validate(sdfg, state)
 
@@ -531,7 +578,7 @@ class PureGemm(ONNXForward):
 @autoregister_params(op="Relu", name="pure")
 class PureRelu(ONNXForward):
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState,
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
         input_dtype = in_desc_with_name(node, state, sdfg, "X").dtype
         cast_lambda = "lambda x: max(x, dace.{}(0))".format(
@@ -546,7 +593,7 @@ class PureRelu(ONNXForward):
 @autoregister_params(op="Reshape", name="pure")
 class PureReshape(ONNXForward):
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState,
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
         new_shape = out_desc_with_name(node, state, sdfg, "reshaped").shape
         node.remove_in_connector("shape")
