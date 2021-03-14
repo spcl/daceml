@@ -17,30 +17,6 @@ implementations, and even down to every scalar operation and memory access.
 
 ![IR visual example](doc/ir.png)
 
-## Library Nodes
-DaCeML extends the DaCe IR with machine learning operators. The added nodes perform computation as specificed by the
-ONNX specification. DaCeML leverages high performance kernels from ONNXRuntime, as well as pure SDFG implementations
-that are introspectable and transformable with data centric transformations.
-
-The nodes can be used from the DaCe python frontend.
-```python
-import dace
-import daceml.onnx as donnx
-import numpy as np
-
-@dace.program
-def conv_program(X_arr: dace.float32[5, 3, 10, 10],
-                 W_arr: dace.float32[16, 3, 3, 3]):
-    output = dace.define_local([5, 16, 4, 4], dace.float32)
-    donnx.ONNXConv(X=X_arr, W=W_arr, Y=output, strides=[2, 2])
-    return output
-
-X = np.random.rand(5, 3, 10, 10).astype(np.float32)
-W = np.random.rand(16, 3, 3, 3).astype(np.float32)
-
-result = conv_program(X_arr=X, W_arr=W)
-```
-
 *Read more: [Library Nodes](https://daceml.readthedocs.io/en/latest/overviews/onnx.html#library-nodes)*
 ## Integration
 Converting PyTorch modules is as easy as adding a decorator...
@@ -100,6 +76,30 @@ loss.backward()
 ```
 
 *Read more: [Automatic Differentiation](https://daceml.readthedocs.io/en/latest/overviews/autodiff.html)*.
+
+## Library Nodes
+DaCeML extends the DaCe IR with machine learning operators. The added nodes perform computation as specificed by the
+ONNX specification. DaCeML leverages high performance kernels from ONNXRuntime, as well as pure SDFG implementations
+that are introspectable and transformable with data centric transformations.
+
+The nodes can be used from the DaCe python frontend.
+```python
+import dace
+import daceml.onnx as donnx
+import numpy as np
+
+@dace.program
+def conv_program(X_arr: dace.float32[5, 3, 10, 10],
+                 W_arr: dace.float32[16, 3, 3, 3]):
+    output = dace.define_local([5, 16, 4, 4], dace.float32)
+    donnx.ONNXConv(X=X_arr, W=W_arr, Y=output, strides=[2, 2])
+    return output
+
+X = np.random.rand(5, 3, 10, 10).astype(np.float32)
+W = np.random.rand(16, 3, 3, 3).astype(np.float32)
+
+result = conv_program(X_arr=X, W_arr=W)
+```
 
 ## Setup
 The easiest way to get started is to run
