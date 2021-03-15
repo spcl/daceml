@@ -203,9 +203,8 @@ def check_required_copies(
     return input_copy_required, output_copy_required
 
 
-def emit_setup_code_for_ortvalue(node: nd.CodeNode,
-                                 parameter_name: str, edge_connector_name: str,
-                                 desc: dt.Data,
+def emit_setup_code_for_ortvalue(node: nd.CodeNode, parameter_name: str,
+                                 edge_connector_name: str, desc: dt.Data,
                                  required_copy: Optional[dtypes.StorageType],
                                  is_input: bool, ort_value_name: str,
                                  connector_dict: dict) -> str:
@@ -346,7 +345,6 @@ def expand_node(node, state, sdfg):
             print("Falling back to CPU for node {}. Reason:\n{}".format(
                 node.name, str(e)))
             provider_index = 0
-            actual_node_schedule = dtypes.ScheduleType.Default
     else:
         raise NotImplementedError(
             "ORT expansion for schedule '{}' is not implemented".format(
@@ -442,11 +440,6 @@ def expand_node(node, state, sdfg):
     tasklet_code += "__ort_check_status(__state->ort_api, __state->ort_api->ExecutableKernel_Compute(__state->ort_kernel_{}));\n".format(
         unique_id)
 
-    env_init_code += (
-        "__ort_check_status(__state->ort_api, __state->ort_api->CreateExecutableKernel("
-        "__state->ort_session, __state->ort_context_{id}, /*provider_index=*/{provider_index}, &__state->ort_kernel_{id}));\n"
-        .format(provider_index=provider_index, id=unique_id))
-
     tasklet_code = tasklet_setup_code + tasklet_code + tasklet_cleanup_code
 
     class Environment:
@@ -467,7 +460,36 @@ def expand_node(node, state, sdfg):
             [dtypes.ScheduleType.GPU_Default] else ONNXRuntime
         ]
         headers = []
-        init_code = env_init_code
+
+        @staticmethod
+        def init_code(sdfg):
+            cands = [
+                n for n, _ in sdfg.all_nodes_recursive()
+                if n.label == unique_id + "_onnx_code"
+            ]
+            if len(cands) != 1:
+                raise ValueError(
+                    f"Expected to find a unique node for this environment, found {len(cands)}"
+                )
+            node = cands[0]
+
+            if hasattr(
+                    node, "_cuda_stream"
+            ) and node._cuda_stream > ONNXRuntimeCUDA.max_concurrent_streams:
+                raise ValueError(
+                    f"This environment was initialized with max_concurrent_streams="
+                    f"{ONNXRuntimeCUDA.max_concurrent_streams}, but node {node} had stream id "
+                    f"{node._cuda_stream}")
+
+            # delay this until codegen so that we know what cuda stream this node should run on
+            return env_init_code + (
+                "__ort_check_status(__state->ort_api, __state->ort_api->CreateExecutableKernel("
+                "__state->ort_session, __state->ort_context_{id}, /*provider_index=*/{provider_index},"
+                " &__state->ort_kernel_{id}));\n".format(
+                    provider_index=0 if provider_index == 0 or not hasattr(
+                        node, "_cuda_stream") else 1 + node._cuda_stream,
+                    id=unique_id))
+
         finalize_code = env_finalize_code
 
     Environment.__name__ = unique_id + "_environment"
@@ -498,21 +520,19 @@ def expand_node(node, state, sdfg):
         nsdfg.add_datadesc(parameter_name, original_desc)
         if not (isinstance(desc, dt.Array) or isinstance(desc, dt.Scalar)):
             raise ValueError(
-                "Unsupported data type {} connected to an ONNX tasklet".
-                format(type(desc)))
+                "Unsupported data type {} connected to an ONNX tasklet".format(
+                    type(desc)))
 
         copy_options_dict = input_copy_required if is_input else output_copy_required
         # handle parameters for which no copies are required
         if parameter_name not in copy_options_dict:
             if is_input:
                 access = nstate.add_read(parameter_name)
-                nstate.add_edge(access, None, ntasklet,
-                                "__" + parameter_name,
+                nstate.add_edge(access, None, ntasklet, "__" + parameter_name,
                                 nsdfg.make_array_memlet(parameter_name))
             else:
                 access = nstate.add_write(parameter_name)
-                nstate.add_edge(ntasklet, "__" + parameter_name,
-                                access, None,
+                nstate.add_edge(ntasklet, "__" + parameter_name, access, None,
                                 nsdfg.make_array_memlet(parameter_name))
             continue
 
@@ -530,13 +550,13 @@ def expand_node(node, state, sdfg):
             access_copy = nstate.add_access("copy_" + memlet.data)
             nstate.add_edge(access, None, access_copy, None,
                             nsdfg.make_array_memlet("copy_" + memlet.data))
-            nstate.add_edge(access_copy, None, ntasklet,
-                            "__" + parameter_name, nmemlet)
+            nstate.add_edge(access_copy, None, ntasklet, "__" + parameter_name,
+                            nmemlet)
         else:
             access = nstate.add_write(parameter_name)
             access_copy = nstate.add_access("copy_" + memlet.data)
-            nstate.add_edge(ntasklet, "__" + parameter_name,
-                            access_copy, None, nmemlet)
+            nstate.add_edge(ntasklet, "__" + parameter_name, access_copy, None,
+                            nmemlet)
             nstate.add_edge(access_copy, None, access, None,
                             nsdfg.make_array_memlet("copy_" + memlet.data))
 

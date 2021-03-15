@@ -312,6 +312,7 @@ class PureMatMul(ONNXForward):
 
         einsum_str = '{},{}->{}'.format(arg1, arg2, result)
 
+        # we lower to an ONNXEinsum node instead straight to the dace einsum to make the autodiff simpler
         nsdfg = dace.SDFG(node.label + "_expansion")
         nstate = nsdfg.add_state()
         einsum_node: nodes.LibraryNode = onnx_op.ONNXEinsum(
