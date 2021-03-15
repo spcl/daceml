@@ -39,10 +39,11 @@ class BreakOpChecker:
 
 @pytest.mark.parametrize("break_opchecker", [True, False])
 @pytest.mark.parametrize("apply_strict", [True, False])
-def test_squeeze(gpu, apply_strict, break_opchecker):
+def test_squeeze(gpu, apply_strict, break_opchecker, default_implementation,
+                 sdfg_name):
 
     with BreakOpChecker() if break_opchecker else suppress():
-        sdfg = dace.SDFG("test_expansion")
+        sdfg = dace.SDFG(sdfg_name)
 
         sdfg.add_array("X_arr", [1], dace.float32)
         sdfg.add_scalar("scalar", dace.float32, transient=True)
@@ -79,7 +80,6 @@ def test_squeeze(gpu, apply_strict, break_opchecker):
             sdfg.expand_library_nodes()
             sdfg.apply_strict_transformations()
 
-        sdfg.expand_library_nodes()
         result = sdfg(X_arr=X)
 
         assert result.shape == (1, )
@@ -88,9 +88,10 @@ def test_squeeze(gpu, apply_strict, break_opchecker):
 
 @pytest.mark.parametrize("apply_strict", [True, False])
 @pytest.mark.parametrize("break_opchecker", [True, False])
-def test_shape(gpu, apply_strict, break_opchecker):
+def test_shape(gpu, apply_strict, break_opchecker, default_implementation,
+               sdfg_name):
     with BreakOpChecker() if break_opchecker else suppress():
-        sdfg = dace.SDFG("test_expansion")
+        sdfg = dace.SDFG(sdfg_name)
 
         sdfg.add_array("X_arr", [2, 4], dace.float32)
         sdfg.add_array("__return", [2], dace.int64)
@@ -125,9 +126,10 @@ def test_shape(gpu, apply_strict, break_opchecker):
 
 @pytest.mark.parametrize("apply_strict", [True, False])
 @pytest.mark.parametrize("break_opchecker", [True, False])
-def test_unsqueeze(gpu, apply_strict, break_opchecker):
+def test_unsqueeze(gpu, apply_strict, break_opchecker, default_implementation,
+                   sdfg_name):
     with BreakOpChecker() if break_opchecker else suppress():
-        sdfg = dace.SDFG("test_expansion")
+        sdfg = dace.SDFG(sdfg_name)
 
         sdfg.add_scalar("X_arr", dace.float32)
         sdfg.add_array("__return", [1], dace.float32)
@@ -164,9 +166,10 @@ def test_unsqueeze(gpu, apply_strict, break_opchecker):
 @pytest.mark.parametrize("scalars", [True, False])
 @pytest.mark.parametrize("apply_strict", [True, False])
 @pytest.mark.parametrize("break_opchecker", [True, False])
-def test_add(gpu, scalars, apply_strict, break_opchecker):
+def test_add(gpu, scalars, apply_strict, break_opchecker,
+             default_implementation, sdfg_name):
     with BreakOpChecker() if break_opchecker else suppress():
-        sdfg = dace.SDFG("test_expansion")
+        sdfg = dace.SDFG(sdfg_name)
 
         if scalars:
             sdfg.add_scalar("X_arr", dace.float32)

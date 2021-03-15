@@ -127,3 +127,15 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# SDFGs
+*.sdfg
+*.html
+_dacegraphs/
+.dacecache/
+
+# Misc
+.idea/
+doc/_build/
+*.onnx
+*.json

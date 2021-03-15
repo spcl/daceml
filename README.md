@@ -1,64 +1,26 @@
-[![Build Status](https://travis-ci.org/spcl/daceml.svg?branch=master)](https://travis-ci.org/spcl/daceml)
+![CPU CI](https://github.com/spcl/daceml/workflows/CPU%20CI/badge.svg)
+![GPU CI](https://github.com/spcl/daceml/workflows/GPU%20CI/badge.svg)
 [![codecov](https://codecov.io/gh/spcl/daceml/branch/master/graph/badge.svg)](https://codecov.io/gh/spcl/daceml)
-# daceml
-Machine learning powered by data-centric parallel programming. 
+[![Documentation Status](https://readthedocs.org/projects/daceml/badge/?version=latest)](https://daceml.readthedocs.io/en/latest/?badge=latest)
 
-This project adds PyTorch and ONNX model loading support to [DaCe](https://github.com/spcl/dace), and supports ONNX operators as library nodes to DaCe stateful dataflow multigraphs.
+# DaCeML
 
-## Setup
-ONNX ops can be run using the ONNX Runtime as a backend. This requires the `ONNXRuntime` environment to be set up. There are two options for this
+*Machine learning powered by data-centric parallel programming.*
 
-### Download prebuilt release (CPU only)
-Run the following commands 
-	
-	wget https://github.com/orausch/onnxruntime/releases/download/build1/onnxruntime_dist_cpu.tar.gz
-	tar -xzf onnxruntime_dist_cpu.tar.gz
+This project adds PyTorch and ONNX model loading support to [DaCe](https://github.com/spcl/dace), and adds ONNX
+ operator library nodes to the SDFG IR. With access to DaCe's rich transformation library and
+productive development environment, **DaCeML can generate highly efficient implementations that can be executed on CPUs, GPUs
+and FPGAs.**
 
-Finally, set the environment variable `ORT_RELEASE` to the location of the extracted file (for example: `export ORT_RELEASE=onnxruntime_dist_cpu`).
+The white box approach allows us to see computation at **all levels of granularity**: from coarse operators, to kernel
+implementations, and even down to every scalar operation and memory access.
 
-### Build from source
-To do this, clone the [patched onnxruntime](https://github.com/orausch/onnxruntime), and run the following commands
+![IR visual example](doc/ir.png)
 
-	./build.sh --build_shared_lib --parallel --config Release
-
-To enable CUDA, you should add the relevant arguments. For example:
-
-	./build.sh --use_cuda --cuda_version=10.1 --cuda_home=/usr/local/cuda --cudnn_home=/usr/local/cuda --build_shared_lib --parallel --config Release
-
-See ``onnxruntime/BUILD.md`` for more details.
-
-Finally, set the environment variable `ORT_ROOT` to the location of the built repository.
-
-## Importing ONNX models
-ONNX models can be imported using the `ONNXModel` frontend.
+*Read more: [Library Nodes](https://daceml.readthedocs.io/en/latest/overviews/onnx.html#library-nodes)*
+## Integration
+Converting PyTorch modules is as easy as adding a decorator...
 ```python
-import onnx
-from dace.frontend.onnx import ONNXModel
-
-model = onnx.load("resnet50.onnx")
-dace_model = ONNXModel("MyResnet50", model)
-
-test_input = np.random.rand(1, 3, 224, 224).astype(np.float32)
-output = dace_model(test_input)
-```
-
-## Working with PyTorch
-PyTorch `nn.Module`s can be imported using the `DaceModule` wrapper or `dace_module` decorator.
-```python
-import torch
-from daceml.pytorch import DaceModule, dace_module
-
-# Input and size definition
-B, H, P, SM, SN = 2, 16, 64, 512, 512
-N = P * H
-Q, K, V = [torch.randn([SN, B, N]), torch.randn([SM, B, N]), torch.randn([SM, B, N])]
-
-# DaCe module used as a wrapper
-ptmodel = torch.nn.MultiheadAttention(N, H, bias=False)
-dace_model = DaceModule(ptmodel)
-outputs_wrapped = dace_model(Q, K, V)
-
-# DaCe module used as a decorator
 @dace_module
 class Model(nn.Module):
     def __init__(self, kernel_size):
@@ -69,62 +31,85 @@ class Model(nn.Module):
     def forward(self, x):
         x = F.relu(self.conv1(x))
         return F.relu(self.conv2(x))
-
-dace_model = Model(3)
-outputs_dec = dace_model(torch.rand(1, 1, 8, 8))
+```
+... and ONNX models can also be directly imported using the model loader:
+```python
+model = onnx.load(model_path)
+dace_model = ONNXModel("mymodel", model)
 ```
 
-## Library Nodes
-The ONNX Library nodes implement [ONNX Operators](https://github.com/onnx/onnx/blob/master/docs/Operators.md).
+*Read more: [PyTorch Integration](https://daceml.readthedocs.io/en/latest/overviews/pytorch.html) and 
+[Importing ONNX models](https://daceml.readthedocs.io/en/latest/overviews/onnx.html#importing-onnx-models).*
 
-### Example
-The following code sets up and runs an SDFG containing an ONNX Convolution Operator
+## Training
+DaCeML modules support training using a symbolic automatic differentiation engine:
 ```python
-from dace.libraries.onnx.nodes.onnx_op import ONNXConv
-sdfg = dace.SDFG("conv_example")
-sdfg.add_array("X_arr", (5, 3, 10, 10), dace.float32)
-sdfg.add_array("W_arr", (16, 3, 3, 3), dace.float32)
-sdfg.add_array("Z_arr", (5, 16, 8, 8), dace.float32)
+import torch.nn.functional as F
+from daceml.pytorch import dace_module
 
-state = sdfg.add_state()
-access_X = state.add_access("X_arr")
-access_W = state.add_access("W_arr")
-access_Z = state.add_access("Z_arr")
+@dace_module(backward=True)
+class Net(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(784, 120)
+        self.fc2 = nn.Linear(120, 32)
+        self.fc3 = nn.Linear(32, 10)
+        self.ls = nn.LogSoftmax(dim=-1)
 
-conv = ONNXConv("MyConvNode")
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+        x = self.ls(x)
+        return x
 
-state.add_node(conv)
-state.add_edge(access_X, None, conv, "X", sdfg.make_array_memlet("X_arr"))
-state.add_edge(access_W, None, conv, "W", sdfg.make_array_memlet("W_arr"))
-state.add_edge(conv, "Y", access_Z, None, sdfg.make_array_memlet("Z_arr"))
+x = torch.randn(8, 784)
+y = torch.tensor([0, 1, 2, 3, 4, 5, 6, 7], dtype=torch.long)
+
+model = Net()
+
+criterion = nn.NLLLoss()
+prediction = model(x)
+loss = criterion(prediction, y)
+# gradients can flow through model!
+loss.backward()
+```
+
+*Read more: [Automatic Differentiation](https://daceml.readthedocs.io/en/latest/overviews/autodiff.html)*.
+
+## Library Nodes
+DaCeML extends the DaCe IR with machine learning operators. The added nodes perform computation as specificed by the
+ONNX specification. DaCeML leverages high performance kernels from ONNXRuntime, as well as pure SDFG implementations
+that are introspectable and transformable with data centric transformations.
+
+The nodes can be used from the DaCe python frontend.
+```python
+import dace
+import daceml.onnx as donnx
+import numpy as np
+
+@dace.program
+def conv_program(X_arr: dace.float32[5, 3, 10, 10],
+                 W_arr: dace.float32[16, 3, 3, 3]):
+    output = dace.define_local([5, 16, 4, 4], dace.float32)
+    donnx.ONNXConv(X=X_arr, W=W_arr, Y=output, strides=[2, 2])
+    return output
 
 X = np.random.rand(5, 3, 10, 10).astype(np.float32)
 W = np.random.rand(16, 3, 3, 3).astype(np.float32)
-Z = np.zeros((5, 16, 8, 8)).astype(np.float32)
 
-sdfg(X_arr=X, W_arr=W, Z_arr=Z)
+result = conv_program(X_arr=X, W_arr=W)
 ```
-### Parameters (Inputs and Outputs)
-The parameters for an op are specified by adding a connector with the name of the parameter. By default, ops already have connectors for the required parameters.
 
-### Variadic Parameters
-Variadic parameters are specified by adding a `__` followed by the index of the variadic parameter. For example, the [Sum operator](https://github.com/onnx/onnx/blob/master/docs/Operators.md#sum) has a variadic input named `data_0`. If we wanted to add 3 inputs that connect to this variadic parameter, we would add the connectors: `data_0__0`, `data_0__1` and `data_0__2`. The indices after `__` specify the order of the variadic parameters.
+## Setup
+The easiest way to get started is to run
 
-Notes:
-* the indices should not have leading zeros
-* the indices should not contain any gaps. For example, adding connectors `data_0__0`, `data_0__2` to the `Sum` operator is invalid because the parameter with index 1 is missing.
+    make install
+    
+This will setup DaCeML in a newly created virtual environment.
 
-### Attributes
-You can set attributes by passing them to the `ONNXConv` constructor. For example
-```python
-conv = ONNXConv("MyConvNode", strides=[2, 2])
-```
+*For more detailed instructions, including ONNXRuntime installation, see [Installation](https://daceml.readthedocs.io/en/latest/overviews/installation.html).*
 
 ## Development
-The `Makefile` contains a few commands for development tasks such as running tests, checking formatting or installing the package.
-
-For example, the following command would install the package and run tests
-
-	VENV_PATH='' make install test
-
-If you would like to create a virtual environment and install to it, remove `VENV_PATH=''` from the above command
+Common development tasks are automated using the `Makefile`. 
+See [Development](https://daceml.readthedocs.io/en/latest/overviews/development.html) for more information.

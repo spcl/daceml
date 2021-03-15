@@ -23,13 +23,19 @@ setup(
     packages=['daceml'],
     package_data={'': ['*.cpp']},
     install_requires=[
-        'dace@git+https://github.com/spcl/dace.git@866554a', 'onnx == 1.7.0',
-        'torch'
+        'dace@git+https://github.com/orausch/dace.git@daceml_branch',
+        'onnx == 1.7.0', 'torch', 'dataclasses; python_version < "3.7"'
     ],
     # install with pip and --find-links (see Makefile)
     # See https://github.com/pypa/pip/issues/5898
     extras_require={
-        'testing':
-        ['coverage', 'pytest', 'yapf', 'pytest-cov', 'transformers'],
+        'testing': [
+            'coverage', 'pytest', 'yapf', 'pytest-cov', 'transformers',
+            'pytest-xdist', 'torchvision'
+        ],
+        'docs': [
+            'sphinx==3.2.1', 'sphinx_rtd_theme==0.5.0',
+            'sphinx-autodoc-typehints==1.11.1'
+        ],
         'debug': ['onnxruntime']
     })

@@ -1,10 +1,15 @@
 import torch
 import numpy as np
+import pytest
 
 from daceml.pytorch import DaceModule
 
+from dace.transformation.dataflow import RedundantSecondArray
+from daceml.transformation import ConstantFolding
 
-def test_attn(gpu):
+
+@pytest.mark.ort
+def test_attn(gpu, sdfg_name):
     B = 2
     H = 16
     P = 64
@@ -19,12 +24,18 @@ def test_attn(gpu):
 
     pt_outputs = ptmodel(Q, K, V)
 
-    dace_model = DaceModule(ptmodel, cuda=gpu)
-    dace_outputs = dace_model(Q, K, V)
+    dace_model = DaceModule(ptmodel, cuda=gpu, sdfg_name=sdfg_name)
+    dace_outputs_0 = dace_model(Q, K, V)
+
+    dace_model.dace_model.sdfg.apply_transformations_repeated(
+        [ConstantFolding, RedundantSecondArray],
+        validate_all=True,
+        strict=True)
+    dace_outputs_1 = dace_model(Q, K, V)
 
     assert np.allclose(pt_outputs[0].detach().numpy(),
-                       dace_outputs[0],
+                       dace_outputs_1[0],
                        atol=1e-06)
     assert np.allclose(pt_outputs[1].detach().numpy(),
-                       dace_outputs[1],
+                       dace_outputs_1[1],
                        atol=1e-06)

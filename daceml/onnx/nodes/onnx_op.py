@@ -1,21 +1,63 @@
 import itertools
 import logging
-from typing import Iterator, Tuple, List, Dict
+from typing import Iterator, Tuple, List, Dict, Type
 
 import dace
 import dace.sdfg.nodes as nd
+import dace.frontend.common.op_repository as dace_op_repo
+from dace.frontend.python.newast import ProgramVisitor
 import onnx
-from dace import SDFG, SDFGState
+from dace import SDFG, SDFGState, dtypes, data
 from dace.properties import Property, ListProperty
 from dace.sdfg.graph import MultiConnectorEdge
 from dace.transformation.transformation import ExpandTransformation
 
 from daceml.onnx.environments import ONNXRuntime
 from daceml.onnx.nodes.node_utils import parse_variadic_param
-from daceml.onnx.schema import ONNXSchema, ONNXAttributeType, _ATTR_TYPE_TO_PYTHON_TYPE, ONNXParameterType
+from daceml.onnx.schema import ONNXSchema, ONNXAttributeType, _ATTR_TYPE_TO_PYTHON_TYPE, ONNXParameterType, ONNXAttribute, ONNXParameter, ONNXTypeConstraint
 from daceml.onnx.nodes.codegen import expand_node
 
 log = logging.getLogger(__name__)
+
+
+def _get_typecons_docstring(cons: ONNXTypeConstraint) -> str:
+    return "    * **{}** -- {}".format(
+        cons.type_str,
+        ", ".join(":class:`{}`".format(t.to_string()) for t in cons.types))
+
+
+def _get_connector_docstring(param: ONNXParameter) -> str:
+    return "    * **{}** ({}, {}) -- {}".format(param.name, param.type_str,
+                                                param.param_type.name.lower(),
+                                                param.description)
+
+
+def _get_attr_docstring(attr: ONNXAttribute) -> str:
+    param_doc = ":param {}: {}".format(attr.name, attr.description)
+
+    if attr.type is ONNXAttributeType.Unsupported:
+        return ""
+
+    if attr.type is ONNXAttributeType.Tensor:
+        type_string = "numpy.ndarray"
+    else:
+        type_string = _ATTR_TYPE_TO_PYTHON_TYPE[attr.type].__name__
+
+    type_string = ":class:`{}`".format(type_string)
+
+    if attr.type in [
+            ONNXAttributeType.Ints, ONNXAttributeType.Floats,
+            ONNXAttributeType.Strings
+    ]:
+        type_string = ":class:`List` [{}]".format(type_string)
+
+    if not attr.required:
+        type_string = ":class:`Optional` [{}], default={}".format(
+            type_string, repr(attr.default_value))
+
+    param_type = ":type {}: {}".format(attr.name, type_string)
+
+    return param_doc + "\n" + param_type
 
 
 def get_missing_arguments_message(function_name, missing_arguments,
@@ -36,7 +78,9 @@ def get_missing_arguments_message(function_name, missing_arguments,
 
 
 class ONNXOp(nd.LibraryNode):
-    """ Abstract superclass for all ONNX ops"""
+    """ Abstract superclass for all ONNX ops. Do not use this class, use the concrete subclasses
+        (e.g. :class:`~daceml.onnx.nodes.onnx_op.ONNXConv`) instead.
+    """
 
     # Global properties
     # these two are filled out in the generated constructor
@@ -48,21 +92,34 @@ class ONNXOp(nd.LibraryNode):
                       desc="The operator's ONNX OpSchema",
                       allow_none=True)
 
-    def iter_outputs_in_onnx_order(self, state):
+    def iter_outputs_in_onnx_order(
+            self, state: SDFGState) -> List[MultiConnectorEdge]:
         """ Iterate through the input edges in the same order as they would appear in an ONNX node proto.
             This assumes that the node has been validated!
+
+            :param state: the state containing this node.
+            :return: the out edges in the order as they would appear in the node proto.
         """
         return self._iter_params_in_onnx_order(state, inputs=False)
 
-    def iter_inputs_in_onnx_order(self, state):
+    def iter_inputs_in_onnx_order(
+            self, state: SDFGState) -> List[MultiConnectorEdge]:
         """ Iterate through the output edges in the same order as they would appear in an ONNX node proto.
             This assumes that the node has been validated!
+
+            :param state: the state containing this node.
+            :return: the in edges in the order as they would appear in the node proto.
         """
         return self._iter_params_in_onnx_order(state, inputs=True)
 
-    def _iter_params_in_onnx_order(self, state, inputs=False):
+    def _iter_params_in_onnx_order(
+            self,
+            state: SDFGState,
+            inputs: bool = False) -> List[MultiConnectorEdge]:
         parameters = list(
             self.schema.inputs if inputs else self.schema.outputs)
+        if len(parameters) == 0:
+            return []
         if parameters[-1].param_type == ONNXParameterType.Variadic:
             name = parameters[-1].name
             parameters = itertools.chain(
@@ -86,12 +143,13 @@ class ONNXOp(nd.LibraryNode):
         """ Returns an iterator over tuples of an edge and a boolean that indicates whether that edge is an input,
             ordered by the order required by the schema.
             This method assumes that this node has been validated.
+
+            :param state: the state containing this node.
         """
         in_edges: List[MultiConnectorEdge] = state.in_edges(self)
         out_edges: List[MultiConnectorEdge] = state.out_edges(self)
 
         def get_idx(parameters, name):
-            full_name = name
             if '__' in name:
                 name, number = parse_variadic_param(name)
             else:
@@ -125,6 +183,11 @@ class ONNXOp(nd.LibraryNode):
                                zip(sorted_out, itertools.repeat(False)))
 
     def validate(self, sdfg: SDFG, state: SDFGState):
+        """ Validate this node.
+
+            :param sdfg: the parent sdfg.
+            :param state: the parent state.
+        """
         in_edges = state.in_edges(self)
         out_edges = state.out_edges(self)
 
@@ -337,10 +400,42 @@ class ONNXOp(nd.LibraryNode):
                     "Expected value for required attribute '{}', got None".
                     format(attr))
 
-    @staticmethod
-    def expansion(node, state: SDFGState, sdfg: SDFG):
-        # Extract input and output array views (as generated by memlets)
-        return expand_node(node, state, sdfg)
+
+def register_op_repo_replacement(cls: Type[ONNXOp], cls_name: str,
+                                 dace_schema: ONNXSchema):
+    @dace_op_repo.replaces("daceml.onnx.{}".format(cls_name))
+    def op_repo_replacement(pv: ProgramVisitor, sdfg: SDFG, state: SDFGState,
+                            **kwargs):
+        attrs = {
+            name: value
+            for name, value in kwargs.items() if name in dace_schema.attributes
+        }
+        onnx_node = cls(name=cls_name, **attrs)
+        state.add_node(onnx_node)
+
+        input_names = {p.name for p in dace_schema.inputs}
+        output_names = {p.name for p in dace_schema.outputs}
+        inputs = {
+            name: arr_name
+            for name, arr_name in kwargs.items() if name in input_names
+        }
+        outputs = {
+            name: arr_name
+            for name, arr_name in kwargs.items() if name in output_names
+        }
+
+        for inp, arr_name in inputs.items():
+            read = state.add_read(arr_name)
+            state.add_edge(read, None, onnx_node, inp,
+                           sdfg.make_array_memlet(arr_name))
+            onnx_node.add_in_connector(inp)
+
+        for outp, arr_name in outputs.items():
+            write = state.add_read(arr_name)
+            state.add_edge(onnx_node, outp, write, None,
+                           sdfg.make_array_memlet(arr_name))
+            onnx_node.add_out_connector(outp)
+        return []
 
 
 _ONNX_OPS_BY_NAME = {}
@@ -352,11 +447,7 @@ for schema in onnx.defs.get_all_schemas():
         log.debug("Import of {} failed: {}".format(schema.name, e))
         continue
 
-    docstring = dace_schema.doc
     attrs = {}
-    attrs['__doc__'] = docstring
-    attrs['schema'] = dace_schema
-
     # add properties for each op attribute
     for name, attr in dace_schema.attributes.items():
         if attr.type in [
@@ -426,52 +517,115 @@ for schema in onnx.defs.get_all_schemas():
         for name, attr in op_attributes.items():
             setattr(self, name, attr)
 
-    attrs['__init__'] = __init__
+    input_connector_docstrings = "\n".join(
+        _get_connector_docstring(param) for param in dace_schema.inputs)
+    output_connector_docstrings = "\n".join(
+        _get_connector_docstring(param) for param in dace_schema.outputs)
 
     cls_name = "ONNX" + dace_schema.name
+
+    # the first line of the init docstring contains the signature of the method. This will be picked up by sphinx and
+    # means that the generated sphinx docs have a proper signature, and not just *args, **kwargs.
+    init_docstring = "__init__(name, *, {})\n".format(
+        ", ".join(attr.name if attr.required else attr.name + "=" +
+                  repr(attr.default_value)
+                  for _, attr in dace_schema.attributes.items()))
+    init_docstring += ":param name: the name of the node.\n" + "\n".join(
+        _get_attr_docstring(attr)
+        for _, attr in dace_schema.attributes.items())
+
+    docstring = "\n" + dace_schema.doc
+    type_docstrings = "\n".join(
+        _get_typecons_docstring(cons)
+        for _, cons in dace_schema.type_constraints.items())
+    docstring += "\n\n"
+    docstring += ":Node Inputs:" + input_connector_docstrings
+    docstring += "\n\n"
+    docstring += ":Node Outputs:" + output_connector_docstrings
+    docstring += "\n\n"
+    docstring += ":Type Constraints:" + type_docstrings
+
+    attrs['__doc__'] = docstring + "\n"
+    attrs['schema'] = dace_schema
+
+    attrs['__init__'] = __init__
+
     cls = type(cls_name, (ONNXOp, ), attrs)
     cls = dace.library.node(cls)
+    cls.__init__.__doc__ = "\n" + init_docstring
 
     # Register ORT implementation
     ##########################################
 
     @dace.library.expansion
     class Expansion(ExpandTransformation):
-        environments = [ONNXRuntime]
+        environments = []
 
-        @staticmethod
-        def expansion(node, state: SDFGState, sdfg: SDFG):
-            return node.expansion(node, state, sdfg)
+        @classmethod
+        def expansion(cls, node, state: SDFGState, sdfg: SDFG):
+            result = expand_node(node, state, sdfg)
+
+            if not isinstance(result, SDFG):
+                # when we return an SDFG the the environments will be determined recursively by codegen.
+                cls.environments = map(dace.library.get_environment,
+                                       result.environments)
+            return result
 
     cls.register_implementation('onnxruntime', Expansion)
-    cls.default_implementation = 'onnxruntime'
 
     # Register pure implementations
     ##########################################
 
     # avoid import loop
-    from daceml.onnx.implementation_abc import ONNXForward
+    from daceml.onnx.forward_implementation_abc import ONNXForward
 
+    registered = False
     for impl, args in ONNXForward.extensions().items():
-
         if "op" in args and args["op"] == schema.name:
 
             class Expansion(ExpandTransformation):
-                environments = [ONNXRuntime]
+                environments = []
                 forward_impl: ONNXForward = impl
 
                 @classmethod
                 def expansion(cls, node, state, sdfg):
-                    if cls.forward_impl.forward_can_be_applied(
+                    # scalars on gpu don't work in dace at the moment.
+                    skip_due_to_scalars_on_gpu = (
+                        node.schedule == dtypes.ScheduleType.GPU_Default
+                        and any(
+                            isinstance(sdfg.arrays[e.data.data], data.Scalar)
+                            for e in state.out_edges(node)))
+
+                    if not skip_due_to_scalars_on_gpu and cls.forward_impl.forward_can_be_applied(
                             node, state, sdfg):
                         return cls.forward_impl.forward(node, state, sdfg)
                     else:
                         # fall back to ORT
-                        return node.expansion(node, state, sdfg)
+                        reason = (
+                            "scalar inputs/outputs are not supported on GPU"
+                            if skip_due_to_scalars_on_gpu else
+                            "forward_can_be_applied returned False")
+                        log.info(
+                            'Falling back to onnxruntime expansion for library node "{}". Reason: {}'
+                            .format(node.label, reason))
+                        result = expand_node(node, state, sdfg)
+                        if not isinstance(result, SDFG):
+                            # when we return an SDFG the the environments will be determined recursively by codegen.
+                            cls.environments = map(
+                                dace.library.get_environment,
+                                result.environments)
+                        return result
 
-            implementation_name = impl.__name__
+            implementation_name = args["name"]
             cls.register_implementation(implementation_name, Expansion)
-            cls.default_implementation = implementation_name
+            registered = True
+
+    if not registered:
+        cls.default_implementation = "onnxruntime"
+
+    # register python frontend replacement
+    #######################################
+    register_op_repo_replacement(cls, cls_name, dace_schema)
 
     globals()[cls_name] = cls
     _ONNX_OPS_BY_NAME[cls_name] = cls
@@ -479,15 +633,17 @@ for schema in onnx.defs.get_all_schemas():
 del cls
 
 
-def has_onnx_node(name: str):
-    """ Check if an ONNX operator is supported
-        :param name: the operator name
+def has_onnx_node(name: str) -> bool:
+    """ Check if an ONNX operator is supported.
+
+        :param name: the operator name.
     """
     return ("ONNX" + name) in _ONNX_OPS_BY_NAME
 
 
-def get_onnx_node(name: str):
-    """ Get the ONNX Operator node for an operator by name
+def get_onnx_node(name: str) -> ONNXOp:
+    """ Get the ONNX Operator node for an operator by name.
+
         :param name: the operator name
     """
     return _ONNX_OPS_BY_NAME["ONNX" + name]

@@ -1,0 +1,34 @@
+name: GPU CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  test-gpu:
+    runs-on: [self-hosted, linux, gpu]
+    env:
+      ORT_ROOT: '/opt/onnxruntime'
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+
+      - name: Install dependencies
+        env:
+          UPDATE_PIP: 'true'
+        run: |
+          rm -rf .dacecache tests/.dacecache
+          . /opt/setupenv
+          make clean install
+
+      - name: Test with pytest
+        env:
+          PYTEST_ARGS: --cov=daceml --cov-report=term --cov-report xml --cov-config=.coveragerc --gpu-only -m "not slow"
+        run: make test
+
+      - name: Upload coverage
+        run: make codecov

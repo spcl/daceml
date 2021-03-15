@@ -4,10 +4,11 @@ import torch.nn.functional as F
 
 import numpy as np
 
+import daceml.onnx as donnx
 from daceml.pytorch import DaceModule, dace_module
 
 
-def test_conv2d():
+def test_conv2d(default_implementation, sdfg_name):
     class Model(nn.Module):
         def __init__(self):
             super(Model, self).__init__()
@@ -25,7 +26,7 @@ def test_conv2d():
     class TestDecorator(Model):
         pass
 
-    dace_model = DaceModule(ptmodel)
+    dace_model = DaceModule(ptmodel, sdfg_name=sdfg_name)
     dace_output = dace_model(x)
 
     dace_model_decorated = TestDecorator()
@@ -33,4 +34,4 @@ def test_conv2d():
 
     torch_output = ptmodel(x)
 
-    assert np.allclose(torch_output.detach().numpy(), dace_output)
+    assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)

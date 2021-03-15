@@ -1,0 +1,64 @@
+name: CPU CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  check-formatting:
+    runs-on: ubuntu-latest
+    env:
+      VENV_PATH: ''
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: 'recursive'
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: 3.7
+
+    - name: Install dependencies
+      run: make install
+       
+    - name: Check formatting
+      run: make check-formatting
+
+  test-cpu:
+    runs-on: ubuntu-latest
+    env:
+      VENV_PATH: ''
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: 'recursive'
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: 3.7
+
+    - name: Install dependencies
+      run: |
+        wget https://github.com/orausch/onnxruntime/releases/download/build1/onnxruntime_dist_cpu.tar.gz
+        tar -xzf onnxruntime_dist_cpu.tar.gz
+        make install
+
+    - name: Test with pytest
+      env:
+        ORT_RELEASE: ${{ github.workspace }}/onnxruntime_dist_cpu
+        PYTEST_ARGS: --cov=daceml --cov-report=term --cov-report xml --cov-config=.coveragerc -m "not slow"
+      run: make test
+
+    - name: Test with doctest
+      env:
+        ORT_RELEASE: ${{ github.workspace }}/onnxruntime_dist_cpu
+      run: make doctest
+
+    - name: Upload coverage
+      run: make codecov
