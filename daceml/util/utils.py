@@ -3,6 +3,7 @@ from functools import wraps
 
 import dace
 from dace import nodes as nd
+from dace.libraries import blas
 from dace.sdfg.state import MultiConnectorEdge
 from dace import SDFG, SDFGState
 import dace.data as dt
@@ -101,7 +102,7 @@ def find_str_not_in_set(existing: typing.Set[str],
 
 def expand_onnx_nodes(sdfg: dace.SDFG):
     """ Recursively expand all onnx library nodes in the SDFG, resulting in an SDFG that can be optimized by
-        dace transformations.
+        dace transformations. Will also specialize dace matmuls.
 
         :param sdfg: the sdfg to expand nodes on.
     """
@@ -112,7 +113,7 @@ def expand_onnx_nodes(sdfg: dace.SDFG):
         for node in list(state.nodes()):  # Make sure we have a copy
             if isinstance(node, nd.NestedSDFG):
                 expand_onnx_nodes(node.sdfg)
-            elif isinstance(node, ONNXOp):
+            elif isinstance(node, ONNXOp) or isinstance(node, blas.MatMul):
                 impl_name = node.expand(sdfg, state)
                 print(
                     "Automatically expanded library node \"{}\" with implementation \"{}\"."

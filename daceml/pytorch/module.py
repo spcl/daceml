@@ -27,6 +27,7 @@ class DaceModule(nn.Module):
         :param apply_strict: whether to apply strict transforms after conversion (this generally improves performance,
                              but can be slow).
         :param sdfg_name: the name to give to the sdfg (defaults to ``dace_model``).
+        :param auto_optimize: whether to apply automatic optimizations.
 
         :Example:
 
@@ -53,15 +54,18 @@ class DaceModule(nn.Module):
             train: bool = False,
             backward=False,
             apply_strict: bool = False,
+            auto_optimize: bool = True,
             sdfg_name: typing.Optional[str] = None):
         super(DaceModule, self).__init__()
 
         self.backward = backward
         self.model = module
+        self.dace_model: typing.Optional[ONNXModel] = None
         self.train = train
         self.sdfg: typing.Optional[dace.SDFG] = None
         self.cuda = cuda
         self.sdfg_name = sdfg_name or "dace_model"
+        self.auto_optimize = auto_optimize
         self.apply_strict = apply_strict
         if dummy_inputs is not None:
             self.dace_model = self._initialize_sdfg(dummy_inputs)
@@ -95,6 +99,11 @@ class DaceModule(nn.Module):
                                    cuda=self.cuda,
                                    apply_strict=self.apply_strict)
             self.sdfg = dace_model.sdfg
+            self.dace_model = dace_model
+
+            if self.auto_optimize:
+                self.dace_model.auto_optimize()
+
             self.sdfg.validate()
 
             if self.backward:
@@ -127,6 +136,7 @@ def dace_module(
         train: bool = False,
         backward=False,
         apply_strict: bool = False,
+        auto_optimize: bool = True,
         sdfg_name: typing.Optional[str] = None):
     """ Decorator to apply on a definition of a ``torch.nn.Module`` to
         convert it to a data-centric module upon construction.
@@ -153,6 +163,7 @@ def dace_module(
         :param backward: whether to enable the backward pass.
         :param apply_strict: whether to apply strict transforms after conversion (this generally improves performance,
                              but can be slow).
+        :param auto_optimize: whether to apply automatic optimizations.
         :param sdfg_name: the name to give to the sdfg (defaults to ``dace_model``).
     """
     @wraps(moduleclass)
@@ -163,6 +174,7 @@ def dace_module(
                           train=train,
                           backward=backward,
                           apply_strict=apply_strict,
+                          auto_optimize=auto_optimize,
                           sdfg_name=sdfg_name)
 
     return _create

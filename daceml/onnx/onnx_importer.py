@@ -16,11 +16,13 @@ from dace.sdfg import SDFG, SDFGState
 from dace.dtypes import AccessType, StorageType, AllocationLifetime
 import dace.sdfg.nodes as nd
 from dace.symbolic import pystr_to_symbolic
+from dace.transformation import auto_optimize
 
 from daceml.onnx.shape_inference import shape_inference
 from daceml.onnx.converters import convert_attribute_proto, onnx_tensor_type_to_typeclass, clean_onnx_name
 from daceml.onnx.schema import ONNXParameterType
-from daceml.onnx.nodes.onnx_op import get_onnx_node, has_onnx_node
+from daceml.onnx.nodes.onnx_op import get_onnx_node, has_onnx_node, ONNXOp
+from daceml.util import utils
 
 numpy_to_torch_dtype_dict = {
     np.bool: torch.bool,
@@ -467,6 +469,17 @@ class ONNXModel:
             seen |= new_parameters
 
         return clean_inputs, params, inferred_symbols, outputs
+
+    def expand_onnx_nodes(self):
+        utils.expand_onnx_nodes(self.sdfg)
+
+    def auto_optimize(self):
+        self.expand_onnx_nodes()
+        # MKL is currently broken
+        auto_optimize.set_fast_implementations(
+            self.sdfg,
+            dace.DeviceType.GPU if self.cuda else dace.DeviceType.CPU,
+            blocklist=["MKL"])
 
 
 def create_output_array(
