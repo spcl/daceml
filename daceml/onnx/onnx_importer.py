@@ -100,7 +100,8 @@ class ONNXModel:
                  model: onnx.ModelProto,
                  infer_shapes: bool = True,
                  cuda: bool = False,
-                 apply_strict: bool = False):
+                 apply_strict: bool = False,
+                 auto_optimize: bool = True):
         """
         :param name: the name for the SDFG.
         :param model: the model to import.
@@ -109,8 +110,10 @@ class ONNXModel:
         :param cuda: if ``True``, the model will be executed on the GPU.
         :param apply_strict: if ``True``, apply strict transformations after all nodes have
                              been expanded calling (warning: this can be very slow!)
+        :param auto_optimize: if ``True``, apply automatic optimizations before calling.
         """
 
+        self.do_auto_optimize = auto_optimize
         if infer_shapes:
             model = shape_inference.infer_shapes(model)
 
@@ -365,7 +368,9 @@ class ONNXModel:
                                                            kwargs=kwargs)
 
         sdfg = deepcopy(self.sdfg)
-        sdfg.expand_library_nodes()
+
+        if self.do_auto_optimize:
+            self.auto_optimize()
 
         if self.apply_strict:
             sdfg.apply_strict_transformations()
