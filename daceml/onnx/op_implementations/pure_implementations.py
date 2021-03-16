@@ -53,7 +53,7 @@ def program_for_node(program, sdfg: SDFG, state: SDFGState,
 
     program.__annotations__ = annotations
 
-    result = DaceProgram(program, (), {})
+    result = DaceProgram(program, (), {}, auto_optimize=False, device=dtypes.DeviceType.CPU)
     result.name = node.label + "_expansion"
 
     return result

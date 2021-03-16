@@ -14,6 +14,7 @@ from dace import dtypes
 from dace.sdfg import utils as sdutil
 from dace.sdfg import nodes as sdfg_nodes
 
+
 def test_bert_encoder(gpu, default_implementation, sdfg_name):
     if not gpu and default_implementation == 'onnxruntime':
         pytest.skip("combination is tested below")
@@ -70,6 +71,9 @@ def test_bert_cf(sdfg_name):
 
 
 def test_bert_encoder_transformations():
+    default_impl = donnx.default_implementation
+    donnx.default_implementation = "pure"
+
     batch_size = 8
     seq_len = 64
     hidden_size = 16
@@ -84,11 +88,9 @@ def test_bert_encoder_transformations():
                                    num_attention_heads=num_attention_heads, intermediate_size=intermediate_size)).eval()
     pt_outputs = ptmodel(input.clone())
 
-    dace_model = DaceModule(ptmodel, cuda=False, train=False)
+    dace_model = DaceModule(ptmodel, dummy_inputs=input.clone(), cuda=False, train=False)
 
     # Transformed version
-
-    dace_model.dace_model = dace_model.initialize_sdfg(input.clone())
 
     dace_model.sdfg.save('attn1.sdfg')
     print('attn1.sdfg')
@@ -104,8 +106,10 @@ def test_bert_encoder_transformations():
 
     pattern = sdutil.node_path_graph(dace.nodes.MapExit, dace.nodes.AccessNode, dace.nodes.MapEntry)
 
-    for subgraph in enumerate_matches(dace_model.sdfg, pattern):
-        softmax_state: dace_state.SDFGState = subgraph.graph
+    subgraphs = list(enumerate_matches(dace_model.sdfg, pattern))
+    assert(len(subgraphs) == 2) # there should be two matches
+    assert(subgraphs[0].graph == subgraphs[1].graph) # both matches should be inside the softmax
+    softmax_state: dace_state.SDFGState = subgraphs[0].graph
 
     softmax_sdfg: dace_sdfg.SDFG = softmax_state.parent
 
@@ -318,6 +322,8 @@ def test_bert_encoder_transformations():
     diff = np.abs(dace_outputs1 - pt_outputs[0].detach().numpy())
 
     assert np.max(diff) < 1e-6
+
+    donnx.default_implementation = default_impl
 
 
 if __name__ == "__main__":
