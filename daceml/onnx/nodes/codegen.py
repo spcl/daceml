@@ -481,7 +481,8 @@ def expand_node(node, state, sdfg):
                     f"{ONNXRuntimeCUDA.max_concurrent_streams}, but node {node} had stream id "
                     f"{node._cuda_stream}")
             if ONNXRuntimeCUDA.use_streams:
-                used_provider_index = 0 if provider_index == 0 or not hasattr(node, "_cuda_stream") else 1 + node._cuda_stream
+                used_provider_index = 0 if provider_index == 0 or not hasattr(
+                    node, "_cuda_stream") else 1 + node._cuda_stream
             else:
                 used_provider_index = provider_index
 
