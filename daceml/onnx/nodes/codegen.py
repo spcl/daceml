@@ -480,15 +480,17 @@ def expand_node(node, state, sdfg):
                     f"This environment was initialized with max_concurrent_streams="
                     f"{ONNXRuntimeCUDA.max_concurrent_streams}, but node {node} had stream id "
                     f"{node._cuda_stream}")
+            if ONNXRuntimeCUDA.use_streams:
+                used_provider_index = 0 if provider_index == 0 or not hasattr(node, "_cuda_stream") else 1 + node._cuda_stream
+            else:
+                used_provider_index = provider_index
 
             # delay this until codegen so that we know what cuda stream this node should run on
-            return env_init_code + (
-                "__ort_check_status(__state->ort_api, __state->ort_api->CreateExecutableKernel("
-                "__state->ort_session, __state->ort_context_{id}, /*provider_index=*/{provider_index},"
-                " &__state->ort_kernel_{id}));\n".format(
-                    provider_index=0 if provider_index == 0 or not hasattr(
-                        node, "_cuda_stream") else 1 + node._cuda_stream,
-                    id=unique_id))
+            return env_init_code + f"""
+                __ort_check_status(__state->ort_api, __state->ort_api->CreateExecutableKernel(
+                __state->ort_session, __state->ort_context_{unique_id}, /*provider_index=*/{used_provider_index},
+                 &__state->ort_kernel_{unique_id}));
+                """
 
         finalize_code = env_finalize_code
 
