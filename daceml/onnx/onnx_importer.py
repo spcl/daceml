@@ -367,15 +367,13 @@ class ONNXModel:
         inputs, params, symbols, outputs = self._call_args(args=args,
                                                            kwargs=kwargs)
 
-        sdfg = deepcopy(self.sdfg)
-
         if self.do_auto_optimize:
             self.auto_optimize()
 
         if self.apply_strict:
-            sdfg.apply_strict_transformations()
+            self.sdfg.apply_strict_transformations()
 
-        sdfg(**inputs, **outputs, **params, **symbols)
+        self.sdfg(**inputs, **outputs, **params, **symbols)
 
         if len(outputs) == 1:
             return next(iter(outputs.values()))
