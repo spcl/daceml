@@ -38,15 +38,17 @@ if __name__ == "__main__":
     g_inits = {p.name: p for p in input_model.graph.initializer}
     g_vinfs = {p.name: p for p in input_model.graph.value_info}
 
-    state = dict(inputs={}, vinfs={}, outputs={}, nodes=[], inits={})
+    state = dict(inputs={}, vinfs={}, outputs={}, inits={})
 
     node_queue = collections.deque([get_node_idx(args.target)])
+    added_nodes = set()
     while len(node_queue) > 0:
-        node = input_model.graph.node[node_queue.popleft()]
+        idx = node_queue.popleft()
+        if idx in added_nodes:
+            continue
+        added_nodes.add(idx)
+        node = input_model.graph.node[idx]
         print(f"extracting {node.name}")
-
-        # copy node to new_graph
-        state["nodes"] = [node] + state["nodes"]
 
         for inp_name in node.input:
             if inp_name in set(state["inputs"]).union(state["vinfs"]).union(
@@ -80,12 +82,13 @@ if __name__ == "__main__":
             elif outp_name in g_outputs:
                 state["outputs"][outp_name] = g_outputs[outp_name]
 
-    output_graph = helper.make_graph(state["nodes"],
-                                     "subgraph",
-                                     inputs=state["inputs"].values(),
-                                     outputs=state["outputs"].values(),
-                                     initializer=state["inits"].values(),
-                                     value_info=state["vinfs"].values())
+    output_graph = helper.make_graph(
+        [input_model.graph.node[i] for i in sorted(added_nodes)],
+        "subgraph",
+        inputs=list(state["inputs"].values()),
+        outputs=list(state["outputs"].values()),
+        initializer=list(state["inits"].values()),
+        value_info=list(state["vinfs"].values()))
     onnx.checker.check_graph(output_graph)
     output_model = helper.make_model(output_graph, producer_name="python-api")
     onnx.checker.check_model(output_model, full_check=True)
