@@ -96,13 +96,16 @@ class DaceModule(nn.Module):
             dace_model = ONNXModel(self.sdfg_name,
                                    onnx_model,
                                    infer_shapes=False,
-                                   cuda=self.cuda,
-                                   apply_strict=self.apply_strict)
+                                   cuda=self.cuda)
             self.sdfg = dace_model.sdfg
             self.dace_model = dace_model
 
             if self.auto_optimize:
                 self.dace_model.auto_optimize()
+
+            if self.apply_strict:
+                self.dace_model.sdfg.apply_strict_transformations()
+            self.sdfg.view()
 
             self.sdfg.validate()
 
