@@ -134,20 +134,22 @@ that the engine can differentiate. Usually, this means that the engine will expa
 implementation consisting of simple tasklets and maps.
 
 However, it is sometimes desirable to "exit" this expansion process at a stage earlier than the lowest level.
-For instance, consider differentiating the :class:``~daceml.onnx.ONNXMatMul`` library node. Since no backward
-implementation exists for this node, it will be expanded to it's pure version, an :class:``~daceml.onnx.ONNXEinsum``.
-Fully expanding this node into it's pure form would result in a mapped tasklet, which we could differentiate. However,
-we would like to use BLAS nodes on the forward and backward pass where possible. To achieve this, a custom backward
-implementation is registered for ``ONNXEinsum``, which returns a ``NestedSDFG`` containing other einsums. Since we avoid
+For instance, consider differentiating the :class:`~daceml.onnx.nodes.onnx_op.ONNXMatMul` library node. Since no
+backward implementation exists for this node, it will be expanded to its pure version, an
+:class:`~daceml.onnx.nodes.onnx_op.ONNXEinsum`. Fully expanding this node into its pure form would result in a mapped
+tasklet, which we could differentiate. However, we would like to use BLAS nodes on the forward and backward pass where
+possible. To achieve this, a custom backward implementation is registered for
+:class:`~daceml.onnx.nodes.onnx_op.ONNXEinsum`, which returns a ``NestedSDFG`` containing other einsums. Since we avoid
 lowering to the lowest level, we are able to preserve information, and can later potentially expand both the forward and
 backward pass einsums to more efficient BLAS calls.
 
-Another example is :class:`~daceml.onnx.ONNXSoftmax`: a typical implementation includes a maximum operation for
-numerical stablility. Differentiating this implementation results in several argmax calls, which is not desirable.
+Another example is :class:`~daceml.onnx.nodes.onnx_op.ONNXSoftmax`: a typical implementation includes a maximum
+operation for numerical stablility. Differentiating this implementation results in several argmax calls, which is not
+desirable.
 
 In situations like these, it makes sense to provide a custom backward pass implementation.
 
-These implementations are registered using :class:`~daceml.autodiff.BackwardImplementation`. This requires implementation
-of :meth:`~Daceml.autodiff.BackwardImplementation.backward`. Examples of this are
+These implementations are registered using :class:`~daceml.autodiff.BackwardImplementation`. This requires
+implementation of :meth:`~Daceml.autodiff.BackwardImplementation.backward`. Examples of this are
 :class:`daceml.autodiff.implementations.onnx_ops.DefaultEinsumBackward` and
 :class:`daceml.autodiff.implementations.onnx_ops.DefaultSoftmaxBackward`.
