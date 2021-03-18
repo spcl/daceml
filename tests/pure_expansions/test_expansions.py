@@ -55,6 +55,24 @@ def test_matmul_expansion(a_shape, b_shape, sdfg_name):
 
 
 @pytest.mark.pure
+@pytest.mark.gpu
+def test_cast_scalar_on_gpu():
+    to_int = converters.typeclass_to_onnx_tensor_type_int(dace.float32)
+
+    @dace.program
+    def cast_scalar_on_gpu(inp: dace.float64):
+        output = dace.define_local_scalar(dace.float32)
+        donnx.ONNXCast(input=inp, output=output, to=to_int)
+        output_unsqueeze = dace.define_local([1], dace.float32)
+        output_unsqueeze[0] = output
+        return output_unsqueeze
+
+    sdfg = cast_scalar_on_gpu.to_sdfg()
+    result = sdfg(inp=2)
+    assert result[0] == 2
+
+
+@pytest.mark.pure
 def test_cast_int_to_float(sdfg_name):
     sdfg = dace.SDFG(sdfg_name)
 

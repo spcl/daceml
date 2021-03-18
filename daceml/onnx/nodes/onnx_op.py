@@ -619,18 +619,14 @@ for schema in onnx.defs.get_all_schemas():
                             isinstance(sdfg.arrays[e.data.data], data.Scalar)
                             for e in state.out_edges(node)))
 
-                    if not skip_due_to_scalars_on_gpu and cls.forward_impl.forward_can_be_applied(
+                    if cls.forward_impl.forward_can_be_applied(
                             node, state, sdfg):
                         return cls.forward_impl.forward(node, state, sdfg)
                     else:
                         # fall back to ORT
-                        reason = (
-                            "scalar inputs/outputs are not supported on GPU"
-                            if skip_due_to_scalars_on_gpu else
-                            "forward_can_be_applied returned False")
                         log.info(
-                            'Falling back to onnxruntime expansion for library node "{}". Reason: {}'
-                            .format(node.label, reason))
+                            'Falling back to onnxruntime expansion for library node "{}". Reason: forward_can_be_applied returned False'
+                            .format(node.label))
                         result = expand_node(node, state, sdfg)
                         if not isinstance(result, SDFG):
                             # when we return an SDFG the the environments will be determined recursively by codegen.

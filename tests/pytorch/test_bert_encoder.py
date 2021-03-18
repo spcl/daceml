@@ -34,6 +34,22 @@ def test_bert_encoder(gpu, default_implementation, sdfg_name):
 
     assert np.max(diff) < 1e-5
 
+    if default_implementation == "pure":
+        ort_nodes = [
+            n for n, _ in dace_model.sdfg.all_nodes_recursive()
+            if hasattr(n, "environments") and any("onnx" in e.lower()
+                                                  for e in n.environments)
+        ]
+        if len(ort_nodes) > 0:
+            assert False, f"expected pure graph, found ORT nodes: {ort_nodes} "
+
+        # check that cuBLAS is being used
+        if gpu:
+            assert any(
+                (hasattr(n, "environments") and "cuBLAS" in n.environments or
+                 hasattr(n, "implementation") and n.implementation == "cuBLAS")
+                for n, _ in dace_model.sdfg.all_nodes_recursive())
+
 
 @pytest.mark.ort
 def test_bert_cf(sdfg_name):
