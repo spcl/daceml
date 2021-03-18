@@ -524,6 +524,9 @@ class PureCast(ONNXForward):
     def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
 
+        if (in_desc_with_name(node, state, sdfg, "input").dtype == out_desc_with_name(node, state, sdfg, "output").dtype):
+            return True
+
         if node.schedule is dtypes.ScheduleType.GPU_Default:
             # TODO fix this (this breaks bert_full) because of a GPU scalar cast. Issue #20
             return False
@@ -539,8 +542,16 @@ class PureCast(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        def prog(input, output):
-            output[:] = dace.elementwise(lambda x: x, input)
+        input_desc = in_desc_with_name(node, state, sdfg, "input")
+        output_desc = out_desc_with_name(node, state, sdfg, "output")
+        if (input_desc.dtype == output_desc.dtype):
+            def prog(input, output):
+                # intermediate = input
+                output[:] = input
+        else:
+            def prog(input, output):
+                output[:] = dace.elementwise(lambda x: x, input)
+
 
         return program_for_node(prog, sdfg, state, node).to_sdfg()
 
