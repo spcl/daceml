@@ -39,7 +39,8 @@ def run_pytorch_module(module,
     dace_module = DaceModule(module,
                              backward=True,
                              sdfg_name=sdfg_name,
-                             apply_strict=apply_strict)
+                             apply_strict=apply_strict,
+                             auto_optimize=False)
 
     if use_max:
         dace_s = dace_module(dace_input).max()
@@ -150,7 +151,6 @@ def test_batched_matmul(sdfg_name):
             self.fc1 = nn.Parameter(torch.ones([10, 5, 3]))
 
         def forward(self, x):
-            x = self.fc1 @ x
-            return x
+            return self.fc1 @ x
 
     run_pytorch_module(Module(), sdfg_name, use_max=False)

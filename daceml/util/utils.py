@@ -7,6 +7,7 @@ from dace.libraries import blas
 from dace.sdfg.state import MultiConnectorEdge
 from dace import SDFG, SDFGState
 import dace.data as dt
+from dace.transformation.auto_optimize import set_fast_implementations
 
 from daceml.onnx.nodes.onnx_op import ONNXOp
 
@@ -123,3 +124,20 @@ def expand_onnx_nodes(sdfg: dace.SDFG):
                 expanded_something = True
         if expanded_something:
             states.append(state)  # Nodes have changed. Check state again
+
+
+def auto_optimize(sdfg: dace.SDFG, cuda, apply_strict=False):
+    """ Automatically optimize ``sdfg``.
+
+        :param sdfg: the sdfg to optimize (inplace).
+        :param cuda: whether to optimize for cuda.
+        :param apply_strict: whether to apply strict transformations to the sdfg after optimization.
+    """
+    expand_onnx_nodes(sdfg)
+    # MKL is currently broken
+    set_fast_implementations(
+        sdfg,
+        dace.DeviceType.GPU if cuda else dace.DeviceType.CPU,
+        blocklist=["MKL"])
+    if apply_strict:
+        sdfg.apply_strict_transformations()
