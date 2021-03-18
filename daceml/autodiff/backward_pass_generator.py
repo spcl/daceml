@@ -647,25 +647,12 @@ class BackwardPassGenerator:
                         # this grad hasn't been written before: initialize it
                         self._add_gradient_data_descriptor(node.data)
 
-                    # we need to set all incoming memlets to WCR Sum if there are conflicts.
-                    # for now this is a simple check; if the source or target node is a map, we do sum
+                    # we need to set all incoming memlets to WCR Sum. It's difficult to do this smarter at this
+                    # point because we might be inside a nested SDFG, and although it looks like we are the only
+                    # one writing out to the gradient, someone outside could be.
                     for edge in self.backward_state.in_edges(reversed_node):
                         for path_edge in self.backward_state.memlet_tree(edge):
-                            src_or_dest_map = (
-                                isinstance(path_edge.src,
-                                           (nd.MapExit, nd.MapEntry))
-                                or isinstance(path_edge.dst,
-                                              (nd.MapExit, nd.MapEntry)))
-                            connector_in_edges = collections.defaultdict(int)
-                            for _, _, _, dst_conn, _ in self.backward_state.in_edges(
-                                    path_edge.dst):
-                                connector_in_edges[dst_conn] += 1
-
-                            if any(v > 1 for v in connector_in_edges.values()
-                                   ) or src_or_dest_map:
-                                for edge in self.backward_state.in_edges(
-                                        path_edge.dst):
-                                    edge.data.wcr = "lambda x, y: x + y"
+                            path_edge.data.wcr = "lambda x, y: x + y"
 
             except AutoDiffException as e:
                 raise AutoDiffException(
@@ -970,8 +957,9 @@ class BackwardPassGenerator:
                                  given_gradients=given_gradients,
                                  required_gradients=required_gradients)
 
-        raise AutoDiffException("Unable to differentiate node type {}".format(
-            type(node)))
+        raise AutoDiffException(
+            "Unable to differentiate node type {}. Either add a pure forward implementation"
+            "or a backward implementation to progress.".format(type(node)))
 
     def _reverse_NestedSDFG(
         self,
