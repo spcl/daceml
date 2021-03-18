@@ -14,6 +14,7 @@ import dace
 from daceml.autodiff.pytorch import make_backward_function
 from daceml.onnx import ONNXModel
 from daceml.onnx.shape_inference import infer_shapes
+from daceml.util import utils
 
 
 class DaceModule(nn.Module):
@@ -100,18 +101,19 @@ class DaceModule(nn.Module):
             self.sdfg = dace_model.sdfg
             self.dace_model = dace_model
 
-            if self.auto_optimize:
-                self.dace_model.auto_optimize()
-
-            if self.apply_strict:
-                self.dace_model.sdfg.apply_strict_transformations()
-            self.sdfg.view()
-
             self.sdfg.validate()
 
             if self.backward:
                 function = make_backward_function(
                     dace_model, apply_strict=self.apply_strict)
+
+                if self.auto_optimize:
+                    utils.auto_optimize(function._forward_model.sdfg,
+                                        self.cuda,
+                                        apply_strict=self.apply_strict)
+                    utils.auto_optimize(function._backward_sdfg,
+                                        self.cuda,
+                                        apply_strict=self.apply_strict)
 
                 def forward(*args):
                     args_and_params = list(args)
@@ -120,6 +122,12 @@ class DaceModule(nn.Module):
 
                 return forward
             else:
+                if self.auto_optimize:
+                    self.dace_model.auto_optimize()
+
+                if self.apply_strict:
+                    self.dace_model.sdfg.apply_strict_transformations()
+                self.sdfg.validate()
                 return dace_model
 
     def forward(self, *actual_inputs):

@@ -370,9 +370,6 @@ class ONNXModel:
         if self.do_auto_optimize:
             self.auto_optimize()
 
-        if self.apply_strict:
-            self.sdfg.apply_strict_transformations()
-
         self.sdfg(**inputs, **outputs, **params, **symbols)
 
         if len(outputs) == 1:
@@ -477,12 +474,9 @@ class ONNXModel:
         utils.expand_onnx_nodes(self.sdfg)
 
     def auto_optimize(self):
-        self.expand_onnx_nodes()
-        # MKL is currently broken
-        auto_optimize.set_fast_implementations(
-            self.sdfg,
-            dace.DeviceType.GPU if self.cuda else dace.DeviceType.CPU,
-            blocklist=["MKL"])
+        utils.auto_optimize(self.sdfg,
+                            self.cuda,
+                            apply_strict=self.apply_strict)
 
 
 def create_output_array(
