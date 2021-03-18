@@ -373,8 +373,7 @@ def test_einsum():
 
     sdfg = test_einsum.to_sdfg()
     utils.expand_onnx_nodes(sdfg)
-    assert any(
-        isinstance(n, blas.MatMul) for n, _ in sdfg.all_nodes_recursive())
+    assert any(isinstance(n, blas.Gemm) for n, _ in sdfg.all_nodes_recursive())
 
     A = np.random.rand(5, 4, 3).astype(np.float64)
     B = np.random.rand(3, 2).astype(np.float64)
