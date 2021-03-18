@@ -1,5 +1,9 @@
 import pytest
 import daceml.onnx as donnx
+import sys
+
+# the bert encoder is very nested, and exceeds the recursion limit while serializing
+sys.setrecursionlimit(2000)
 
 
 def pytest_addoption(parser):
@@ -7,6 +11,11 @@ def pytest_addoption(parser):
     parser.addoption("--gpu-only",
                      action="store_true",
                      help="Run tests using gpu, and skip CPU tests")
+
+
+@pytest.fixture
+def skip_non_gpu_test():
+    pytest.skip('Skipping test since --gpu-only was passed')
 
 
 def pytest_generate_tests(metafunc):
@@ -17,6 +26,9 @@ def pytest_generate_tests(metafunc):
             metafunc.parametrize("gpu", [True])
         else:
             metafunc.parametrize("gpu", [False])
+    elif metafunc.config.getoption("--gpu-only"):
+        metafunc.fixturenames.insert(0, "skip_non_gpu_test")
+
     if "default_implementation" in metafunc.fixturenames:
         metafunc.parametrize("default_implementation", [
             pytest.param("pure", marks=pytest.mark.pure),
