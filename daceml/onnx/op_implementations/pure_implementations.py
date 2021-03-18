@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 
 
 def program_for_node(program, sdfg: SDFG, state: SDFGState,
-                     node: onnx_op.ONNXOp) -> DaceProgram:
+                     node: onnx_op.ONNXOp) -> SDFG:
     """ Expand a function to a dace program.
 
         The dtypes for the arguments will be extracted by matching the parameter names to edges.
@@ -65,7 +65,13 @@ def program_for_node(program, sdfg: SDFG, state: SDFGState,
     result = DaceProgram(program, (), {}, False, dace.DeviceType.CPU)
     result.name = node.label + "_expansion"
 
-    return result
+    sdfg = result.to_sdfg()
+
+    if node.schedule in [dtypes.ScheduleType.GPU_Default
+                         ] + dtypes.GPU_SCHEDULES:
+        sdfg.apply_gpu_transformations()
+
+    return sdfg
 
 
 @autoregister_params(op="Log", name="pure")
@@ -83,7 +89,7 @@ class PureLog(ONNXForward):
         def prog(input, output):
             output[:] = dace.elementwise(lambda x: log(x), input)
 
-        return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node)
 
 
 @autoregister_params(op="Sqrt", name="pure")
@@ -104,7 +110,7 @@ class PureSqrt(ONNXForward):
         def prog(X, Y):
             Y[:] = dace.elementwise(lambda x: sqrt(x), X)
 
-        return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node)
 
 
 @autoregister_params(op="Pow", name="pure")
@@ -112,11 +118,6 @@ class PurePow(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
-        if node.schedule is dtypes.ScheduleType.GPU_Default:
-            # TODO fix this in a follow up PR (this returns NaN in the PT bert encoder test; check
-            # how ORT implements Pow for cuda...) Issue #21
-            return False
-
         return in_desc_with_name(node, state, sdfg, 'X').dtype in [
             dace.float16, dace.float32, dace.float64
         ]
@@ -130,7 +131,7 @@ class PurePow(ONNXForward):
         def prog(X, Y, Z):
             Z[:] = X**Y
 
-        return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node)
 
 
 @autoregister_params(op="Add", name="pure")
@@ -144,7 +145,7 @@ class PureAdd(ONNXForward):
         def prog(A, B, C):
             C[:] = A + B
 
-        return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node)
 
 
 @autoregister_params(op="Sub", name="pure")
@@ -158,7 +159,7 @@ class PureSub(ONNXForward):
         def prog(A, B, C):
             C[:] = A - B
 
-        return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node)
 
 
 @autoregister_params(op="Mul", name="pure")
@@ -172,7 +173,7 @@ class PureMul(ONNXForward):
         def prog(A, B, C):
             C[:] = A * B
 
-        return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node)
 
 
 @autoregister_params(op="Div", name="pure")
@@ -186,7 +187,7 @@ class PureDiv(ONNXForward):
         def prog(A, B, C):
             C[:] = A / B
 
-        return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node)
 
 
 @autoregister_params(op="ReduceMean", name="pure")
@@ -204,7 +205,7 @@ class PureReduceMean(ONNXForward):
         def prog(data, reduced):
             reduced[:] = np.mean(data, axis=axes)
 
-        return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node)
 
 
 @autoregister_params(op="Erf", name="pure")
@@ -225,7 +226,7 @@ class PureErf(ONNXForward):
         def prog(input, output):
             output[:] = dace.elementwise(lambda x: erf(x), input)
 
-        return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node)
 
 
 @autoregister_params(op="MatMul", name="pure")
@@ -388,7 +389,7 @@ class PureIdentity(ONNXForward):
         def prog(input, output):
             output[:] = input
 
-        return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node)
 
 
 @autoregister_params(op="Reciprocal", name="pure")
@@ -412,7 +413,7 @@ class PureReciprocal(ONNXForward):
         def prog(X, Y):
             Y[:] = dace.elementwise(tanh_lambda, X)
 
-        return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node)
 
 
 @autoregister_params(op="Tanh", name="pure")
@@ -426,7 +427,7 @@ class PureTanh(ONNXForward):
         def prog(input, output):
             output[:] = dace.elementwise(lambda x: tanh(x), input)
 
-        return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node)
 
 
 @autoregister_params(op="ReduceSum", name="pure")
@@ -443,7 +444,7 @@ class PureReduceSum(ONNXForward):
         def prog(data, reduced):
             reduced[:] = np.sum(data, axis=axes)
 
-        return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node)
 
 
 @autoregister_params(op="ReduceMax", name="pure")
@@ -460,7 +461,7 @@ class PureReduceMax(ONNXForward):
         def prog(data, reduced):
             reduced[:] = np.max(data, axis=axes)
 
-        return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node)
 
 
 @autoregister_params(op="ReduceMin", name="pure")
@@ -477,7 +478,7 @@ class PureReduceMin(ONNXForward):
         def prog(data, reduced):
             reduced[:] = np.min(data, axis=axes)
 
-        return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node)
 
 
 @autoregister_params(op="Softmax", name="pure")
@@ -500,7 +501,7 @@ class PureSoftmax(ONNXForward):
             sum_keepdims = np.reshape(sum, reduced_shape)
             output[:] = exp_arr / sum_keepdims
 
-        return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node)
 
 
 @autoregister_params(op="Transpose", name="pure")
@@ -515,7 +516,7 @@ class PureTranspose(ONNXForward):
         def prog(data, transposed):
             transposed[:] = np.transpose(data, axes=perm)
 
-        return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node)
 
 
 @autoregister_params(op="Cast", name="pure")
@@ -528,10 +529,6 @@ class PureCast(ONNXForward):
                               "input").dtype == out_desc_with_name(
                                   node, state, sdfg, "output").dtype):
             return True
-
-        if node.schedule is dtypes.ScheduleType.GPU_Default:
-            # TODO fix this (this breaks bert_full) because of a GPU scalar cast. Issue #20
-            return False
 
         target_type = node.to
         try:
@@ -549,14 +546,13 @@ class PureCast(ONNXForward):
         if (input_desc.dtype == output_desc.dtype):
 
             def prog(input, output):
-                # intermediate = input
                 output[:] = input
         else:
 
             def prog(input, output):
                 output[:] = dace.elementwise(lambda x: x, input)
 
-        return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node)
 
 
 @autoregister_params(op="Gemm", name="pure")
@@ -585,7 +581,7 @@ class PureGemm(ONNXForward):
             def prog(A, B, Y):
                 Y[:] = A @ np.transpose(B)
 
-        sdfg = program_for_node(prog, sdfg, state, node).to_sdfg()
+        sdfg = program_for_node(prog, sdfg, state, node)
         sdfg.apply_strict_transformations()
         return sdfg
 
@@ -602,7 +598,7 @@ class PureRelu(ONNXForward):
         def prog(X, Y):
             Y[:] = dace.elementwise(cast_lambda, X)
 
-        return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node)
 
 
 @autoregister_params(op="Reshape", name="pure")
@@ -619,4 +615,4 @@ class PureReshape(ONNXForward):
         def prog(data, reshaped):
             reshaped[:] = np.reshape(data, new_shape)
 
-        return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node)
