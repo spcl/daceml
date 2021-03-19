@@ -45,7 +45,9 @@ if __name__ == "__main__":
     dace_model = DaceModule(ptmodel)
     dace_output = dace_model(x)
     torch_output = ptmodel(x)
-    assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
+    assert np.allclose(torch_output.detach().numpy(),
+                       dace_output.numpy(),
+                       atol=1e-06)
 
     # Transform to FPGA
     sdfg = dace_model.sdfg
@@ -68,6 +70,7 @@ if __name__ == "__main__":
 
     print(
         "Difference: ",
-        np.linalg.norm(torch_output.detach().numpy() - dace_output_fpga) /
-        dace_output_fpga.size)
-    assert np.allclose(torch_output.detach().numpy(), dace_output_fpga)
+        np.linalg.norm(torch_output.detach().numpy() -
+                       dace_output_fpga.numpy()) /
+        np.linalg.norm(torch_output.detach().numpy()))
+    assert np.allclose(torch_output.detach().numpy(), dace_output_fpga.numpy())

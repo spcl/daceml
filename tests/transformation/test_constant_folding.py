@@ -23,7 +23,9 @@ def test_bert_subgraph(sdfg_name):
     assert len(dace_model.sdfg.nodes()[0].nodes()) > 2
 
     dace_model.sdfg.apply_transformations_repeated(
-        [ConstantFolding, RedundantSecondArray], validate_all=True)
+        [ConstantFolding, RedundantSecondArray],
+        validate_all=True,
+        strict=True)
 
     out_after = dace_model()
 

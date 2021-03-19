@@ -4,7 +4,8 @@ PYTEST ?= pytest
 PIP ?= pip
 YAPF ?= yapf
 
-TORCH_VERSION ?= torch==1.7.1+cpu torchvision==0.8.2+cpu torchaudio==0.7.2 -f https://download.pytorch.org/whl/torch_stable.html
+TORCH_VERSION ?= torch==1.7.1 torchvision==0.8.2 torchaudio==0.7.2
+DACE_VERSION ?=
 UPDATE_PIP ?= python -m pip install --upgrade pip
 
 ifeq ($(VENV_PATH),)
@@ -26,7 +27,10 @@ install: venv
 ifneq ($(VENV_PATH),)
 	$(ACTIVATE) $(UPDATE_PIP)
 endif
-	$(ACTIVATE) $(PIP) install $(TORCH_VERSION) 
+ifneq ($(DACE_VERSION),)
+	$(ACTIVATE) $(PIP) install $(DACE_VERSION)
+endif
+	$(ACTIVATE) $(PIP) install $(TORCH_VERSION)
 	$(ACTIVATE) $(PIP) install -e .[testing,debug,docs]
 
 doc:
@@ -60,6 +64,8 @@ check-formatting:
 		--recursive \
 		daceml tests setup.py \
 		--exclude daceml/onnx/shape_inference/symbolic_shape_infer.py
+	# check for sdfg.view()
+	! git grep '\.view()' -- tests/** daceml/**
 
 check-formatting-names:
 	$(ACTIVATE) $(YAPF) \
@@ -68,3 +74,5 @@ check-formatting-names:
 		--recursive \
 		daceml tests setup.py \
 		--exclude daceml/onnx/shape_inference/symbolic_shape_infer.py |  grep "+++" || echo "All good!"
+	# check for sdfg.view()
+	! git grep '\.view()' -- tests/** daceml/**

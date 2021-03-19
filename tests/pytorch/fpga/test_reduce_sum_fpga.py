@@ -53,7 +53,8 @@ def run(data_shape: tuple, axis, queue=None):
     dace_output_fpga = dace_model(torch.clone(x))
 
     diff = np.linalg.norm(torch_output.detach().numpy() -
-                          dace_output_fpga) / dace_output_fpga.size
+                          dace_output_fpga.numpy()) / np.linalg.norm(
+                              torch_output.detach().numpy())
 
     print("Difference: ", diff)
     if queue is not None:

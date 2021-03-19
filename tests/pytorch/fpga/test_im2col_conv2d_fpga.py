@@ -94,11 +94,12 @@ def evaluate(in_channels,
 
     #################################
     # Execute
+    sdfg.save("/tmp/out_fpga.sdfg")
     dace_output_fpga = dace_model(torch.clone(x))
-    dace_output_fpga = dace_output_fpga.reshape(torch_output.shape)
+    dace_output_fpga = dace_output_fpga.detach().numpy().reshape(torch_output.shape)
 
     diff = np.linalg.norm(torch_output.detach().numpy() -
-                          dace_output_fpga) / dace_output_fpga.size
+                          dace_output_fpga) / np.linalg.norm(torch_output.detach().numpy())
     print("Difference: ", diff)
     if queue is not None:
         # we are testing

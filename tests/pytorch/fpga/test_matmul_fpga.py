@@ -75,11 +75,11 @@ def run(x_shape: tuple, y_shape: tuple, vec_width=1, queue=None):
 
     ###################################################
     dace_output_fpga = dace_model(x, y)
-    dace_output_fpga_reshaped = dace_output_fpga.reshape(
+    dace_output_fpga_reshaped = dace_output_fpga.numpy().reshape(
         torch_output.detach().numpy().shape)
-    diff = np.linalg.norm(
-        torch_output.detach().numpy() -
-        dace_output_fpga_reshaped) / dace_output_fpga_reshaped.size
+    diff = np.linalg.norm(torch_output.detach().numpy() -
+                          dace_output_fpga_reshaped) / np.linalg.norm(
+                              torch_output.detach().numpy())
     print("Difference: ", diff)
 
     if queue is not None:

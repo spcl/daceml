@@ -74,7 +74,7 @@ def run(vec_width,
     if execute_cpu_dace:
         dace_output = dace_model(x)
         diff = np.linalg.norm(torch_output.detach().numpy() -
-                              dace_output) / dace_output.size
+                              dace_output.numpy()) / np.linalg.norm(torch_output.detach().numpy())
         print("Difference: ", diff)
         assert np.allclose(torch_output.detach().numpy(),
                            dace_output,
@@ -87,7 +87,6 @@ def run(vec_width,
     vec_type = dace.vector(dace.float32, vec_width)
     output_data_name = sdfg.states()[0].sink_nodes()[0].data
     utils.vectorize_array_and_memlet(sdfg, output_data_name, vec_type)
-    sdfg.save('/tmp/out.sdfg')
 
     ###################################################
     # Transform for FPGA and Inline
@@ -102,10 +101,10 @@ def run(vec_width,
 
     dace_output_fpga = dace_model(torch.clone(x))
     # reshape if vec_width is different than 1
-    dace_output_fpga = dace_output_fpga.reshape(torch_output.shape)
+    dace_output_fpga = dace_output_fpga.detach().numpy().reshape(torch_output.shape)
     torch_output_np = torch_output.detach().numpy()
     diff = np.linalg.norm(torch_output_np -
-                          dace_output_fpga) / dace_output_fpga.size
+                          dace_output_fpga) /  np.linalg.norm(torch_output_np)
     print("Difference: ", diff)
 
     if queue is not None:

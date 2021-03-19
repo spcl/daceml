@@ -10,6 +10,13 @@ For example, the following command would install the package and run tests::
 
 If you would like to create a virtual environment and install to it, remove `VENV_PATH=''` from the above command.
 
+Specific Package Versions
+-------------------------
+The `DACE_VERSION` and `TORCH_VERSION` variables can be used to install specific versions of those packages over the
+recommended ones. For example, you can use a local dace repository using::
+
+        DACE_VERSION='-e /path/to/dace/' make clean install
+
 Makefile Targets
 ----------------
 The CI runs several tests using the ``Makefile``:
@@ -24,12 +31,12 @@ The CI runs several tests using the ``Makefile``:
     Build the documentation.
 
 ``make check-formatting``
-    This runs the formatting checks. The DaceML codebase is formatted using ``yapf``. Use ``check-formatting-names`` to
+    This runs the formatting checks. The DaCeML codebase is formatted using ``yapf``. Use ``check-formatting-names`` to
     only print the names of the misformatted files.
 
 Testing
 -------
-DaceML uses ``pytest`` to run tests. The pytest runner takes a custom argument ``--gpu`` to run GPU tests.
+DaCeML uses ``pytest`` to run tests. The pytest runner takes a custom argument ``--gpu`` to run GPU tests.
 Tests can be parallelized using ``xdist`` by passing the arguments ``-n auto --dist loadfile``.
 
 If you provide the fixture (i.e. an argument to the test) with name ``gpu``, then the test will be parameterized to pass

@@ -150,7 +150,6 @@ class ONNXOp(nd.LibraryNode):
         out_edges: List[MultiConnectorEdge] = state.out_edges(self)
 
         def get_idx(parameters, name):
-            full_name = name
             if '__' in name:
                 name, number = parse_variadic_param(name)
             else:
@@ -580,7 +579,7 @@ for schema in onnx.defs.get_all_schemas():
     ##########################################
 
     # avoid import loop
-    from daceml.onnx.implementation_abc import ONNXForward
+    from daceml.onnx.forward_implementation_abc import ONNXForward
 
     registered = False
     for impl, args in ONNXForward.extensions().items():

@@ -12,7 +12,7 @@ from dace.symbolic import symstr
 
 from daceml.onnx.nodes.onnx_op import ONNXOp
 from daceml.onnx import converters
-from daceml.onnx.implementation_abc import ONNXForward
+from daceml.onnx.forward_implementation_abc import ONNXForward
 import numpy as np
 import math
 

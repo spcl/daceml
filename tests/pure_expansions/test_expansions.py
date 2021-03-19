@@ -3,6 +3,9 @@ import torch
 import pytest
 
 import dace
+from dace import transformation
+import dace.transformation.interstate
+
 import daceml.onnx as donnx
 import daceml.onnx.converters as converters
 
@@ -202,7 +205,7 @@ def test_reduce(keepdims, reduce_type, axes, sdfg_name):
 
     result = sdfg(X=X)
 
-    assert np.allclose(numpy_result, result)
+    assert np.allclose(numpy_result, result, rtol=1e-5, atol=1e-5)
 
 
 @pytest.mark.pure
@@ -392,3 +395,27 @@ def test_reciprocal(sdfg_name):
     result = sdfg(X=X)
 
     assert np.allclose(numpy_result, result)
+
+
+@pytest.mark.pure
+def test_reshape_add():
+    @dace.program
+    def add_reshape(inp: dace.float64[9], bias: dace.float64[3],
+                    target_shape: dace.int64[2]):
+        reshaped = dace.define_local([3, 3], dace.float64)
+        donnx.ONNXReshape(data=inp, shape=target_shape, reshaped=reshaped)
+
+        return reshaped + bias
+
+    sdfg: dace.SDFG = add_reshape.to_sdfg(strict=False)
+
+    sdfg.apply_transformations_repeated(
+        [transformation.interstate.StateFusion])
+
+    inp = np.arange(9).astype(np.float64)
+    bias = np.arange(3).astype(np.float64)
+    result = sdfg(inp=inp.copy(),
+                  bias=bias.copy(),
+                  target_shape=np.array([3, 3]).astype(np.int64))
+
+    assert np.allclose(result, inp.reshape(3, 3) + bias)

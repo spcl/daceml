@@ -53,7 +53,7 @@ def run(data_shape: tuple, axis, queue=None):
     sdfg.expand_library_nodes()
     sdfg.apply_transformations_repeated([InlineSDFG])
 
-    dace_output_fpga = dace_model(torch.clone(x))
+    dace_output_fpga = dace_model(torch.clone(x)).numpy()
 
     diff = np.linalg.norm(torch_output.detach().numpy() -
                           dace_output_fpga) / dace_output_fpga.size

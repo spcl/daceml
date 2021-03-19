@@ -6,7 +6,7 @@ from dace import SDFGState, SDFG, dtypes
 from dace.registry import autoregister_params
 from dace.sdfg import nodes, propagation
 
-from daceml.onnx.implementation_abc import ONNXForward
+from daceml.onnx.forward_implementation_abc import ONNXForward
 from daceml.onnx.nodes.onnx_op import ONNXOp
 from daceml.util.utils import in_desc_with_name, out_desc_with_name
 

@@ -1,11 +1,13 @@
 import copy
+import logging
 from collections import deque
 from typing import Dict
 
 import numpy as np
 
 import dace
-import dace.data as dt
+import torch
+from dace import data as dt, dtypes
 from dace import registry
 from dace.properties import make_properties
 from dace.transformation import transformation
@@ -16,6 +18,8 @@ import daceml.onnx as donnx
 from daceml.onnx.converters import clean_onnx_name
 from daceml.onnx.nodes.onnx_op import ONNXOp
 from daceml.onnx import ONNXModel
+
+log = logging.getLogger(__name__)
 
 # blocklist of nondeterministic ops
 # yapf: disable
@@ -98,10 +102,13 @@ class ConstantFolding(transformation.Transformation):
 
     def apply(self, sdfg: dace.SDFG):
         # Extract the subgraph, execute it and insert an AccessNode to the result
+        # this method of execution is slow but simple. A better option would be to call the ORT
+        # C API from a python object (like the OpChecker).
 
         parent: ONNXModel = sdfg._parent_onnx_model
         state = sdfg.nodes()[self.state_id]
         node = state.nodes()[self.subgraph[ConstantFolding._onnx_node]]
+        log.debug(f"Applying constant folding: {node} in {state}")
 
         if isinstance(node, donnx.ONNXShape):
             # if we have a shape node, replace it with a constant
@@ -116,8 +123,8 @@ class ConstantFolding(transformation.Transformation):
                            dace.int64)
 
             assert constant_name not in parent.clean_weights
-            parent.weights[constant_name] = np.array(shape_desc.shape,
-                                                     np.int64)
+            parent.weights[constant_name] = torch.from_numpy(
+                np.array(shape_desc.shape, np.int64))
 
             assert len(state.out_edges(node)) == 1
             output_edge = state.out_edges(node)[0]
@@ -150,9 +157,10 @@ class ConstantFolding(transformation.Transformation):
                     edge.src.data]
 
                 if len(input_value.shape) == 0:
-                    inputs['array_' + edge.dst_conn] = input_value[()]
+                    inputs['array_' +
+                           edge.dst_conn] = input_value.cpu().numpy()[()]
                 else:
-                    inputs['array_' + edge.dst_conn] = input_value.copy()
+                    inputs['array_' + edge.dst_conn] = input_value.clone()
 
                 access = sub_state.add_access('array_' + edge.dst_conn)
                 sub_state.add_edge(
@@ -191,11 +199,17 @@ class ConstantFolding(transformation.Transformation):
                         sub_sdfg.make_array_memlet('array_' + edge.src_conn))
 
                 if len(desc.shape) == 0:
-                    outputs['array_' + edge.src_conn] = np.empty(
-                        (1, ), desc.dtype.as_numpy_dtype())
+                    empty_array = np.empty((1, ), desc.dtype.as_numpy_dtype())
                 else:
-                    outputs['array_' + edge.src_conn] = np.empty(
-                        tuple(desc.shape), desc.dtype.as_numpy_dtype())
+                    empty_array = np.empty(tuple(desc.shape),
+                                           desc.dtype.as_numpy_dtype())
+
+                empty_array = torch.from_numpy(empty_array)
+
+                if desc.storage is dtypes.StorageType.GPU_Global:
+                    empty_array = empty_array.cuda()
+
+                outputs['array_' + edge.src_conn] = empty_array
 
             sub_sdfg(**outputs, **inputs)
 
@@ -209,22 +223,46 @@ class ConstantFolding(transformation.Transformation):
                 sdfg.add_datadesc(clean_constant_name, desc)
 
                 assert constant_name not in parent.weights
-                if isinstance(desc, dt.Scalar):
-                    parent.weights[constant_name] = output_value.reshape(())
-                else:
-                    parent.weights[constant_name] = output_value
+                assert type(output_value) is torch.Tensor
 
-                access_constant = state.add_access(clean_constant_name)
+                if not dtypes.can_access(dtypes.ScheduleType.CPU_Multicore,
+                                         desc.storage):
+                    cpu_desc = copy.deepcopy(desc)
+                    cpu_desc.storage = dtypes.StorageType.CPU_Heap
+                    cpu_desc.transient = False
+                    desc.transient = True
+                    copy_in_name = sdfg.temp_data_name()
+                    clean_copy_in_name = clean_onnx_name(copy_in_name)
+                    sdfg.add_datadesc(clean_copy_in_name, cpu_desc)
+
+                    access_constant = state.add_access(clean_constant_name)
+                    state.add_edge(state.add_read(clean_copy_in_name), None,
+                                   access_constant, None,
+                                   sdfg.make_array_memlet(clean_copy_in_name))
+
+                    name_to_add = copy_in_name
+                else:
+                    access_constant = state.add_read(clean_constant_name)
+                    name_to_add = constant_name
+
+                if isinstance(desc, dt.Scalar):
+                    parent.weights[name_to_add] = output_value.reshape(())
+                else:
+                    parent.weights[name_to_add] = output_value
+
                 state.add_edge(access_constant, None, edge.dst, edge.dst_conn,
                                sdfg.make_array_memlet(clean_constant_name))
 
-            # remove all now useless nodes with a reverse BFS
-            remove_node_and_computation(sdfg, state, node)
+        # remove all now useless nodes with a reverse BFS
+        remove_node_and_computation(sdfg, state, node)
 
 
 def remove_node_and_computation(sdfg: dace.SDFG, state: dace.SDFGState,
                                 node: nd.Node):
     """ Remove a node and the parent nodes that compute this node, if the outputs are not used elsewhere.
+
+        :param sdfg: the sdfg containing the node.
+        :param state: the state containing the node.
         :param node: the node to remove
     """
     queue = deque([node])

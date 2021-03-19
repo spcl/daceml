@@ -189,7 +189,9 @@ class InputToConstant(xf.Transformation):
         # add the weight as a dace constant
         unclean_onnx_name = {clean_onnx_name(w): w
                              for w in parent.weights}[node.data]
-        sdfg.add_constant(data_name, parent.weights[unclean_onnx_name],
+        from torch import Tensor
+        data = parent.weights[unclean_onnx_name].numpy() if isinstance(parent.weights[unclean_onnx_name], Tensor) else parent.weights[unclean_onnx_name]
+        sdfg.add_constant(data_name, data,
                           sdfg.arrays[node.data])
 
         for out_edge in state.out_edges(node):
