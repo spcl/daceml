@@ -56,7 +56,7 @@ def program_for_node(program, sdfg: SDFG, state: SDFGState,
 
     program.__annotations__ = annotations
 
-    result = DaceProgram(program, (), {})
+    result = DaceProgram(program, (), {}, False, 0)
 
     return result
 
