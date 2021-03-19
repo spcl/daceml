@@ -6,7 +6,7 @@ import collections
 import copy
 import logging
 import numbers
-import typing
+from typing import List, Tuple, Set, Dict, Union, Deque, cast
 
 import dace
 import dace.sdfg.nodes as nd
@@ -25,22 +25,22 @@ from daceml.onnx.forward_implementation_abc import ONNXForward
 from daceml.onnx.nodes.onnx_op import ONNXOp
 from daceml.util.utils import find_str_not_in_set, in_edge_with_name
 
-ReverseNodeReturnType = typing.Tuple[nd.Node, BackwardResult]
+ReverseNodeReturnType = Tuple[nd.Node, BackwardResult]
 
 log = logging.getLogger(__name__)
 
 
-def _strings_to_symbols(strings: typing.Set[str]) -> typing.Set[sp.Symbol]:
+def _strings_to_symbols(strings: Set[str]) -> Set[sp.Symbol]:
     return {sp.symbols(string) for string in strings}
 
 
-def _symbols_to_strings(symbs: typing.Set[sp.Symbol]) -> typing.Set[str]:
+def _symbols_to_strings(symbs: Set[sp.Symbol]) -> Set[str]:
     return {str(symb) for symb in symbs}
 
 
 def generate_grad_connector_names(
-        existing_connectors: typing.Set[str],
-        forward_connector_names: typing.List[str]) -> typing.Dict[str, str]:
+        existing_connectors: Set[str],
+        forward_connector_names: List[str]) -> Dict[str, str]:
     """ Choose connector names for the gradients of all forward connectors.
 
         :param existing_connectors: existing connectors on the node.
@@ -69,8 +69,8 @@ def is_initialization_state(state: SDFGState) -> bool:
     return True
 
 
-def code_to_exprs(code: str, inputs: typing.Set[str],
-                  outputs: typing.Set[str]) -> typing.Dict[str, sp.Expr]:
+def code_to_exprs(code: str, inputs: Set[str],
+                  outputs: Set[str]) -> Dict[str, sp.Expr]:
     """ Convert a python string to a set of (simplified) symbolic sympy expressions. Currently, this
         supports only code consisting of assignment statements.
 
@@ -143,7 +143,7 @@ def _invert_access(access: dace.AccessType) -> dace.AccessType:
     return access
 
 
-def _add_through_connector(node: typing.Union[nd.MapEntry, nd.MapExit]):
+def _add_through_connector(node: Union[nd.MapEntry, nd.MapExit]):
     i = 1
     while ("IN_{}".format(i) in node.in_connectors
            or "OUT_{}".format(i) in node.out_connectors):
@@ -172,7 +172,7 @@ def _has_inplace_operation(state: dace.SDFGState) -> bool:
     sdfg = state.parent
 
     # check that each data descriptor has at most one access nodes
-    seen_accesses: typing.Set[str] = set()
+    seen_accesses: Set[str] = set()
     for node in state.nodes():
         if isinstance(node, nd.AccessNode):
             if node.data in seen_accesses:
@@ -196,8 +196,8 @@ def _has_inplace_operation(state: dace.SDFGState) -> bool:
 
 def _walk_up_memlet_tree_through_view_nodes(
     sdfg, forward_state, start_name
-) -> typing.Tuple[typing.Union[dt.Scalar, dt.Array], str,
-                  typing.Deque[typing.Tuple[str, dt.Data, Memlet]]]:
+) -> Tuple[Union[dt.Scalar, dt.Array], str,
+                  Deque[Tuple[str, dt.Data, Memlet]]]:
     """ Starting from the (singular) access node for ``start_name`` in ``forward_state``, walk up the
         memlet path until a non-view node is reached
 
@@ -208,7 +208,7 @@ def _walk_up_memlet_tree_through_view_nodes(
                  array names, view data descriptor and memlets encountered along the path.
     """
     forwarded_name = start_name
-    view_nodes_to_clone: typing.Deque[typing.Tuple[
+    view_nodes_to_clone: Deque[Tuple[
         str, dt.Data, Memlet]] = collections.deque()
     if isinstance(sdfg.arrays[start_name], dt.View):
         # this is complicated slightly by views: we need to walk up the memlet path until we reach a
@@ -268,8 +268,8 @@ class BackwardPassGenerator:
             *,
             sdfg: SDFG,
             state: SDFGState,
-            given_gradients: typing.List[typing.Union[nd.AccessNode, str]],
-            required_gradients: typing.List[typing.Union[nd.AccessNode, str]],
+            given_gradients: List[Union[nd.AccessNode, str]],
+            required_gradients: List[Union[nd.AccessNode, str]],
             backward_sdfg: SDFG,  # this can be the same as SDFG
             backward_state: SDFGState,
             apply_strict=False):
@@ -311,20 +311,20 @@ class BackwardPassGenerator:
         self.backward_state: SDFGState = backward_state
 
         #: arrays descs for the gradients
-        self.backward_grad_arrays: typing.Dict[str, dt.Array] = {}
+        self.backward_grad_arrays: Dict[str, dt.Array] = {}
 
         #: arrays descs for inputs that are required from the forward pass
-        self.backward_input_arrays: typing.Dict[str, dt.Array] = {}
+        self.backward_input_arrays: Dict[str, dt.Array] = {}
 
         #: mapping from forward node -> backward node, and forward map -> backward map
-        self.reverse_map: typing.Dict[nd.Node, typing.Union[nd.Node,
+        self.reverse_map: Dict[nd.Node, Union[nd.Node,
                                                             nd.Map]] = {}
 
         #: mapping from forward_node -> BackwardResult for that node
-        self.result_map: typing.Dict[nd.Node, BackwardResult] = {}
+        self.result_map: Dict[nd.Node, BackwardResult] = {}
 
         #: mapping from forward name to gradient name for arrays
-        self.array_grad_map: typing.Dict[str, str] = {}
+        self.array_grad_map: Dict[str, str] = {}
 
         # checks if backward has already been applied
         self._applied = False
@@ -459,7 +459,7 @@ class BackwardPassGenerator:
 
     def backward(
         self
-    ) -> typing.Tuple[BackwardResult, typing.Dict[str, dt.Array], typing.Dict[
+    ) -> Tuple[BackwardResult, Dict[str, dt.Array], Dict[
             str, dt.Array]]:
         """ Generate the backward pass in backward_state.
 
@@ -908,7 +908,7 @@ class BackwardPassGenerator:
         `entry_node` (where `entry_node` is a node from the forward pass).
         """
         src_candidates = [
-            typing.cast(nd.MapExit, node)
+            cast(nd.MapExit, node)
             for node in self.backward_state.nodes()
             if isinstance(node, nd.MapEntry)
             and node.map == self.reverse_map[entry_node.map]
@@ -964,8 +964,8 @@ class BackwardPassGenerator:
     def _reverse_NestedSDFG(
         self,
         node: nd.NestedSDFG,
-        given_gradients: typing.List[str],
-        required_gradients: typing.List[str],
+        given_gradients: List[str],
+        required_gradients: List[str],
     ) -> ReverseNodeReturnType:
         # check that the nested SDFG only has one state
         state_to_diff: SDFGState
@@ -1076,8 +1076,8 @@ class BackwardPassGenerator:
     def _reverse_AccessNode(
         self,
         node: nd.AccessNode,
-        given_gradients: typing.List[str],
-        required_gradients: typing.List[str],
+        given_gradients: List[str],
+        required_gradients: List[str],
     ) -> ReverseNodeReturnType:
         rev = nd.AccessNode(self.array_grad_name(node.data),
                             access=_invert_access(node.access))
@@ -1088,8 +1088,8 @@ class BackwardPassGenerator:
     def _reverse_MapEntry(
         self,
         node: nd.MapEntry,
-        given_gradients: typing.List[str],
-        required_gradients: typing.List[str],
+        given_gradients: List[str],
+        required_gradients: List[str],
     ) -> ReverseNodeReturnType:
 
         required_grad_names = {
@@ -1116,8 +1116,8 @@ class BackwardPassGenerator:
     def _reverse_MapExit(
         self,
         node: nd.MapExit,
-        given_gradients: typing.List[str],
-        required_gradients: typing.List[str],
+        given_gradients: List[str],
+        required_gradients: List[str],
     ):
         self.reverse_map[node.map] = copy.deepcopy(node.map)
 
@@ -1146,8 +1146,8 @@ class BackwardPassGenerator:
     def _reverse_Tasklet(
         self,
         tasklet: nd.Tasklet,
-        given_gradients: typing.List[str],
-        required_gradients: typing.List[str],
+        given_gradients: List[str],
+        required_gradients: List[str],
     ) -> ReverseNodeReturnType:
 
         if tasklet.language is not dtypes.Language.Python:
