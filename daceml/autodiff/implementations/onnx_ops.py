@@ -113,11 +113,12 @@ class DefaultEinsumBackward(BackwardImplementation):
             result.required_grad_names[
                 input_name] = butils.add_backward_desc_for_connector(
                     nsdfg, forward_node, context, input_name, True)
+            memlet = nsdfg.make_array_memlet(
+                result.required_grad_names[input_name])
             nstate.add_edge(
                 einsum_node, "Output",
                 nstate.add_write(result.required_grad_names[input_name]), None,
-                nsdfg.make_array_memlet(
-                    result.required_grad_names[input_name]))
+                memlet)
 
         result_node = context.backward_state.add_nested_sdfg(
             nsdfg, None,

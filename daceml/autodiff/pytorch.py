@@ -7,6 +7,7 @@ import torch
 
 import dace
 from dace import data as dt
+from dace.transformation import interstate
 
 from daceml.autodiff.backward_pass_generator import BackwardPassGenerator
 from daceml.autodiff.base_abc import AutoDiffException
