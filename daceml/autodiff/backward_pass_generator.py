@@ -6,7 +6,7 @@ import collections
 import copy
 import logging
 import numbers
-from typing import List, Tuple, Set, Dict, Union, Deque, cast
+from typing import List, Tuple, Set, Dict, Union, Deque, cast, Optional
 
 import dace
 import dace.sdfg.nodes as nd
@@ -196,8 +196,8 @@ def _has_inplace_operation(state: dace.SDFGState) -> bool:
 
 def _walk_up_memlet_tree_through_view_nodes(
     sdfg, forward_state, start_name
-) -> Tuple[Union[dt.Scalar, dt.Array], str,
-                  Deque[Tuple[str, dt.Data, Memlet]]]:
+) -> Tuple[Union[dt.Scalar, dt.Array], str, Deque[Tuple[str, dt.Data,
+                                                        Memlet]]]:
     """ Starting from the (singular) access node for ``start_name`` in ``forward_state``, walk up the
         memlet path until a non-view node is reached
 
@@ -208,8 +208,8 @@ def _walk_up_memlet_tree_through_view_nodes(
                  array names, view data descriptor and memlets encountered along the path.
     """
     forwarded_name = start_name
-    view_nodes_to_clone: Deque[Tuple[
-        str, dt.Data, Memlet]] = collections.deque()
+    view_nodes_to_clone: Deque[Tuple[str, dt.Data,
+                                     Memlet]] = collections.deque()
     if isinstance(sdfg.arrays[start_name], dt.View):
         # this is complicated slightly by views: we need to walk up the memlet path until we reach a
         # non-view access node. We then need to replicate the sequence of views in the backward SDFG.
@@ -317,8 +317,7 @@ class BackwardPassGenerator:
         self.backward_input_arrays: Dict[str, dt.Array] = {}
 
         #: mapping from forward node -> backward node, and forward map -> backward map
-        self.reverse_map: Dict[nd.Node, Union[nd.Node,
-                                                            nd.Map]] = {}
+        self.reverse_map: Dict[nd.Node, Union[nd.Node, nd.Map]] = {}
 
         #: mapping from forward_node -> BackwardResult for that node
         self.result_map: Dict[nd.Node, BackwardResult] = {}
@@ -459,8 +458,7 @@ class BackwardPassGenerator:
 
     def backward(
         self
-    ) -> Tuple[BackwardResult, Dict[str, dt.Array], Dict[
-            str, dt.Array]]:
+    ) -> Tuple[BackwardResult, Dict[str, dt.Array], Dict[str, dt.Array]]:
         """ Generate the backward pass in backward_state.
 
             :return: tuple of:
@@ -908,8 +906,7 @@ class BackwardPassGenerator:
         `entry_node` (where `entry_node` is a node from the forward pass).
         """
         src_candidates = [
-            cast(nd.MapExit, node)
-            for node in self.backward_state.nodes()
+            cast(nd.MapExit, node) for node in self.backward_state.nodes()
             if isinstance(node, nd.MapEntry)
             and node.map == self.reverse_map[entry_node.map]
         ]
