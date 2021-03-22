@@ -358,9 +358,11 @@ def test_bert_encoder_transformations():
     dace_model.sdfg.save('attn_last.sdfg')
     print('attn_last.sdfg')
 
+    # dace_model.sdfg.from_file('attn3_1.sdfg')
+
     dace_outputs1 = dace_model(input.clone())
 
-    diff = np.abs(dace_outputs1 - pt_outputs[0].detach().numpy())
+    diff = np.abs(dace_outputs1.detach().numpy() - pt_outputs[0].detach().numpy())
 
     assert np.max(diff) < 1e-6
 
