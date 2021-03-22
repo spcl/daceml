@@ -113,6 +113,15 @@ def test_bert_encoder_transformations():
 
     softmax_sdfg: dace_sdfg.SDFG = softmax_state.parent
 
+    # remove view nodes
+
+    from dace.transformation.dataflow.squeeze_view_remove import SqueezeViewRemove
+
+    softmax_sdfg.apply_transformations_repeated([SqueezeViewRemove], validate_all=True, print_report=True)
+
+    dace_model.sdfg.save('attn2_1.sdfg')
+    print('attn2_1.sdfg')
+
     # eliminate trivial map dimensions
     from dace.transformation.dataflow.trivial_map_elimination import TrivialMapElimination
     from dace.transformation.dataflow.trivial_map_range_elimination import TrivialMapRangeElimination
