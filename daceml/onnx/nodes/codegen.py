@@ -529,14 +529,16 @@ def expand_node(node, state, sdfg):
         copy_options_dict = input_copy_required if is_input else output_copy_required
         # handle parameters for which no copies are required
         if parameter_name not in copy_options_dict:
+            copied_memlet = deepcopy(memlet)
+            copied_memlet.data = parameter_name
             if is_input:
                 access = nstate.add_read(parameter_name)
                 nstate.add_edge(access, None, ntasklet, "__" + parameter_name,
-                                nsdfg.make_array_memlet(parameter_name))
+                                copied_memlet)
             else:
                 access = nstate.add_write(parameter_name)
                 nstate.add_edge(ntasklet, "__" + parameter_name, access, None,
-                                nsdfg.make_array_memlet(parameter_name))
+                                copied_memlet)
             continue
 
         # add the copy of the descriptor
@@ -547,12 +549,13 @@ def expand_node(node, state, sdfg):
         nsdfg.add_datadesc("copy_" + memlet.data, copy_desc)
 
         nmemlet = deepcopy(memlet)
+        nmemlet_copy = deepcopy(memlet)
+        nmemlet_copy.data = "copy_" + memlet.data
         nmemlet.data = "copy_" + nmemlet.data
         if is_input:
             access = nstate.add_read(parameter_name)
             access_copy = nstate.add_access("copy_" + memlet.data)
-            nstate.add_edge(access, None, access_copy, None,
-                            nsdfg.make_array_memlet("copy_" + memlet.data))
+            nstate.add_edge(access, None, access_copy, None, nmemlet_copy)
             nstate.add_edge(access_copy, None, ntasklet, "__" + parameter_name,
                             nmemlet)
         else:
@@ -560,7 +563,6 @@ def expand_node(node, state, sdfg):
             access_copy = nstate.add_access("copy_" + memlet.data)
             nstate.add_edge(ntasklet, "__" + parameter_name, access_copy, None,
                             nmemlet)
-            nstate.add_edge(access_copy, None, access, None,
-                            nsdfg.make_array_memlet("copy_" + memlet.data))
+            nstate.add_edge(access_copy, None, access, None, nmemlet_copy)
 
     return nsdfg
