@@ -433,11 +433,12 @@ class ONNXModel:
         # add the weights
         params = {}
         for name, arr in self.weights.items():
-            desc = self.sdfg.arrays[clean_onnx_name(name)]
-            if type(desc) is dt.Scalar:
-                params[clean_onnx_name(name)] = arr.cpu().numpy()[()]
-            else:
-                params[clean_onnx_name(name)] = arr.clone()
+            if clean_onnx_name(name) in self.sdfg.arrays:
+                desc = self.sdfg.arrays[clean_onnx_name(name)]
+                if type(desc) is dt.Scalar:
+                    params[clean_onnx_name(name)] = arr.cpu().numpy()[()]
+                else:
+                    params[clean_onnx_name(name)] = arr.clone()
 
         inferred_symbols = infer_symbols_from_shapes(self.sdfg, {
             **clean_inputs,
