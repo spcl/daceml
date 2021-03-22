@@ -41,4 +41,3 @@ def test_attn():
                        atol=1e-06)
 
 
-test_attn()
