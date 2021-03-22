@@ -60,10 +60,10 @@ There are two main ways to generate backward passes in DaCeML.
         Automatically expanded library node "ONNX_Relu_1" with implementation "onnxruntime".
         Automatically expanded library node "ONNX_Relu_3" with implementation "onnxruntime".
         Automatically expanded library node "ONNX_LogSoftmax_5" with implementation "onnxruntime".
-        gradients before: None
         Automatically expanded library node "ONNXExp" with implementation "onnxruntime".
         Automatically expanded library node "ONNXReduceSum" with implementation "onnxruntime".
         Automatically expanded library node "ONNXSub" with implementation "onnxruntime".
+        gradients before: None
         gradients after: ...
 
 
