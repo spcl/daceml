@@ -645,16 +645,96 @@ class BackwardPassGenerator:
                         # this grad hasn't been written before: initialize it
                         self._add_gradient_data_descriptor(node.data)
 
-                    # we need to set all incoming memlets to WCR Sum. It's difficult to do this smarter at this
-                    # point because we might be inside a nested SDFG, and although it looks like we are the only
-                    # one writing out to the gradient, someone outside could be.
+                    # we need to make all incoming gradients sum
                     for edge in self.backward_state.in_edges(reversed_node):
-                        for path_edge in self.backward_state.memlet_tree(edge):
-                            path_edge.data.wcr = "lambda x, y: x + y"
+                        self._set_wcr_sum_if_needed(edge)
 
             except AutoDiffException as e:
                 raise AutoDiffException(
                     "Failed at node {}".format(node)) from e
+
+    def _set_wcr_sum_if_needed(self, edge: dgraph.MultiConnectorEdge):
+        """ Set the WCR to sum for all edges along the path of edge, if needed.
+
+            :param edge: the root edge to start from
+        """
+
+        # this method assumes that the memlet tree is iterated from the root backwards
+        for path_edge in self.backward_state.memlet_tree(edge):
+
+            src_or_dest_map = (isinstance(path_edge.src,
+                                          (nd.MapExit, nd.MapEntry))
+                               or isinstance(path_edge.dst,
+                                             (nd.MapExit, nd.MapEntry)))
+            # count the amount of in edges per connector
+            connector_in_edges = collections.defaultdict(int)
+            for _, _, _, dst_conn, _ in self.backward_state.in_edges(
+                    path_edge.dst):
+                connector_in_edges[dst_conn] += 1
+
+            more_than_one_edge_to_connector = any(
+                v > 1 for v in connector_in_edges.values())
+
+            if more_than_one_edge_to_connector or src_or_dest_map:
+                old_edges = []
+                for sibling_edge in self.backward_state.in_edges(
+                        path_edge.dst):
+                    # If there is a nestedSDFG or LibraryNode, or CodeNode with CPP, we insert a
+                    # transient node to sum the gradients.
+                    old_edge, new_edge = self._insert_transient_into_edge(
+                        sibling_edge, self.backward_state)
+
+                    # then wcr sum on the whole path
+
+                    if new_edge is not None:
+                        old_edges.append(old_edge)
+                    else:
+                        for path_edge in self.backward_state.memlet_tree(
+                                old_edge):
+                            path_edge.data.wcr = "lambda x, y: x + y"
+
+                for old_edge in old_edges:
+                    # recurse on the old_edge
+                    self._set_wcr_sum_if_needed(old_edge)
+
+                # break early: we have handled all edges in the tree
+                break
+
+    def _insert_transient_into_edge(
+        self, sibling_edge: dgraph.MultiConnectorEdge, state: SDFGState
+    ) -> Tuple[dgraph.MultiConnectorEdge, Optional[dgraph.MultiConnectorEdge]]:
+        """ Modifies a graph so that a transient is inserted into an edge.
+            For example:
+                (a) -e-> (b)
+            becomes:
+                (a) -e1-> (transient) -e2> (b)
+
+            :param sibling_edge: the edge to split.
+            :return: e1, and the edge e2 (or None if no split occurred)
+        """
+        if (isinstance(sibling_edge.src, (nd.LibraryNode, nd.NestedSDFG))
+                or (isinstance(sibling_edge.src, nd.Tasklet)
+                    and sibling_edge.src.language is dtypes.Language.CPP)):
+            # write out the data to a transient, then connect the transient to the rest of
+            # the path with WCR.
+            desc = self.backward_sdfg.arrays[sibling_edge.data.data]
+            transient_name, _ = self.backward_sdfg.add_temp_transient(
+                sibling_edge.data.subset.size(),
+                desc.dtype,
+                storage=desc.storage,
+                lifetime=desc.lifetime)
+            self._init_grad(transient_name)
+            access_transient = state.add_access(transient_name)
+            state.remove_edge(sibling_edge)
+            memlet = copy.deepcopy(sibling_edge.data)
+            memlet.data = transient_name
+            state.add_edge(sibling_edge.src, sibling_edge.src_conn,
+                           access_transient, None, memlet)
+            new_edge = state.add_edge(access_transient, None, sibling_edge.dst,
+                                      sibling_edge.dst_conn, sibling_edge.data)
+            return sibling_edge, new_edge
+        else:
+            return sibling_edge, None
 
     def _add_gradient_data_descriptor(self, data_name: str):
         """ Add the data descriptor for the gradient for `data_name`.
