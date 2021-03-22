@@ -1,4 +1,3 @@
-import pytest
 import numpy as np
 import torch
 from dace.transformation.dataflow import RedundantSecondArray

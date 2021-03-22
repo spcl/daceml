@@ -70,7 +70,6 @@ configurations = {
 }
 
 
-@pytest.mark.ort
 def test_attn(batch_size, configuration_name, execute_cpu_dace=False):
 
     B = batch_size
