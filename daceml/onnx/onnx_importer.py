@@ -71,7 +71,8 @@ class ONNXModel:
                     subprocess.check_call([
                         "wget",
                         "http://spclstorage.inf.ethz.ch/~rauscho/efficientnet-lite4-11.onnx",
-                        "--output-document={}".format(model_path)
+                        "--output-document={}".format(model_path),
+                        "--no-verbose"
                     ])
 
 

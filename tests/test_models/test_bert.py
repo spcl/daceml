@@ -15,7 +15,7 @@ def test_bert_full(gpu, default_implementation, sdfg_name):
     if not os.path.exists(bert_path):
         subprocess.check_call([
             "wget", "http://spclstorage.inf.ethz.ch/~rauscho/bert_infer.onnx",
-            "--output-document={}".format(bert_path)
+            "--output-document={}".format(bert_path), "--no-verbose"
         ])
 
     model = onnx.load(bert_path)

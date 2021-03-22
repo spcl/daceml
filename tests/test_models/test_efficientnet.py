@@ -21,7 +21,7 @@ def test_efficientnet(gpu, default_implementation, sdfg_name):
         subprocess.check_call([
             "wget",
             "http://spclstorage.inf.ethz.ch/~rauscho/efficientnet-lite4-11.onnx",
-            "--output-document={}".format(path)
+            "--output-document={}".format(path), "--no-verbose"
         ])
 
     model = onnx.load(path)
