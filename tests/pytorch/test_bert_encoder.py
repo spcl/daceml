@@ -13,6 +13,7 @@ from daceml.transformation import ConstantFolding
 from dace import dtypes
 from dace.sdfg import utils as sdutil
 from dace.sdfg import nodes as sdfg_nodes
+from typing import List
 
 
 def test_bert_encoder(gpu, default_implementation, sdfg_name):
@@ -132,6 +133,30 @@ def test_bert_encoder_transformations():
     dace_model.sdfg.save('attn3.sdfg')
     print('attn3.sdfg')
 
+    # split last dimension out of 4 dimensional maps
+
+    from dace.transformation.dataflow.map_expansion import MapExpansion
+    from dace.transformation.dataflow.map_collapse import MapCollapse
+
+    pattern = sdutil.node_path_graph(dace.nodes.MapEntry(dace.nodes.Map('_', [], [])))
+    occurences = [(subgraph.nodes()[0], subgraph.graph) for subgraph in enumerate_matches(softmax_sdfg, pattern)]
+    for map_entry, state in occurences:
+        if map_entry.map.range.dims() == 4:
+            print("Applying MapExpansion tranformation ", state.label, ". Nodes:", map_entry)
+            entries = MapExpansion.apply_to(sdfg=state.parent, map_entry=map_entry)
+            assert len(entries) == 4
+            print("Applying MapCollapse tranformation ", state.label, ". Nodes:", map_entry)
+            new_entry, new_exit = MapCollapse.apply_to(sdfg=state.parent,
+                                                       _outer_map_entry=entries[0],
+                                                       _inner_map_entry=entries[1])
+            print("Applying MapCollapse tranformation again ", state.label, ". Nodes:", map_entry)
+            MapCollapse.apply_to(sdfg=state.parent,
+                                 _outer_map_entry=new_entry,
+                                 _inner_map_entry=entries[2])
+
+    dace_model.sdfg.save('attn3_1.sdfg')
+    print('attn3_1.sdfg')
+
     # apply strip mining for future use as warps
 
     from dace.transformation.dataflow.strip_mining import StripMining
@@ -150,16 +175,23 @@ def test_bert_encoder_transformations():
 
     dace_model.sdfg.validate()
 
-    dace_model.sdfg.save('attn3_1.sdfg')
-    print('attn3_1.sdfg')
+    dace_model.sdfg.save('attn3_2.sdfg')
+    print('attn3_2.sdfg')
 
     # add temp transient
     from dace.transformation.dataflow.stream_transient import AccumulateTransient
 
-    softmax_sdfg.apply_transformations_repeated([AccumulateTransient], validate_all=True, print_report=True)
+    pattern = sdutil.node_path_graph(dace.nodes.MapExit(dace.nodes.Map('_', [], [])),
+                                     dace.nodes.MapExit(dace.nodes.Map('_', [], [])),
+                                     dace.nodes.MapExit(dace.nodes.Map('_', [], [])))
+    occurences = [(subgraph.nodes(), subgraph.graph) for subgraph in enumerate_matches(softmax_sdfg, pattern)]
+    for nodes, state in occurences:
+        if state.edges_between(nodes[0], nodes[1])[0].data.wcr:
+            print("Applying AccumulateTransient tranformation ", state.label, ". Nodes:", nodes)
+            AccumulateTransient.apply_to(sdfg=state.parent, map_exit=nodes[0], outer_map_exit=nodes[1])
 
-    dace_model.sdfg.save('attn3_2.sdfg')
-    print('attn3_2.sdfg')
+    dace_model.sdfg.save('attn3_3.sdfg')
+    print('attn3_3.sdfg')
 
     # nest all maps into states
 
