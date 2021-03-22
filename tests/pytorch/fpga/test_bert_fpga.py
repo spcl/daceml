@@ -76,4 +76,4 @@ def test_bert_cf():
     assert diff < 1e-6
 
 
-test_bert_cf()
+#test_bert_cf()
