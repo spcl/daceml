@@ -6,7 +6,7 @@ from transformers import BertConfig, BertLayer
 
 import daceml.onnx as donnx
 from daceml.pytorch import DaceModule
-from daceml.transformation import ConstantFolding
+from daceml.transformation import ConstantFolding, parameter_to_transient
 
 
 def test_bert_encoder(gpu, default_implementation, sdfg_name):
@@ -26,7 +26,13 @@ def test_bert_encoder(gpu, default_implementation, sdfg_name):
                             cuda=gpu,
                             train=False,
                             sdfg_name=sdfg_name,
-                            apply_strict=True)
+                            apply_strict=True,
+                            dummy_inputs=(input.clone(), ))
+
+    if gpu:
+        for name, _ in dace_model.model.named_parameters():
+            parameter_to_transient(dace_model, name)
+
     dace_outputs0 = dace_model(input.clone())
 
     diff = np.abs(dace_outputs0.detach().numpy() -
