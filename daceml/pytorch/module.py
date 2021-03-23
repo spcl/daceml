@@ -59,13 +59,15 @@ class DaceModule(nn.Module):
 
         self.backward = backward
         self.model = module
-        self.function: Optional[ONNXModel] = None
+        self.dace_model: Optional[ONNXModel] = None
         self.train = train
         self.sdfg: Optional[dace.SDFG] = None
         self.cuda = cuda
         self.sdfg_name = sdfg_name or "dace_model"
         self.auto_optimize = auto_optimize
         self.apply_strict = apply_strict
+
+        self.function = None
 
         if dummy_inputs is not None:
             self.function = self._initialize_sdfg(dummy_inputs)
@@ -126,13 +128,13 @@ class DaceModule(nn.Module):
                     self.dace_model.auto_optimize()
 
                 if self.apply_strict:
-                    self.function.sdfg.apply_strict_transformations()
+                    self.dace_model.sdfg.apply_strict_transformations()
 
                 return dace_model
 
     def forward(self, *actual_inputs):
         """ Execute the forward pass using the traced ``module``."""
-        if self.sdfg is None:
+        if self.function is None:
             self.function = self._initialize_sdfg(actual_inputs)
 
         outputs = self.function(*actual_inputs)

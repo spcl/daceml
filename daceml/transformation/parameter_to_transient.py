@@ -52,17 +52,6 @@ def parameter_to_transient(dace_module: DaceModule, parameter_path: str):
 
     gpu_array_name = dst_node.data
 
-    # check if the parameter is parsable from the state struct at the moment
-    sdfg = copy.deepcopy(dace_module.sdfg)
-    sdfg.arrays[gpu_array_name].transient = True
-    sdfg.arrays[gpu_array_name].lifetime = dtypes.AllocationLifetime.Persistent
-    compiled_sdfg = sdfg.compile()
-    compiled_sdfg.initialize()
-
-    if not hasattr(compiled_sdfg.get_state_struct(), gpu_array_name):
-        raise ValueError(
-            f"Could not parse parameter {gpu_array_name} from state_struct.")
-
     # since it is parsable, proceed with the transformation
     dace_module.sdfg.arrays[gpu_array_name].transient = True
     dace_module.sdfg.arrays[
@@ -77,6 +66,12 @@ def parameter_to_transient(dace_module: DaceModule, parameter_path: str):
 
     def post_compile_hook(compiled_sdfg):
         struct = compiled_sdfg.get_state_struct()
+
+        if not hasattr(struct, gpu_array_name):
+            raise ValueError(
+                f"Could not parse parameter {gpu_array_name} from state_struct."
+            )
+
         ptr = getattr(struct, gpu_array_name)
         # copy the data into the torch parameter tensor
         torch_tensor = dlpack.array_to_torch_tensor(
