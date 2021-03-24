@@ -12,7 +12,7 @@ def run_pytorch_module(module,
                        sdfg_name,
                        shape=None,
                        use_max=False,
-                       auto_optimize=False):
+                       auto_optimize=True):
     shape = shape or (3, 5)
 
     input_value = torch.rand(*shape, dtype=torch.float32)
@@ -92,7 +92,7 @@ def test_reshape_on_memlet_path(sdfg_name):
             return torch.log(reshaped) + torch.reshape(
                 torch.tensor([[3, 2, 1]]), [3])
 
-    run_pytorch_module(Module(), sdfg_name, shape=(9, ), auto_optimize=True)
+    run_pytorch_module(Module(), sdfg_name, shape=(9, ))
 
 
 def test_weights_ln(sdfg_name):
@@ -154,11 +154,7 @@ def test_nested_gradient_summation(sdfg_name):
             z = x * 2
             return z + y
 
-    run_pytorch_module(Module(),
-                       sdfg_name,
-                       shape=(4, 10),
-                       use_max=False,
-                       auto_optimize=True)
+    run_pytorch_module(Module(), sdfg_name, shape=(4, 10), use_max=False)
 
 
 def test_batched_matmul(sdfg_name):
