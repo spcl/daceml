@@ -540,7 +540,7 @@ class FPGAIm2ColConv(ONNXForward):
                     "hx": "0:{}".format(filter_hx),
                     "hy": "0:{}".format(filter_hy),
                     "x": "0:{}".format(output_size_x),
-                    "y0": "0:{}/{}".format(output_size_x, vec_width),
+                    "y0": "0:{}".format(output_size_y),
                 },
                 schedule=dace.ScheduleType.FPGA_Device)
 
