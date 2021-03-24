@@ -265,6 +265,13 @@ def test_bert_encoder_transformations():
 
     softmax_sdfg.apply_transformations_repeated([WarpAllReduceDetectionNoTasklet], validate_all=True, print_report=True)
 
+    dace_model.sdfg.save('attn11_1.sdfg')
+    print('attn11_1.sdfg')
+
+    from dace.transformation.dataflow.clean_connectors import RemoveReadSDFGConnectors
+
+    softmax_sdfg.apply_transformations_repeated([RemoveReadSDFGConnectors], validate_all=True, print_report=True)
+
     dace_model.sdfg.save('attn12.sdfg')
     print('attn12.sdfg')
 
