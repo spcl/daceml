@@ -5,6 +5,7 @@ import dace
 from dace import nodes as nd
 from dace.libraries import blas
 from dace.sdfg.state import MultiConnectorEdge
+from dace.transformation import interstate
 from dace import SDFG, SDFGState
 import dace.data as dt
 from dace.transformation.auto_optimize import set_fast_implementations
@@ -140,4 +141,7 @@ def auto_optimize(sdfg: dace.SDFG, cuda, apply_strict=False):
         dace.DeviceType.GPU if cuda else dace.DeviceType.CPU,
         blocklist=["MKL"])
     if apply_strict:
+        # there is a nondeterministic bug in redundant array that appears if
+        # we don't apply inline first
+        sdfg.apply_transformations_repeated(interstate.InlineSDFG)
         sdfg.apply_strict_transformations()

@@ -1,8 +1,9 @@
+import collections
 import logging
 import os
 import tempfile
 from functools import wraps
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Callable, OrderedDict
 
 import dace
 import onnx
@@ -52,7 +53,7 @@ class DaceModule(nn.Module):
                  cuda: bool = False,
                  train: bool = False,
                  backward=False,
-                 apply_strict: bool = False,
+                 apply_strict: bool = True,
                  auto_optimize: bool = True,
                  sdfg_name: Optional[str] = None):
         super(DaceModule, self).__init__()
@@ -64,13 +65,74 @@ class DaceModule(nn.Module):
         self.sdfg: Optional[dace.SDFG] = None
         self.cuda = cuda
         self.sdfg_name = sdfg_name or "dace_model"
-        self.auto_optimize = auto_optimize
-        self.apply_strict = apply_strict
 
         self.function = None
 
+        #: hooks that are executed after onnx graph is imported to an SDFG
+        self.post_onnx_hooks: OrderedDict[str, Callable[
+            [ONNXModel], None]] = collections.OrderedDict()
+
+        #: hooks that are executed after the backpropagation sdfg has been created
+        self.post_autodiff_hooks: OrderedDict[str, Callable[
+            [dace.SDFG, dace.SDFG], None]] = collections.OrderedDict()
+
+        # setup optimization hooks
+        if auto_optimize:
+            if self.backward:
+
+                def auto_optimize_backward(fwd_sdfg, bwd_sdfg):
+                    utils.auto_optimize(fwd_sdfg,
+                                        self.cuda,
+                                        apply_strict=apply_strict)
+                    utils.auto_optimize(bwd_sdfg,
+                                        self.cuda,
+                                        apply_strict=apply_strict)
+
+                self.post_autodiff_hooks[
+                    "auto_optimize"] = auto_optimize_backward
+            else:
+                self.post_onnx_hooks["auto_optimize"] = \
+                    lambda onnx_model: utils.auto_optimize(onnx_model.sdfg,
+                                                           self.cuda,
+                                                           apply_strict=apply_strict)
+        elif apply_strict:
+            if self.backward:
+
+                def apply_strict(fwd_sdfg, bwd_sdfg):
+                    fwd_sdfg.apply_strict_transformations()
+                    bwd_sdfg.apply_strict_transformations()
+
+                self.post_autodiff_hooks["apply_strict"] = apply_strict
+            else:
+                self.post_onnx_hooks["apply_strict"] = \
+                    lambda onnx_model: onnx_model.sdfg.apply_strict_transformations()
+
         if dummy_inputs is not None:
             self.function = self._initialize_sdfg(dummy_inputs)
+
+    def reset_sdfg(self):
+        """ Clear the sdfg so that optimizations are reapplied. """
+        self.function = None
+
+    def prepend_post_onnx_hook(self, name: str, func: Callable[[ONNXModel],
+                                                               None]):
+        self.post_onnx_hooks[name] = func
+        self.post_onnx_hooks.move_to_end(name, last=False)
+
+    def append_post_onnx_hook(self, name: str, func: Callable[[ONNXModel],
+                                                              None]):
+        self.post_onnx_hooks[name] = func
+
+    def prepend_post_autodiff_hook(self, name: str,
+                                   func: Callable[[dace.SDFG, dace.SDFG],
+                                                  None]):
+        self.post_autodiff_hooks[name] = func
+        self.post_autodiff_hooks.move_to_end(name, last=False)
+
+    def append_post_autodiff_hook(self, name: str,
+                                  func: Callable[[dace.SDFG, dace.SDFG],
+                                                 None]):
+        self.post_autodiff_hooks[name] = func
 
     def _initialize_sdfg(self, dummy_inputs):
         # TODO change to StringIO if not too big
@@ -105,17 +167,14 @@ class DaceModule(nn.Module):
 
             self.sdfg.validate()
 
-            if self.backward:
-                function = make_backward_function(
-                    dace_model, apply_strict=self.apply_strict)
+            for _, hook in self.post_onnx_hooks.items():
+                hook(self.dace_model)
 
-                if self.auto_optimize:
-                    utils.auto_optimize(function._forward_model.sdfg,
-                                        self.cuda,
-                                        apply_strict=self.apply_strict)
-                    utils.auto_optimize(function._backward_sdfg,
-                                        self.cuda,
-                                        apply_strict=self.apply_strict)
+            if self.backward:
+                function = make_backward_function(dace_model)
+
+                for _, hook in self.post_autodiff_hooks.items():
+                    hook(function._forward_model.sdfg, function._backward_sdfg)
 
                 def forward(*args):
                     args_and_params = list(args)
@@ -124,11 +183,6 @@ class DaceModule(nn.Module):
 
                 return forward
             else:
-                if self.auto_optimize:
-                    self.dace_model.auto_optimize()
-
-                if self.apply_strict:
-                    self.dace_model.sdfg.apply_strict_transformations()
 
                 return dace_model
 
@@ -137,8 +191,7 @@ class DaceModule(nn.Module):
         if self.function is None:
             self.function = self._initialize_sdfg(actual_inputs)
 
-        outputs = self.function(*actual_inputs)
-        return outputs
+        return self.function(*actual_inputs)
 
 
 @dace.dtypes.paramdec
@@ -147,7 +200,7 @@ def dace_module(moduleclass,
                 cuda: bool = False,
                 train: bool = False,
                 backward=False,
-                apply_strict: bool = False,
+                apply_strict: bool = True,
                 auto_optimize: bool = True,
                 sdfg_name: Optional[str] = None):
     """ Decorator to apply on a definition of a ``torch.nn.Module`` to

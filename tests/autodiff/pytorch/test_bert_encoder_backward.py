@@ -21,7 +21,8 @@ def test_bert_encoder_backward(sdfg_name):
                             cuda=False,
                             train=False,
                             backward=True,
-                            sdfg_name=sdfg_name)
+                            sdfg_name=sdfg_name,
+                            apply_strict=True)
 
     ptinput = torch.clone(input)
     ptinput.requires_grad = True
