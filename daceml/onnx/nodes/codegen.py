@@ -203,13 +203,14 @@ def check_required_copies(
     return input_copy_required, output_copy_required
 
 
-def emit_setup_code_for_ortvalue(parameter_name: str, edge_connector_name: str,
-                                 desc: dt.Data,
+def emit_setup_code_for_ortvalue(node: nd.CodeNode, parameter_name: str,
+                                 edge_connector_name: str, desc: dt.Data,
                                  required_copy: Optional[dtypes.StorageType],
                                  is_input: bool, ort_value_name: str,
                                  connector_dict: dict) -> str:
-    """ Emit the code that creates the OrtValue for a parameter.
+    """ Emit the code that creates the OrtValue for a parameter. Also set the connector types on the parent node.
 
+        :param node: the parent node that we are expanding
         :param parameter_name: the onnx name of the parameter.
         :param edge_connector_name: the name of the edge connector to the tasklet.
         :param desc: the dace input descriptor connected to this parameter.
@@ -221,6 +222,7 @@ def emit_setup_code_for_ortvalue(parameter_name: str, edge_connector_name: str,
         :return: the code that creates the OrtValue for ``parameter_name``.
     """
 
+    parent_connector_dict = node.in_connectors if is_input else node.out_connectors
     input_output_string = "input" if is_input else "output"
     code = ""
 
@@ -264,9 +266,11 @@ def emit_setup_code_for_ortvalue(parameter_name: str, edge_connector_name: str,
                    maybe_ref="" if on_gpu else "&")
 
         if on_gpu:
-            connector_dict[parameter_name] = dace.pointer(desc.dtype)
+            connector_dict[edge_connector_name] = dace.pointer(desc.dtype)
+            parent_connector_dict[parameter_name] = dace.pointer(desc.dtype)
         else:
-            connector_dict[parameter_name] = None
+            connector_dict[edge_connector_name] = desc.dtype
+            parent_connector_dict[parameter_name] = desc.dtype
     elif isinstance(desc, dt.Array):
 
         # setup dims array
@@ -300,7 +304,8 @@ def emit_setup_code_for_ortvalue(parameter_name: str, edge_connector_name: str,
                    dims_size=len(desc.shape),
                    type_str=typeclass_to_onnx_str(desc.dtype).upper(),
                    ort_value_name=ort_value_name)
-        connector_dict[parameter_name] = dace.pointer(desc.dtype)
+        connector_dict[edge_connector_name] = dace.pointer(desc.dtype)
+        parent_connector_dict[parameter_name] = dace.pointer(desc.dtype)
     else:
         raise NotImplementedError(
             "Data-descriptor type {} not supported for ONNX nodes".format(
@@ -340,7 +345,6 @@ def expand_node(node, state, sdfg):
             print("Falling back to CPU for node {}. Reason:\n{}".format(
                 node.name, str(e)))
             provider_index = 0
-            actual_node_schedule = dtypes.ScheduleType.Default
     else:
         raise NotImplementedError(
             "ORT expansion for schedule '{}' is not implemented".format(
@@ -366,16 +370,6 @@ def expand_node(node, state, sdfg):
     in_connectors = {}
     out_connectors = {}
 
-    # we will expand to a nested sdfg if we require copies, or if we have a name clash in the parent scope
-    conn_name = lambda e, is_input: e.dst_conn if is_input else e.src_conn
-    name_clash_in_parent_scope = any(
-        conn_name(e, is_input) in sdfg.arrays
-        or conn_name(e, is_input) in sdfg.symbols
-        for e, is_input in node.iter_edges(state))
-
-    return_nested_sdfg = name_clash_in_parent_scope or len(
-        output_copy_required) != 0 or len(input_copy_required) != 0
-
     for edge, is_input in node.iter_edges(state):
         parameter_name = edge.dst_conn if is_input else edge.src_conn
 
@@ -394,16 +388,15 @@ def expand_node(node, state, sdfg):
             input_output_string=input_output_string,
             parameter_name=parameter_name)
 
-        # when we emit a NestedSDFG (i.e. when we have to perform any copy), the edge connector names must be prefixed
-        if return_nested_sdfg:
-            edge_connector_name = "_conn_" + parameter_name
-        else:
-            edge_connector_name = parameter_name
+        # We always emit a NestedSDFG, so the edge connector names must be prefixed (otherwise there would be a conflict
+        # of names).
+        edge_connector_name = "__" + parameter_name
 
         copy_options_dict = input_copy_required if is_input else output_copy_required
         copy_options = copy_options_dict.get(parameter_name, None)
 
         tasklet_setup_code += emit_setup_code_for_ortvalue(
+            node=node,
             parameter_name=parameter_name,
             edge_connector_name=edge_connector_name,
             desc=desc,
@@ -412,7 +405,8 @@ def expand_node(node, state, sdfg):
             ort_value_name=ort_value_name,
             connector_dict=in_connectors if is_input else out_connectors)
 
-        tasklet_code += "__ort_check_status(__state->ort_api, __state->ort_api->ExecutableKernel_Set{input_output_string_capital}(" \
+        tasklet_code += "__ort_check_status(__state->ort_api, __state->ort_api->ExecutableKernel_Set" \
+                        "{input_output_string_capital}(" \
                         "__state->ort_kernel_{unique_id}, {position}, {ort_value_name}));\n".format(
             input_output_string_capital=input_output_string.
                 capitalize(),
@@ -421,7 +415,8 @@ def expand_node(node, state, sdfg):
             position=get_position(node.schema, is_input,
                                   parameter_name))
 
-        tasklet_cleanup_code += "__state->ort_api->ReleaseValue(ort_value_{input_output_string}_{parameter_name});\n".format(
+        tasklet_cleanup_code += "__state->ort_api->ReleaseValue(" \
+                                "ort_value_{input_output_string}_{parameter_name});\n".format(
             input_output_string=input_output_string,
             parameter_name=parameter_name)
 
@@ -445,11 +440,6 @@ def expand_node(node, state, sdfg):
     tasklet_code += "__ort_check_status(__state->ort_api, __state->ort_api->ExecutableKernel_Compute(__state->ort_kernel_{}));\n".format(
         unique_id)
 
-    env_init_code += (
-        "__ort_check_status(__state->ort_api, __state->ort_api->CreateExecutableKernel("
-        "__state->ort_session, __state->ort_context_{id}, /*provider_index=*/{provider_index}, &__state->ort_kernel_{id}));\n"
-        .format(provider_index=provider_index, id=unique_id))
-
     tasklet_code = tasklet_setup_code + tasklet_code + tasklet_cleanup_code
 
     class Environment:
@@ -470,7 +460,39 @@ def expand_node(node, state, sdfg):
             [dtypes.ScheduleType.GPU_Default] else ONNXRuntime
         ]
         headers = []
-        init_code = env_init_code
+
+        @staticmethod
+        def init_code(sdfg):
+            cands = [
+                n for n, _ in sdfg.all_nodes_recursive()
+                if n.label == unique_id + "_onnx_code"
+            ]
+            if len(cands) != 1:
+                raise ValueError(
+                    f"Expected to find a unique node for this environment, found {len(cands)}"
+                )
+            node = cands[0]
+
+            if hasattr(
+                    node, "_cuda_stream"
+            ) and node._cuda_stream > ONNXRuntimeCUDA.max_concurrent_streams:
+                raise ValueError(
+                    f"This environment was initialized with max_concurrent_streams="
+                    f"{ONNXRuntimeCUDA.max_concurrent_streams}, but node {node} had stream id "
+                    f"{node._cuda_stream}")
+            if ONNXRuntimeCUDA.use_streams:
+                used_provider_index = 0 if provider_index == 0 or not hasattr(
+                    node, "_cuda_stream") else 1 + node._cuda_stream
+            else:
+                used_provider_index = provider_index
+
+            # delay this until codegen so that we know what cuda stream this node should run on
+            return env_init_code + f"""
+                __ort_check_status(__state->ort_api, __state->ort_api->CreateExecutableKernel(
+                __state->ort_session, __state->ort_context_{unique_id}, /*provider_index=*/{used_provider_index},
+                 &__state->ort_kernel_{unique_id}));
+                """
+
         finalize_code = env_finalize_code
 
     Environment.__name__ = unique_id + "_environment"
@@ -483,78 +505,64 @@ def expand_node(node, state, sdfg):
                          language=dace.dtypes.Language.CPP)
     tasklet.environments = {Environment.__name__}
 
-    if return_nested_sdfg:
-        nsdfg = dace.SDFG("nested_{}".format(unique_id))
-        nstate = nsdfg.add_state()
-        ntasklet = deepcopy(tasklet)
+    nsdfg = dace.SDFG("nested_{}".format(unique_id))
+    nstate = nsdfg.add_state()
+    ntasklet = deepcopy(tasklet)
 
-        # add a prefix to connectors to prevent shadowing of array names
-        ntasklet.in_connectors = {
-            "_conn_" + k: v
-            for k, v in tasklet.in_connectors.items()
-        }
-        ntasklet.out_connectors = {
-            "_conn_" + k: v
-            for k, v in tasklet.out_connectors.items()
-        }
+    nstate.add_node(ntasklet)
 
-        nstate.add_node(ntasklet)
+    for edge, is_input in node.iter_edges(state):
+        parameter_name = edge.dst_conn if is_input else edge.src_conn
 
-        for edge, is_input in node.iter_edges(state):
-            parameter_name = edge.dst_conn if is_input else edge.src_conn
+        memlet = edge.data
+        desc = sdfg.arrays[memlet.data]
 
-            memlet = edge.data
-            desc = sdfg.arrays[memlet.data]
+        # add the original array
+        original_desc = deepcopy(desc)
+        original_desc.transient = False
+        nsdfg.add_datadesc(parameter_name, original_desc)
+        if not (isinstance(desc, dt.Array) or isinstance(desc, dt.Scalar)):
+            raise ValueError(
+                "Unsupported data type {} connected to an ONNX tasklet".format(
+                    type(desc)))
 
-            # add the original array
-            original_desc = deepcopy(desc)
-            original_desc.transient = False
-            nsdfg.add_datadesc(parameter_name, original_desc)
-            if not (isinstance(desc, dt.Array) or isinstance(desc, dt.Scalar)):
-                raise ValueError(
-                    "Unsupported data type {} connected to an ONNX tasklet".
-                    format(type(desc)))
-
-            copy_options_dict = input_copy_required if is_input else output_copy_required
-            # handle parameters for which no copies are required
-            if parameter_name not in copy_options_dict:
-                if is_input:
-                    access = nstate.add_read(parameter_name)
-                    nstate.add_edge(access, None, ntasklet,
-                                    "_conn_" + parameter_name,
-                                    nsdfg.make_array_memlet(parameter_name))
-                else:
-                    access = nstate.add_write(parameter_name)
-                    nstate.add_edge(ntasklet, "_conn_" + parameter_name,
-                                    access, None,
-                                    nsdfg.make_array_memlet(parameter_name))
-                continue
-
-            # add the copy of the descriptor
-            copy_desc = deepcopy(desc)
-
-            copy_desc.transient = True
-            copy_desc.storage = copy_options_dict[parameter_name]
-            nsdfg.add_datadesc("copy_" + memlet.data, copy_desc)
-
-            nmemlet = deepcopy(memlet)
-            nmemlet.data = "copy_" + nmemlet.data
+        copy_options_dict = input_copy_required if is_input else output_copy_required
+        # handle parameters for which no copies are required
+        if parameter_name not in copy_options_dict:
+            copied_memlet = deepcopy(memlet)
+            copied_memlet.data = parameter_name
             if is_input:
                 access = nstate.add_read(parameter_name)
-                access_copy = nstate.add_access("copy_" + memlet.data)
-                nstate.add_edge(access, None, access_copy, None,
-                                nsdfg.make_array_memlet("copy_" + memlet.data))
-                nstate.add_edge(access_copy, None, ntasklet,
-                                "_conn_" + parameter_name, nmemlet)
+                nstate.add_edge(access, None, ntasklet, "__" + parameter_name,
+                                copied_memlet)
             else:
                 access = nstate.add_write(parameter_name)
-                access_copy = nstate.add_access("copy_" + memlet.data)
-                nstate.add_edge(ntasklet, "_conn_" + parameter_name,
-                                access_copy, None, nmemlet)
-                nstate.add_edge(access_copy, None, access, None,
-                                nsdfg.make_array_memlet("copy_" + memlet.data))
+                nstate.add_edge(ntasklet, "__" + parameter_name, access, None,
+                                copied_memlet)
+            continue
 
-        return nsdfg
+        # add the copy of the descriptor
+        copy_desc = deepcopy(desc)
 
-    else:
-        return tasklet
+        copy_desc.transient = True
+        copy_desc.storage = copy_options_dict[parameter_name]
+        nsdfg.add_datadesc("copy_" + memlet.data, copy_desc)
+
+        nmemlet = deepcopy(memlet)
+        nmemlet_copy = deepcopy(memlet)
+        nmemlet_copy.data = "copy_" + memlet.data
+        nmemlet.data = "copy_" + nmemlet.data
+        if is_input:
+            access = nstate.add_read(parameter_name)
+            access_copy = nstate.add_access("copy_" + memlet.data)
+            nstate.add_edge(access, None, access_copy, None, nmemlet_copy)
+            nstate.add_edge(access_copy, None, ntasklet, "__" + parameter_name,
+                            nmemlet)
+        else:
+            access = nstate.add_write(parameter_name)
+            access_copy = nstate.add_access("copy_" + memlet.data)
+            nstate.add_edge(ntasklet, "__" + parameter_name, access_copy, None,
+                            nmemlet)
+            nstate.add_edge(access_copy, None, access, None, nmemlet_copy)
+
+    return nsdfg

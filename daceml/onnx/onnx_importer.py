@@ -16,11 +16,13 @@ from dace.sdfg import SDFG, SDFGState
 from dace.dtypes import AccessType, StorageType, AllocationLifetime
 import dace.sdfg.nodes as nd
 from dace.symbolic import pystr_to_symbolic
+from dace.transformation import auto_optimize
 
 from daceml.onnx.shape_inference import shape_inference
 from daceml.onnx.converters import convert_attribute_proto, onnx_tensor_type_to_typeclass, clean_onnx_name
 from daceml.onnx.schema import ONNXParameterType
-from daceml.onnx.nodes.onnx_op import get_onnx_node, has_onnx_node
+from daceml.onnx.nodes.onnx_op import get_onnx_node, has_onnx_node, ONNXOp
+from daceml.util import utils
 
 numpy_to_torch_dtype_dict = {
     np.bool: torch.bool,
@@ -69,7 +71,8 @@ class ONNXModel:
                     subprocess.check_call([
                         "wget",
                         "http://spclstorage.inf.ethz.ch/~rauscho/efficientnet-lite4-11.onnx",
-                        "--output-document={}".format(model_path)
+                        "--output-document={}".format(model_path),
+                        "--no-verbose"
                     ])
 
 
@@ -98,7 +101,8 @@ class ONNXModel:
                  model: onnx.ModelProto,
                  infer_shapes: bool = True,
                  cuda: bool = False,
-                 apply_strict: bool = False):
+                 apply_strict: bool = False,
+                 auto_optimize: bool = True):
         """
         :param name: the name for the SDFG.
         :param model: the model to import.
@@ -107,8 +111,10 @@ class ONNXModel:
         :param cuda: if ``True``, the model will be executed on the GPU.
         :param apply_strict: if ``True``, apply strict transformations after all nodes have
                              been expanded calling (warning: this can be very slow!)
+        :param auto_optimize: if ``True``, apply automatic optimizations before calling.
         """
 
+        self.do_auto_optimize = auto_optimize
         if infer_shapes:
             model = shape_inference.infer_shapes(model)
 
@@ -362,13 +368,10 @@ class ONNXModel:
         inputs, params, symbols, outputs = self._call_args(args=args,
                                                            kwargs=kwargs)
 
-        sdfg = deepcopy(self.sdfg)
-        sdfg.expand_library_nodes()
+        if self.do_auto_optimize:
+            self.auto_optimize()
 
-        if self.apply_strict:
-            sdfg.apply_strict_transformations()
-
-        sdfg(**inputs, **outputs, **params, **symbols)
+        self.sdfg(**inputs, **outputs, **params, **symbols)
 
         if len(outputs) == 1:
             return next(iter(outputs.values()))
@@ -468,6 +471,14 @@ class ONNXModel:
             seen |= new_parameters
 
         return clean_inputs, params, inferred_symbols, outputs
+
+    def expand_onnx_nodes(self):
+        utils.expand_onnx_nodes(self.sdfg)
+
+    def auto_optimize(self):
+        utils.auto_optimize(self.sdfg,
+                            self.cuda,
+                            apply_strict=self.apply_strict)
 
 
 def create_output_array(

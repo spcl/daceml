@@ -5,9 +5,11 @@ import pytest
 import dace
 from dace import transformation
 import dace.transformation.interstate
+from dace.libraries import blas
 
 import daceml.onnx as donnx
 import daceml.onnx.converters as converters
+from daceml.util import utils
 
 
 #+yapf: disable
@@ -50,6 +52,24 @@ def test_matmul_expansion(a_shape, b_shape, sdfg_name):
     result = sdfg(X=X, Z=Z)
 
     assert np.allclose(expected_result, result)
+
+
+@pytest.mark.pure
+@pytest.mark.gpu
+def test_cast_scalar_on_gpu():
+    to_int = converters.typeclass_to_onnx_tensor_type_int(dace.float32)
+
+    @dace.program
+    def cast_scalar_on_gpu(inp: dace.float64):
+        output = dace.define_local_scalar(dace.float32)
+        donnx.ONNXCast(input=inp, output=output, to=to_int)
+        output_unsqueeze = dace.define_local([1], dace.float32)
+        output_unsqueeze[0] = output
+        return output_unsqueeze
+
+    sdfg = cast_scalar_on_gpu.to_sdfg()
+    result = sdfg(inp=2)
+    assert result[0] == 2
 
 
 @pytest.mark.pure
@@ -395,6 +415,27 @@ def test_reciprocal(sdfg_name):
     result = sdfg(X=X)
 
     assert np.allclose(numpy_result, result)
+
+
+@pytest.mark.pure
+def test_einsum():
+    @dace.program
+    def test_einsum(A: dace.float64[5, 4, 3], B: dace.float64[3, 2]):
+        Y = dace.define_local([5, 4, 2], dace.float64)
+        donnx.ONNXEinsum(Inputs__0=A,
+                         Inputs__1=B,
+                         Output=Y,
+                         equation="bij, jk -> bik")
+        return Y
+
+    sdfg = test_einsum.to_sdfg()
+    utils.expand_onnx_nodes(sdfg)
+    assert any(isinstance(n, blas.Gemm) for n, _ in sdfg.all_nodes_recursive())
+
+    A = np.random.rand(5, 4, 3).astype(np.float64)
+    B = np.random.rand(3, 2).astype(np.float64)
+    result = test_einsum(A.copy(), B.copy())
+    assert np.allclose(result, np.einsum("bij ,jk -> bik", A, B))
 
 
 @pytest.mark.pure

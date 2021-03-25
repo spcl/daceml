@@ -40,8 +40,10 @@ def test_sum(gpu, sdfg_name):
     B = np.random.rand(2, 2).astype(np.float32)
     C = np.random.rand(2, 2).astype(np.float32)
 
+    sdfg.validate()
     if gpu:
         sdfg.apply_gpu_transformations()
+    sdfg.validate()
 
     result = sdfg(A_arr=A, B_arr=B, C_arr=C)
 

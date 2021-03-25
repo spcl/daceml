@@ -40,6 +40,36 @@ def forward_out_desc_with_name(forward_node: nd.Node, context: BackwardContext,
                                     context.forward_sdfg, name)
 
 
+def add_backward_desc_for_connector(backward_sdfg: dace.SDFG,
+                                    forward_node: nd.Node,
+                                    context: BackwardContext, connector: str,
+                                    input: bool) -> str:
+    """ Adds the backward array for the connector of ``forward_node``.
+
+        :param backward_sdfg: the sdfg to add to.
+        :param forward_node: the forward node with the connector that we want to add a descriptor for
+        :param connector: the connector on the forward node that we want to add the descriptor for
+        :param input: ``True`` if the connector is an input, ``False`` otherwise
+        :return: the name of the newly added array in ``backward_sdfg``.
+    """
+
+    if input:
+        edge = utils.in_edge_with_name(forward_node, context.forward_state,
+                                       connector)
+    else:
+        edge = utils.out_edge_with_name(forward_node, context.forward_state,
+                                        connector)
+    arr_name = edge.data.data
+
+    forward_desc = context.forward_sdfg.arrays[arr_name]
+
+    new_desc = copy.deepcopy(forward_desc)
+    new_desc.transient = False
+    return backward_sdfg.add_datadesc(arr_name + "_grad",
+                                      new_desc,
+                                      find_new_name=True)
+
+
 def add_backward_desc(backward_sdfg: dace.SDFG, forward_sdfg: dace.SDFG,
                       forward_desc: dt.Data, forward_name: str) -> str:
     """ Adds the backward array for the given descriptor.
@@ -113,7 +143,7 @@ def backward_program_for_node(
 
     program.__annotations__ = {**inputs, **outputs}
 
-    sdfg = DaceProgram(program, (), {}).to_sdfg()
+    sdfg = DaceProgram(program, (), {}, False, dace.DeviceType.CPU).to_sdfg()
 
     result_node = context.backward_state.add_nested_sdfg(
         sdfg, None, set(inputs), set(outputs))
