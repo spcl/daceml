@@ -1,3 +1,4 @@
+import pytest
 import torch
 from torch import nn
 
@@ -5,6 +6,7 @@ from daceml.pytorch import DaceModule
 from daceml.transformation import parameter_to_transient
 
 
+@pytest.mark.gpu
 def test_pytorch_from_dlpack():
     class Module(nn.Module):
         def __init__(self):
