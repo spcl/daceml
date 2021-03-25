@@ -52,7 +52,7 @@ def run(data_shape: tuple, reshaped_shape: tuple, vec_width=1, queue=None):
 
     dace_output_fpga = dace_model(x)
     dace_output_fpga = dace_output_fpga.reshape(
-        torch_output.detach().numpy().shape)
+        torch_output.detach().numpy().shape).detach().numpy()
 
     torch_output_numpy = torch_output.detach().numpy()
     diff = np.linalg.norm(torch_output_numpy -
