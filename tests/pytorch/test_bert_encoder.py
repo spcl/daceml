@@ -74,11 +74,13 @@ def test_bert_cf(sdfg_name):
                             dummy_inputs=(input.clone(), ),
                             auto_optimize=False)
 
-    dace_model.dace_model.sdfg.apply_transformations_repeated(
-        [ConstantFolding, RedundantSecondArray],
-        validate_all=True,
-        strict=True)
-
+    # run again with constant folding
+    dace_model.reset_sdfg()
+    dace_model.prepend_post_onnx_hook(
+        "cf", lambda onnx_model: onnx_model.sdfg.
+        apply_transformations_repeated([ConstantFolding, RedundantSecondArray],
+                                       validate_all=True,
+                                       strict=True))
     dace_outputs1 = dace_model(input.clone())
 
     diff = np.abs(dace_outputs1.detach().numpy() -

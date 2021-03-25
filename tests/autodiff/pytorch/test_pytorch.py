@@ -157,6 +157,23 @@ def test_nested_gradient_summation(sdfg_name):
     run_pytorch_module(Module(), sdfg_name, shape=(4, 10), use_max=False)
 
 
+def test_trans_add(sdfg_name):
+    class Module(torch.nn.Module):
+        def __init__(self):
+            super(Module, self).__init__()
+
+        def forward(self, x):
+            x = x + 1
+            x = torch.transpose(x.reshape(4, 4), 1, 0)
+            return x
+
+    run_pytorch_module(Module(),
+                       sdfg_name,
+                       shape=(16, ),
+                       use_max=False,
+                       auto_optimize=True)
+
+
 def test_batched_matmul(sdfg_name):
     class Module(torch.nn.Module):
         def __init__(self):
