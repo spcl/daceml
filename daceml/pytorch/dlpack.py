@@ -1,20 +1,17 @@
 """
-Resources:
+Interface for integrating with DLPack.
+
+Some of the following code is derived from the following resources:
+https://github.com/dmlc/dlpack/blob/main/apps/from_numpy/main.py
 https://github.com/vadimkantorov/pydlpack/blob/master/dlpack.py
 """
-import ctypes
-import gc
-import sys
 
-import torch
-import torch.utils.dlpack
+import ctypes
 
 import dace
+import torch
+import torch.utils.dlpack
 from dace import data, dtypes
-
-import ctypes
-
-import faulthandler
 
 
 class DLDeviceType(ctypes.c_int):
