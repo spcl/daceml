@@ -274,7 +274,9 @@ def test_bert_encoder_transformations():
     dace_model.sdfg.save('attn11_2.sdfg')
     print('attn11_2.sdfg')
 
-    # TODO: transformation that detects missing input connectors
+    from dace.transformation.dataflow.add_nsdfg_connector import AddNestedSDFGInputConnector
+
+    softmax_sdfg.apply_transformations_repeated([AddNestedSDFGInputConnector], validate_all=True, print_report=True)
 
     dace_model.sdfg.save('attn11_3.sdfg')
     print('attn11_3.sdfg')
