@@ -169,7 +169,7 @@ def test_bert_encoder_transformations():
             print("Applying StripMining tranformation ", subgraph.graph.label, ". Nodes:", subgraph.nodes())
             StripMining.apply_to(sdfg=subgraph.graph.parent,
                                  options={'tile_size': seq_len // 32,
-                                          'tiling_type': 'ceilrange',
+                                          'tiling_type': dace.TilingType.CeilRange,
                                           'divides_evenly': True},
                                  _map_entry=map_entry)
 
@@ -268,6 +268,17 @@ def test_bert_encoder_transformations():
     dace_model.sdfg.save('attn11_1.sdfg')
     print('attn11_1.sdfg')
 
+    from dace.sdfg.propagation import propagate_memlets_sdfg
+    propagate_memlets_sdfg(dace_model.sdfg)
+
+    dace_model.sdfg.save('attn11_2.sdfg')
+    print('attn11_2.sdfg')
+
+    # TODO: transformation that detects missing input connectors
+
+    dace_model.sdfg.save('attn11_3.sdfg')
+    print('attn11_3.sdfg')
+
     from dace.transformation.dataflow.clean_connectors import RemoveReadSDFGConnectors
 
     softmax_sdfg.apply_transformations_repeated([RemoveReadSDFGConnectors], validate_all=True, print_report=True)
@@ -275,10 +286,26 @@ def test_bert_encoder_transformations():
     dace_model.sdfg.save('attn12.sdfg')
     print('attn12.sdfg')
 
+    from dace.transformation.dataflow.clean_connectors import NestTransients
+
     softmax_sdfg.apply_transformations_repeated([NestTransients], validate_all=True, print_report=True)
 
     dace_model.sdfg.save('attn12_1.sdfg')
     print('attn12_1.sdfg')
+
+    from dace.transformation.interstate.state_elimination import EmptyStateElimination
+    from dace.libraries.standard.nodes.barrier import Barrier
+    # TODO: it should be done in transformation that can detect if barrier removable or not
+    pattern = sdutil.node_path_graph(Barrier)
+
+    matches = [(subgraph.graph, subgraph.nodes()) for subgraph in enumerate_matches(softmax_sdfg, pattern)]
+    for state, nodes in matches:
+        print("Match found in state", state.label, ". Nodes:", nodes)
+
+        EmptyStateElimination.apply_to(state.parent, empty_state=state, verify=False)
+
+    dace_model.sdfg.save('attn12_2.sdfg')
+    print('attn12_2.sdfg')
 
     from dace.transformation.dataflow.clean_connectors import CleanNestedWrites
 
