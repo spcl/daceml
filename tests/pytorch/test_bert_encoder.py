@@ -344,6 +344,37 @@ def test_bert_encoder_transformations():
     dace_model.sdfg.save('attn15_1.sdfg')
     print('attn15_1.sdfg')
 
+    softmax_sdfg.apply_transformations_repeated([EmptyStateElimination], validate_all=True, print_report=True)
+
+    dace_model.sdfg.save('attn15_2.sdfg')
+    print('attn15_2.sdfg')
+
+    softmax_sdfg.apply_transformations_repeated([NestedMapFusion], validate_all=True, print_report=True)
+
+    dace_model.sdfg.save('attn15_3.sdfg')
+    print('attn15_3.sdfg')
+
+    softmax_sdfg.apply_transformations_repeated([CleanNestedSDFGConnectors, RemoveDanglingAccessNodes],
+                                                validate_all=True, print_report=True)
+
+    dace_model.sdfg.save('attn15_3_1.sdfg')
+    print('attn15_3_1.sdfg')
+
+    softmax_sdfg.apply_transformations_repeated([UnifyInOutNestedSDFGConnectors], validate_all=True, print_report=True)
+
+    dace_model.sdfg.save('attn15_6.sdfg')
+    print('attn15_6.sdfg')
+
+    softmax_sdfg.apply_transformations_repeated([RemoveReadSDFGConnectors], validate_all=True, print_report=True)
+
+    dace_model.sdfg.save('attn15_6_1.sdfg')
+    print('attn15_6_1.sdfg')
+
+    softmax_sdfg.apply_transformations_repeated([NestTransients], validate_all=True, print_report=True)
+
+    dace_model.sdfg.save('attn15_7.sdfg')
+    print('attn15_7.sdfg')
+
     softmax_sdfg.apply_transformations_repeated([CleanNestedSDFGConnectors], validate_all=True, print_report=True)
 
     dace_model.sdfg.save('attn16.sdfg')
