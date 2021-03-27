@@ -10,6 +10,7 @@ from daceml.pytorch import DaceModule
 
 def run_pytorch_module(module,
                        sdfg_name,
+                       gpu,
                        shape=None,
                        use_max=False,
                        auto_optimize=True):
@@ -38,6 +39,7 @@ def run_pytorch_module(module,
 
     dace_module = DaceModule(module,
                              backward=True,
+                             cuda=gpu,
                              sdfg_name=sdfg_name,
                              auto_optimize=auto_optimize)
 
@@ -54,36 +56,36 @@ def run_pytorch_module(module,
                           atol=1e-4)
 
 
-def test_simple(sdfg_name):
+def test_simple(sdfg_name, gpu):
     class Module(torch.nn.Module):
         def forward(self, x):
             x = torch.sqrt(x)
             x = torch.log(x)
             return x
 
-    run_pytorch_module(Module(), sdfg_name)
+    run_pytorch_module(Module(), sdfg_name, gpu)
 
 
-def test_repeated(sdfg_name):
+def test_repeated(sdfg_name, gpu):
     class Module(torch.nn.Module):
         def forward(self, x):
             x = torch.sqrt(x)
             x = torch.sqrt(x)
             return x
 
-    run_pytorch_module(Module(), sdfg_name)
+    run_pytorch_module(Module(), sdfg_name, gpu)
 
 
-def test_softmax(sdfg_name):
+def test_softmax(sdfg_name, gpu):
     class Module(torch.nn.Module):
         def forward(self, x):
             x = F.softmax(x, dim=1)
             return x
 
-    run_pytorch_module(Module(), sdfg_name, use_max=True)
+    run_pytorch_module(Module(), sdfg_name, gpu, use_max=True)
 
 
-def test_reshape_on_memlet_path(sdfg_name):
+def test_reshape_on_memlet_path(sdfg_name, gpu):
     # required test: this function in a nn.Module, with apply strict so that the reshape is
     # inlined and copy is removed
     class Module(torch.nn.Module):
@@ -92,10 +94,10 @@ def test_reshape_on_memlet_path(sdfg_name):
             return torch.log(reshaped) + torch.reshape(
                 torch.tensor([[3, 2, 1]]), [3])
 
-    run_pytorch_module(Module(), sdfg_name, shape=(9, ))
+    run_pytorch_module(Module(), sdfg_name, gpu, shape=(9, ))
 
 
-def test_weights_ln(sdfg_name):
+def test_weights_ln(sdfg_name, gpu):
     class Module(torch.nn.Module):
         def __init__(self):
             super(Module, self).__init__()
@@ -111,10 +113,10 @@ def test_weights_ln(sdfg_name):
             x = self.fc3(x)
             return x
 
-    run_pytorch_module(Module(), sdfg_name, shape=(4, 784), use_max=False)
+    run_pytorch_module(Module(), sdfg_name, gpu, shape=(4, 784), use_max=False)
 
 
-def test_layernorm(sdfg_name):
+def test_layernorm(sdfg_name, gpu):
     class Module(torch.nn.Module):
         def __init__(self):
             super(Module, self).__init__()
@@ -123,10 +125,10 @@ def test_layernorm(sdfg_name):
         def forward(self, x):
             return self.ln(x)
 
-    run_pytorch_module(Module(), sdfg_name, shape=(1, 3), use_max=True)
+    run_pytorch_module(Module(), sdfg_name, gpu, shape=(1, 3), use_max=True)
 
 
-def test_weights(sdfg_name):
+def test_weights(sdfg_name, gpu):
     class Module(torch.nn.Module):
         def __init__(self):
             super(Module, self).__init__()
@@ -140,10 +142,10 @@ def test_weights(sdfg_name):
             x = self.fc3(x)
             return x
 
-    run_pytorch_module(Module(), sdfg_name, shape=(4, 784), use_max=False)
+    run_pytorch_module(Module(), sdfg_name, gpu, shape=(4, 784), use_max=False)
 
 
-def test_nested_gradient_summation(sdfg_name):
+def test_nested_gradient_summation(sdfg_name, gpu):
     class Module(torch.nn.Module):
         def __init__(self):
             super(Module, self).__init__()
@@ -154,10 +156,10 @@ def test_nested_gradient_summation(sdfg_name):
             z = x * 2
             return z + y
 
-    run_pytorch_module(Module(), sdfg_name, shape=(4, 10), use_max=False)
+    run_pytorch_module(Module(), sdfg_name, gpu, shape=(4, 10), use_max=False)
 
 
-def test_trans_add(sdfg_name):
+def test_trans_add(sdfg_name, gpu):
     class Module(torch.nn.Module):
         def __init__(self):
             super(Module, self).__init__()
@@ -169,12 +171,13 @@ def test_trans_add(sdfg_name):
 
     run_pytorch_module(Module(),
                        sdfg_name,
+                       gpu,
                        shape=(16, ),
                        use_max=False,
                        auto_optimize=True)
 
 
-def test_batched_matmul(sdfg_name):
+def test_batched_matmul(sdfg_name, gpu):
     class Module(torch.nn.Module):
         def __init__(self):
             super(Module, self).__init__()
@@ -183,4 +186,4 @@ def test_batched_matmul(sdfg_name):
         def forward(self, x):
             return self.fc1 @ x
 
-    run_pytorch_module(Module(), sdfg_name, use_max=False)
+    run_pytorch_module(Module(), sdfg_name, gpu, use_max=False)
