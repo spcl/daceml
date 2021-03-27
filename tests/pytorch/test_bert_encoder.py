@@ -6,10 +6,10 @@ from transformers import BertConfig, BertLayer
 
 import daceml.onnx as donnx
 from daceml.pytorch import DaceModule
-from daceml.transformation import ConstantFolding
+from daceml.transformation import ConstantFolding, parameter_to_transient
 
 
-def test_bert_encoder(gpu, default_implementation):
+def test_bert_encoder(gpu, default_implementation, sdfg_name):
     if not gpu and default_implementation == 'onnxruntime':
         pytest.skip("combination is tested below")
 
@@ -22,12 +22,16 @@ def test_bert_encoder(gpu, default_implementation):
     ptmodel = BertLayer(BertConfig()).eval()
     pt_outputs = ptmodel(input.clone())
 
-
     dace_model = DaceModule(ptmodel,
                             cuda=gpu,
                             train=False,
                             sdfg_name=sdfg_name,
-                            apply_strict=True)
+                            apply_strict=True,
+                            dummy_inputs=(input.clone(), ))
+
+    if gpu:
+        for name, _ in dace_model.model.named_parameters():
+            parameter_to_transient(dace_model, name)
 
     dace_outputs0 = dace_model(input.clone())
 
@@ -54,7 +58,7 @@ def test_bert_encoder(gpu, default_implementation):
 
 
 @pytest.mark.ort
-def test_bert_cf():
+def test_bert_cf(sdfg_name):
     batch_size = 8
     seq_len = 512
     hidden_size = 768
@@ -64,13 +68,11 @@ def test_bert_cf():
     ptmodel = BertLayer(BertConfig()).eval()
     pt_outputs = ptmodel(input.clone())
 
-
     dace_model = DaceModule(ptmodel,
                             train=False,
                             sdfg_name=sdfg_name,
                             dummy_inputs=(input.clone(), ),
                             auto_optimize=False)
-
 
     dace_model.dace_model.sdfg.apply_transformations_repeated(
         [ConstantFolding, RedundantSecondArray],
@@ -83,4 +85,3 @@ def test_bert_cf():
                   pt_outputs[0].detach().numpy())
 
     assert np.max(diff) < 1e-5
-

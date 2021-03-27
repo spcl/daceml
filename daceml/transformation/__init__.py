@@ -1,3 +1,4 @@
 from .constant_folding import ConstantFolding
+from .parameter_to_transient import parameter_to_transient
 from .input_to_constant import InputToConstant
 from .reshape_elimination import ReshapeElimination, expand_library_nodes_except_reshape

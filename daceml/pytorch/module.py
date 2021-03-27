@@ -2,14 +2,13 @@ import logging
 import os
 import tempfile
 from functools import wraps
-import typing
-
-import torch
-import torch.nn as nn
-import onnx
-from torch.onnx import TrainingMode
+from typing import Optional, Tuple
 
 import dace
+import onnx
+import torch
+import torch.nn as nn
+from torch.onnx import TrainingMode
 
 from daceml.autodiff.pytorch import make_backward_function
 from daceml.onnx import ONNXModel
@@ -47,29 +46,31 @@ class DaceModule(nn.Module):
             Automatically expanded library node "ONNX_Sqrt_1" with implementation "onnxruntime".
             tensor([0., 0.])
     """
-    def __init__(
-            self,
-            module: nn.Module,
-            dummy_inputs: typing.Optional[typing.Tuple[torch.Tensor]] = None,
-            cuda: bool = False,
-            train: bool = False,
-            backward=False,
-            apply_strict: bool = False,
-            auto_optimize: bool = True,
-            sdfg_name: typing.Optional[str] = None):
+    def __init__(self,
+                 module: nn.Module,
+                 dummy_inputs: Optional[Tuple[torch.Tensor]] = None,
+                 cuda: bool = False,
+                 train: bool = False,
+                 backward=False,
+                 apply_strict: bool = False,
+                 auto_optimize: bool = True,
+                 sdfg_name: Optional[str] = None):
         super(DaceModule, self).__init__()
 
         self.backward = backward
         self.model = module
-        self.dace_model: typing.Optional[ONNXModel] = None
+        self.dace_model: Optional[ONNXModel] = None
         self.train = train
-        self.sdfg: typing.Optional[dace.SDFG] = None
+        self.sdfg: Optional[dace.SDFG] = None
         self.cuda = cuda
         self.sdfg_name = sdfg_name or "dace_model"
         self.auto_optimize = auto_optimize
         self.apply_strict = apply_strict
+
+        self.function = None
+
         if dummy_inputs is not None:
-            self.dace_model = self._initialize_sdfg(dummy_inputs)
+            self.function = self._initialize_sdfg(dummy_inputs)
 
     def _initialize_sdfg(self, dummy_inputs):
         # TODO change to StringIO if not too big
@@ -97,7 +98,8 @@ class DaceModule(nn.Module):
             dace_model = ONNXModel(self.sdfg_name,
                                    onnx_model,
                                    infer_shapes=False,
-                                   cuda=self.cuda)
+                                   cuda=self.cuda,
+                                   parent_pytorch_module=self.model)
             self.sdfg = dace_model.sdfg
             self.dace_model = dace_model
 
@@ -127,28 +129,27 @@ class DaceModule(nn.Module):
 
                 if self.apply_strict:
                     self.dace_model.sdfg.apply_strict_transformations()
-                self.sdfg.validate()
+
                 return dace_model
 
     def forward(self, *actual_inputs):
         """ Execute the forward pass using the traced ``module``."""
-        if self.sdfg is None:
-            self.dace_model = self._initialize_sdfg(actual_inputs)
+        if self.function is None:
+            self.function = self._initialize_sdfg(actual_inputs)
 
-        outputs = self.dace_model(*actual_inputs)
+        outputs = self.function(*actual_inputs)
         return outputs
 
 
 @dace.dtypes.paramdec
-def dace_module(
-        moduleclass,
-        dummy_inputs: typing.Optional[typing.Tuple[torch.Tensor]] = None,
-        cuda: bool = False,
-        train: bool = False,
-        backward=False,
-        apply_strict: bool = False,
-        auto_optimize: bool = True,
-        sdfg_name: typing.Optional[str] = None):
+def dace_module(moduleclass,
+                dummy_inputs: Optional[Tuple[torch.Tensor]] = None,
+                cuda: bool = False,
+                train: bool = False,
+                backward=False,
+                apply_strict: bool = False,
+                auto_optimize: bool = True,
+                sdfg_name: Optional[str] = None):
     """ Decorator to apply on a definition of a ``torch.nn.Module`` to
         convert it to a data-centric module upon construction.
 
