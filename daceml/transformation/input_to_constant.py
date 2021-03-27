@@ -190,9 +190,10 @@ class InputToConstant(xf.Transformation):
         unclean_onnx_name = {clean_onnx_name(w): w
                              for w in parent.weights}[node.data]
         from torch import Tensor
-        data = parent.weights[unclean_onnx_name].numpy() if isinstance(parent.weights[unclean_onnx_name], Tensor) else parent.weights[unclean_onnx_name]
-        sdfg.add_constant(data_name, data,
-                          sdfg.arrays[node.data])
+        data = parent.weights[unclean_onnx_name].numpy() if isinstance(
+            parent.weights[unclean_onnx_name],
+            Tensor) else parent.weights[unclean_onnx_name]
+        sdfg.add_constant(data_name, data, sdfg.arrays[node.data])
 
         for out_edge in state.out_edges(node):
             tree = forward_memlet_tree_with_nested_and_copies(state, out_edge)

@@ -51,12 +51,10 @@ def test_lenet(conv_impl):
     dace_output = dace_net(torch.clone(input))
 
     transformation.expand_library_nodes_except_reshape(dace_net.sdfg)
-    dace_net.sdfg.view()
     dace_net.sdfg.apply_transformations_repeated(
         [transformation.ReshapeElimination], print_report=True)
     dace_net.sdfg.apply_transformations_repeated(
         [transformation.InputToConstant], print_report=True)
-    dace_net.sdfg.view()
 
     diff = np.linalg.norm(torch_output.detach().numpy() - dace_output)
     assert diff < 1e-5

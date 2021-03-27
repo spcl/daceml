@@ -12,6 +12,7 @@ from dace.transformation.auto_optimize import set_fast_implementations
 
 from daceml.onnx.nodes.onnx_op import ONNXOp
 
+
 def is_desc_contiguous(desc: dt.Data) -> bool:
     if type(desc) is dt.Scalar:
         return True
@@ -23,7 +24,6 @@ def is_desc_contiguous(desc: dt.Data) -> bool:
     else:
         raise ValueError("Unsupported data descriptor type {}".format(
             type(desc)))
-
 
 
 def is_desc_contiguous(desc: dt.Data) -> bool:
@@ -161,6 +161,7 @@ def vectorize_array_and_memlet(sdfg, array_name, type: dtypes.typeclass):
                 #update the range
                 new_stop = (stop + 1) // vec_width - 1
                 edge.data.subset.ranges[-1] = (start, new_stop, skip)
+
 
 def expand_onnx_nodes(sdfg: dace.SDFG):
     """ Recursively expand all onnx library nodes in the SDFG, resulting in an SDFG that can be optimized by

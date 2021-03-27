@@ -37,7 +37,7 @@ def run(data_shape: tuple, axis, queue=None):
     ptmodel = Model(axis)
     x = torch.rand(data_shape, )
 
-    dace_model = DaceModule(ptmodel)
+    dace_model = DaceModule(ptmodel, auto_optimize=False)
     dace_output = dace_model(x)
 
     torch_output = ptmodel(x)

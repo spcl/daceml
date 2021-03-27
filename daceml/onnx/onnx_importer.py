@@ -520,7 +520,6 @@ def create_output_array(
         # as_numpy_dtype doesn't seem to work for indexing into the dict
         return (torch.zeros if zeros else torch.empty)(
             shape,
-
             dtype=numpy_to_torch_dtype_dict[getattr(np,
                                                     desc.dtype.to_string())])
     else:

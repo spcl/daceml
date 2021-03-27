@@ -615,13 +615,13 @@ class PureReshape(ONNXForward):
         def prog(data, reshaped):
             reshaped[:] = np.reshape(data, new_shape)
 
-        return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node)
 
 
 @autoregister_params(op="LogSoftmax", name="pure")
 class PureLogSoftmax(ONNXForward):
     @staticmethod
-    def forward(node: ONNXOp, state: SDFGState,
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
         # NOTE: once there is a reshape node this whole expansion becomes much simpler:
@@ -742,4 +742,3 @@ class PureLogSoftmax(ONNXForward):
                             div_output=output)
 
         return program_for_node(prog, sdfg, state, node).to_sdfg()
-

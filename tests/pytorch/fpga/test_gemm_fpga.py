@@ -68,13 +68,14 @@ def run(vec_width,
     ptmodel = Model(input_to_constant,
                     in_features=input_features,
                     out_features=output_features)
-    dace_model = DaceModule(ptmodel, dummy_inputs=x)
+    dace_model = DaceModule(ptmodel, dummy_inputs=x, auto_optimize=False)
 
     torch_output = ptmodel(x)
     if execute_cpu_dace:
         dace_output = dace_model(x)
         diff = np.linalg.norm(torch_output.detach().numpy() -
-                              dace_output.numpy()) / np.linalg.norm(torch_output.detach().numpy())
+                              dace_output.numpy()) / np.linalg.norm(
+                                  torch_output.detach().numpy())
         print("Difference: ", diff)
         assert np.allclose(torch_output.detach().numpy(),
                            dace_output,
@@ -101,10 +102,11 @@ def run(vec_width,
 
     dace_output_fpga = dace_model(torch.clone(x))
     # reshape if vec_width is different than 1
-    dace_output_fpga = dace_output_fpga.detach().numpy().reshape(torch_output.shape)
+    dace_output_fpga = dace_output_fpga.detach().numpy().reshape(
+        torch_output.shape)
     torch_output_np = torch_output.detach().numpy()
     diff = np.linalg.norm(torch_output_np -
-                          dace_output_fpga) /  np.linalg.norm(torch_output_np)
+                          dace_output_fpga) / np.linalg.norm(torch_output_np)
     print("Difference: ", diff)
 
     if queue is not None:

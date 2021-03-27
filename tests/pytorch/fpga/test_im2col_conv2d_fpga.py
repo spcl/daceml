@@ -63,7 +63,7 @@ def evaluate(in_channels,
     torch_output = ptmodel(x)
 
     #create dace model
-    dace_model = DaceModule(ptmodel, dummy_inputs=x)
+    dace_model = DaceModule(ptmodel, dummy_inputs=x, auto_optimize=False)
 
     if execute_cpu_dace:
         dace_output = dace_model(x)
@@ -75,7 +75,6 @@ def evaluate(in_channels,
     vec_type = dace.vector(dace.float32, vec_width)
     # utils.vectorize_array_and_memlet(sdfg, "fpga_ONNX_input", vec_type)
     utils.vectorize_array_and_memlet(sdfg, "ONNX_3", vec_type)
-    sdfg.save("/tmp/out.sdfg")
 
     ###################################################
     # Transform for FPGA and Inline
@@ -96,10 +95,12 @@ def evaluate(in_channels,
     # Execute
     sdfg.save("/tmp/out_fpga.sdfg")
     dace_output_fpga = dace_model(torch.clone(x))
-    dace_output_fpga = dace_output_fpga.detach().numpy().reshape(torch_output.shape)
+    dace_output_fpga = dace_output_fpga.detach().numpy().reshape(
+        torch_output.shape)
 
     diff = np.linalg.norm(torch_output.detach().numpy() -
-                          dace_output_fpga) / np.linalg.norm(torch_output.detach().numpy())
+                          dace_output_fpga) / np.linalg.norm(
+                              torch_output.detach().numpy())
     print("Difference: ", diff)
     if queue is not None:
         # we are testing

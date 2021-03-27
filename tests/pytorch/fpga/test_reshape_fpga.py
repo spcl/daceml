@@ -41,7 +41,7 @@ def run(data_shape: tuple, reshaped_shape: tuple, vec_width=1, queue=None):
 
     torch_output = ptmodel(x)
 
-    dace_model = DaceModule(ptmodel)
+    dace_model = DaceModule(ptmodel, auto_optimize=False)
     out = dace_model(x)
     sdfg = dace_model.sdfg
     sdfg.apply_transformations([FPGATransformSDFG])
@@ -55,8 +55,8 @@ def run(data_shape: tuple, reshaped_shape: tuple, vec_width=1, queue=None):
         torch_output.detach().numpy().shape).detach().numpy()
 
     torch_output_numpy = torch_output.detach().numpy()
-    diff = np.linalg.norm(torch_output_numpy -
-                          dace_output_fpga) / dace_output_fpga.size
+    diff = np.linalg.norm(torch_output_numpy - dace_output_fpga
+                          ) / np.linalg.norm(torch_output_numpy)
 
     print("Difference: ", diff)
     if queue is not None:

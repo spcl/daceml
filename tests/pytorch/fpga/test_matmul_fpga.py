@@ -50,7 +50,7 @@ def run(x_shape: tuple, y_shape: tuple, vec_width=1, queue=None):
     y = torch.rand(y_shape, dtype=torch.float32)
     torch_output = ptmodel(x, y)
 
-    dace_model = DaceModule(ptmodel)
+    dace_model = DaceModule(ptmodel, auto_optimize=False)
     dace_output = dace_model(x, y)
     assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
     sdfg = dace_model.sdfg

@@ -65,7 +65,7 @@ if __name__ == "__main__":
     #second conv
     # data_shape = (100, 6, 12, 12)
     x = torch.rand(data_shape)
-    dace_model = DaceModule(ptmodel)
+    dace_model = DaceModule(ptmodel, auto_optimize=False)
     dace_output = dace_model(x)
 
     torch_output = ptmodel(x)
@@ -115,8 +115,8 @@ if __name__ == "__main__":
     dace_output_fpga = dace_output_fpga.reshape(dace_output.shape)
 
     torch_output_numpy = torch_output.detach().numpy()
-    diff = np.linalg.norm(torch_output_numpy -
-                          dace_output_fpga) / dace_output_fpga.size
+    diff = np.linalg.norm(torch_output_numpy - dace_output_fpga.numpy()
+                          ) / np.linalg.norm(torch_output_numpy)
 
     print("Difference: ", diff)
     assert (diff < 1e-6)

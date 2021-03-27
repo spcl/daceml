@@ -42,7 +42,7 @@ if __name__ == "__main__":
     data_shape = (1000, 6, 32, 32)
     x = torch.rand(data_shape)
 
-    dace_model = DaceModule(ptmodel)
+    dace_model = DaceModule(ptmodel, auto_optimize=False)
     dace_output = dace_model(x)
     torch_output = ptmodel(x)
     assert np.allclose(torch_output.detach().numpy(),

@@ -39,5 +39,3 @@ def test_attn():
     assert np.allclose(pt_outputs[1].detach().numpy(),
                        dace_outputs_1[1],
                        atol=1e-06)
-
-

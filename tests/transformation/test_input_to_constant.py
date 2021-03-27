@@ -17,6 +17,7 @@ class TestModule(nn.Module):
     def forward(self, x):
         return self.fc1(x)
 
+
 @pytest.mark.ort
 def test_input_to_constant():
     donnx.ONNXGemm.default_implementation = "pure"
