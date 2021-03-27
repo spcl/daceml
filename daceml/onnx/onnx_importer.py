@@ -11,13 +11,11 @@ from dace.codegen import compiled_sdfg
 from onnx import numpy_helper
 
 import dace
-import dace.data as dt
+from dace import data as dt, dtypes
 from dace.frontend.python.parser import infer_symbols_from_shapes
 from dace.sdfg import SDFG, SDFGState
-from dace.dtypes import AccessType, StorageType, AllocationLifetime
 import dace.sdfg.nodes as nd
 from dace.symbolic import pystr_to_symbolic
-from dace.transformation import auto_optimize
 
 from daceml.onnx.shape_inference import shape_inference
 from daceml.onnx.converters import convert_attribute_proto, onnx_tensor_type_to_typeclass, clean_onnx_name
@@ -207,8 +205,8 @@ class ONNXModel:
                     self._update_access_type(access, is_input)
                 else:
                     access = nd.AccessNode(
-                        clean_onnx_name(name), AccessType.ReadOnly
-                        if is_input else AccessType.WriteOnly)
+                        clean_onnx_name(name), dtypes.AccessType.ReadOnly
+                        if is_input else dtypes.AccessType.WriteOnly)
                     self.state.add_node(access)
                     access_nodes[name] = access
 
@@ -258,10 +256,10 @@ class ONNXModel:
 
     @staticmethod
     def _update_access_type(node: dace.nodes.AccessNode, is_input: bool):
-        if node.access == AccessType.ReadOnly and not is_input:
-            node.access = AccessType.ReadWrite
-        elif node.access == AccessType.WriteOnly and is_input:
-            node.access = AccessType.ReadWrite
+        if node.access == dtypes.AccessType.ReadOnly and not is_input:
+            node.access = dtypes.AccessType.ReadWrite
+        elif node.access == dtypes.AccessType.WriteOnly and is_input:
+            node.access = dtypes.AccessType.ReadWrite
 
     def _add_constant_tensor(self, tensor: onnx.TensorProto, parent_pt_model):
         if not tensor.HasField("name"):
@@ -511,13 +509,24 @@ def create_output_array(
             dim = dim.subs(sym, inferred_symbols[sym.name])
         return dim
 
+    if dtypes.can_access(dtypes.ScheduleType.CPU_Multicore, desc.storage):
+        cuda = False
+    elif dtypes.can_access(dtypes.ScheduleType.GPU_Default, desc.storage):
+        cuda = True
+    else:
+        raise ValueError(f"Unsupported storage {desc.storage}")
+
+    if cuda and not use_torch:
+        raise ValueError("Got use_torch=False, but received a GPU descriptor")
+
     shape = [eval_dim(d) if type(d) is dace.symbol else d for d in desc.shape]
     if use_torch:
         # as_numpy_dtype doesn't seem to work for indexing into the dict
-        return (torch.zeros if zeros else torch.empty)(
+        tens = (torch.zeros if zeros else torch.empty)(
             *shape,
             dtype=numpy_to_torch_dtype_dict[getattr(np,
                                                     desc.dtype.to_string())])
+        return tens.cuda() if cuda else tens
     else:
         return (np.zeros if zeros else np.empty)(shape,
                                                  dtype=getattr(

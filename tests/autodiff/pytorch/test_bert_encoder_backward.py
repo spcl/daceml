@@ -1,15 +1,13 @@
-import pytest
 import numpy as np
+import pytest
 import torch
-from dace.transformation.dataflow import RedundantSecondArray
 from transformers import BertConfig, BertLayer
 
 from daceml.pytorch import DaceModule
-from daceml.transformation import ConstantFolding
 
 
 @pytest.mark.slow
-def test_bert_encoder_backward(sdfg_name):
+def test_bert_encoder_backward(gpu, default_implementation, sdfg_name):
     batch_size = 2
     seq_len = 512
     hidden_size = 768
@@ -18,7 +16,7 @@ def test_bert_encoder_backward(sdfg_name):
     ptmodel = BertLayer(BertConfig(hidden_act="relu")).eval()
 
     dace_model = DaceModule(ptmodel,
-                            cuda=False,
+                            cuda=gpu,
                             train=False,
                             backward=True,
                             sdfg_name=sdfg_name,
