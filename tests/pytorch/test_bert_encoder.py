@@ -16,6 +16,42 @@ from dace.sdfg import nodes as sdfg_nodes
 from typing import List
 
 
+from dace.transformation.transformation import Transformation
+from dace.transformation.pattern_matching import enumerate_matches
+from dace.sdfg import utils as sdutil
+from dace.transformation.dataflow.squeeze_view_remove import SqueezeViewRemove
+from dace.transformation.dataflow.trivial_map_elimination import TrivialMapElimination
+from dace.transformation.dataflow.trivial_map_range_elimination import TrivialMapRangeElimination
+from dace.transformation.dataflow.map_expansion import MapExpansion
+from dace.transformation.dataflow.map_collapse import MapCollapse
+from dace.transformation.dataflow.strip_mining import StripMining
+from dace.transformation.dataflow.stream_transient import AccumulateTransient
+from dace.transformation.dataflow.nest_maps import NestMaps
+from dace.transformation.dataflow.nest_access_nodes import NestExitAccessNode
+from dace.transformation.dataflow.nest_access_nodes import NestEntryAccessNode
+from dace.transformation.dataflow.nest_access_nodes import RemoveUnusedAccessNode
+from dace.transformation.dataflow.nested_sdfg_fusion import NestedSDFGFusion
+from dace.transformation.dataflow.clean_connectors import CleanNestedSDFGConnectors, RemoveDanglingAccessNodes, NestTransients
+from dace.transformation.dataflow.nest_maps import NestMapContent
+from dace.transformation.interstate.nested_map_fusion import NestedMapFusion
+from dace.transformation.dataflow.clean_connectors import UnifyInOutNestedSDFGConnectors
+from dace.transformation.interstate.warp_all_reduce_detection import WarpAllReduceDetectionNoTasklet
+from dace.sdfg.propagation import propagate_memlets_sdfg
+from dace.transformation.dataflow.add_nsdfg_connector import AddNestedSDFGInputConnector
+from dace.transformation.dataflow.clean_connectors import RemoveReadSDFGConnectors
+from dace.transformation.dataflow.clean_connectors import NestTransients
+from dace.transformation.interstate.state_elimination import EmptyStateElimination
+from dace.libraries.standard.nodes.barrier import Barrier
+from dace.transformation.dataflow.clean_connectors import CleanNestedWrites
+from dace.transformation.interstate.remove_unused_states import RemoveUnusedStates
+from dace.transformation.dataflow import PruneConnectors
+from dace.transformation.dataflow.constant_propagation import ConstantPropagation
+from dace.transformation.dataflow.clean_connectors import merge_symbols
+from dace.transformation.interstate.state_elimination import EmptyStateElimination
+from dace.libraries.standard.nodes.barrier import Barrier
+from dace.transformation.interstate.gpu_transform_sdfg import GPUTransformSDFG
+
+
 def test_bert_encoder(gpu, default_implementation, sdfg_name):
     if not gpu and default_implementation == 'onnxruntime':
         pytest.skip("combination is tested below")
@@ -102,8 +138,6 @@ def test_bert_encoder_transformations():
     print('attn2.sdfg')
 
     # find softmax sdfg and state
-    from dace.transformation.pattern_matching import enumerate_matches
-    from dace.sdfg import utils as sdutil
 
     pattern = sdutil.node_path_graph(dace.nodes.MapExit, dace.nodes.AccessNode, dace.nodes.MapEntry)
 
@@ -116,7 +150,6 @@ def test_bert_encoder_transformations():
 
     # remove view nodes
 
-    from dace.transformation.dataflow.squeeze_view_remove import SqueezeViewRemove
 
     softmax_sdfg.apply_transformations_repeated([SqueezeViewRemove], validate_all=True, print_report=True)
 
@@ -124,8 +157,6 @@ def test_bert_encoder_transformations():
     print('attn2_1.sdfg')
 
     # eliminate trivial map dimensions
-    from dace.transformation.dataflow.trivial_map_elimination import TrivialMapElimination
-    from dace.transformation.dataflow.trivial_map_range_elimination import TrivialMapRangeElimination
 
     softmax_state.parent.apply_transformations_repeated([TrivialMapElimination, TrivialMapRangeElimination],
                                                         validate_all=True, print_report=True)
@@ -135,8 +166,6 @@ def test_bert_encoder_transformations():
 
     # split last dimension out of 4 dimensional maps
 
-    from dace.transformation.dataflow.map_expansion import MapExpansion
-    from dace.transformation.dataflow.map_collapse import MapCollapse
 
     pattern = sdutil.node_path_graph(dace.nodes.MapEntry(dace.nodes.Map('_', [], [])))
     occurences = [(subgraph.nodes()[0], subgraph.graph) for subgraph in enumerate_matches(softmax_sdfg, pattern)]
@@ -159,7 +188,6 @@ def test_bert_encoder_transformations():
 
     # apply strip mining for future use as warps
 
-    from dace.transformation.dataflow.strip_mining import StripMining
 
     pattern = sdutil.node_path_graph(dace.nodes.MapEntry(dace.nodes.Map('_', [], [])))
 
@@ -179,7 +207,6 @@ def test_bert_encoder_transformations():
     print('attn3_2.sdfg')
 
     # add temp transient
-    from dace.transformation.dataflow.stream_transient import AccumulateTransient
 
     pattern = sdutil.node_path_graph(dace.nodes.MapExit(dace.nodes.Map('_', [], [])),
                                      dace.nodes.MapExit(dace.nodes.Map('_', [], [])),
@@ -195,7 +222,6 @@ def test_bert_encoder_transformations():
 
     # nest all maps into states
 
-    from dace.transformation.dataflow.nest_maps import NestMaps
 
     softmax_sdfg.apply_transformations_repeated([NestMaps], validate_all=True, print_report=True)
 
@@ -204,9 +230,6 @@ def test_bert_encoder_transformations():
 
     # nest access nodes into maps
 
-    from dace.transformation.dataflow.nest_access_nodes import NestExitAccessNode
-    from dace.transformation.dataflow.nest_access_nodes import NestEntryAccessNode
-    from dace.transformation.dataflow.nest_access_nodes import RemoveUnusedAccessNode
 
     softmax_sdfg.apply_transformations_repeated([
         NestExitAccessNode, NestEntryAccessNode, RemoveUnusedAccessNode], validate_all=True, print_report=True)
@@ -214,14 +237,12 @@ def test_bert_encoder_transformations():
     dace_model.sdfg.save('attn5.sdfg')
     print('attn5.sdfg')
 
-    from dace.transformation.dataflow.nested_sdfg_fusion import NestedSDFGFusion
 
     softmax_sdfg.apply_transformations_repeated([NestedSDFGFusion], validate_all=True, print_report=True)
 
     dace_model.sdfg.save('attn6.sdfg')
     print('attn6.sdfg')
 
-    from dace.transformation.dataflow.clean_connectors import CleanNestedSDFGConnectors, RemoveDanglingAccessNodes, NestTransients
 
     softmax_sdfg.apply_transformations_repeated(
         [CleanNestedSDFGConnectors, RemoveDanglingAccessNodes, NestTransients], validate_all=True, print_report=True)
@@ -234,14 +255,12 @@ def test_bert_encoder_transformations():
     dace_model.sdfg.save('attn7_1.sdfg')
     print('attn7_1.sdfg')
 
-    from dace.transformation.dataflow.nest_maps import NestMapContent
 
     softmax_sdfg.apply_transformations_repeated([NestMapContent], validate_all=True, print_report=True)
 
     dace_model.sdfg.save('attn8.sdfg')
     print('attn8.sdfg')
 
-    from dace.transformation.interstate.nested_map_fusion import NestedMapFusion
 
     softmax_sdfg.apply_transformations_repeated([NestedMapFusion], validate_all=True, print_report=True)
 
@@ -254,49 +273,41 @@ def test_bert_encoder_transformations():
     dace_model.sdfg.save('attn10.sdfg')
     print('attn10.sdfg')
 
-    from dace.transformation.dataflow.clean_connectors import UnifyInOutNestedSDFGConnectors
 
     softmax_sdfg.apply_transformations_repeated([UnifyInOutNestedSDFGConnectors], validate_all=True, print_report=True)
 
     dace_model.sdfg.save('attn11.sdfg')
     print('attn11.sdfg')
 
-    from dace.transformation.interstate.warp_all_reduce_detection import WarpAllReduceDetectionNoTasklet
 
     softmax_sdfg.apply_transformations_repeated([WarpAllReduceDetectionNoTasklet], validate_all=True, print_report=True)
 
     dace_model.sdfg.save('attn11_1.sdfg')
     print('attn11_1.sdfg')
 
-    from dace.sdfg.propagation import propagate_memlets_sdfg
     propagate_memlets_sdfg(dace_model.sdfg)
 
     dace_model.sdfg.save('attn11_2.sdfg')
     print('attn11_2.sdfg')
 
-    from dace.transformation.dataflow.add_nsdfg_connector import AddNestedSDFGInputConnector
 
     softmax_sdfg.apply_transformations_repeated([AddNestedSDFGInputConnector], validate_all=True, print_report=True)
 
     dace_model.sdfg.save('attn11_3.sdfg')
     print('attn11_3.sdfg')
 
-    from dace.transformation.dataflow.clean_connectors import RemoveReadSDFGConnectors
 
     softmax_sdfg.apply_transformations_repeated([RemoveReadSDFGConnectors], validate_all=True, print_report=True)
 
     dace_model.sdfg.save('attn12.sdfg')
     print('attn12.sdfg')
 
-    from dace.transformation.dataflow.clean_connectors import NestTransients
 
     softmax_sdfg.apply_transformations_repeated([NestTransients], validate_all=True, print_report=True)
 
     dace_model.sdfg.save('attn12_1.sdfg')
     print('attn12_1.sdfg')
 
-    from dace.transformation.interstate.state_elimination import EmptyStateElimination
-    from dace.libraries.standard.nodes.barrier import Barrier
     # TODO: it should be done in transformation that can detect if barrier removable or not
     pattern = sdutil.node_path_graph(Barrier)
 
@@ -309,21 +320,18 @@ def test_bert_encoder_transformations():
     dace_model.sdfg.save('attn12_2.sdfg')
     print('attn12_2.sdfg')
 
-    from dace.transformation.dataflow.clean_connectors import CleanNestedWrites
 
     softmax_sdfg.apply_transformations_repeated([CleanNestedWrites], validate_all=True, print_report=True)
 
     dace_model.sdfg.save('attn13.sdfg')
     print('attn13.sdfg')
 
-    from dace.transformation.interstate.remove_unused_states import RemoveUnusedStates
 
     softmax_sdfg.apply_transformations_repeated([RemoveUnusedStates], validate_all=True, print_report=True)
 
     dace_model.sdfg.save('attn14.sdfg')
     print('attn14.sdfg')
 
-    from dace.transformation.dataflow import PruneConnectors
 
     softmax_sdfg.apply_transformations_repeated(
         [PruneConnectors], validate_all=True, print_report=True)
@@ -337,7 +345,6 @@ def test_bert_encoder_transformations():
     dace_model.sdfg.save('attn15.sdfg')
     print('attn15.sdfg')
 
-    from dace.transformation.dataflow.constant_propagation import ConstantPropagation
 
     softmax_sdfg.apply_transformations_repeated([ConstantPropagation], validate_all=True, print_report=True)
 
@@ -383,7 +390,6 @@ def test_bert_encoder_transformations():
     assert len(softmax_sdfg.nodes()) == 1
     state_with_nsdfg: dace_state.SDFGState = softmax_sdfg.nodes()[0]
 
-    from dace.transformation.dataflow.clean_connectors import merge_symbols
 
     for n in state_with_nsdfg.nodes():
         if isinstance(n, sdfg_nodes.NestedSDFG):
@@ -396,8 +402,6 @@ def test_bert_encoder_transformations():
     dace_model.sdfg.save('attn16_1.sdfg')
     print('attn16_1.sdfg')
 
-    from dace.transformation.interstate.state_elimination import EmptyStateElimination
-    from dace.libraries.standard.nodes.barrier import Barrier
 
     # remove all barriers
     # TODO: it should be done in transformation that can detect if barrier removable or not
@@ -417,7 +421,6 @@ def test_bert_encoder_transformations():
     dace_model.sdfg.save('attn16_3.sdfg')
     print('attn16_3.sdfg')
 
-    from dace.transformation.interstate.gpu_transform_sdfg import GPUTransformSDFG
 
     # it fails with strict_transform enabled for some reason
     softmax_sdfg.apply_transformations([GPUTransformSDFG], validate_all=True, print_report=True, options={'strict_transform': False})
@@ -430,7 +433,7 @@ def test_bert_encoder_transformations():
     dace_model.sdfg.save('attn_last.sdfg')
     print('attn_last.sdfg')
 
-    # dace_model.sdfg.from_file('attn3_1.sdfg')
+    dace_model.sdfg.from_file('attn_last.sdfg')
 
     dace_outputs1 = dace_model(input.clone())
 
