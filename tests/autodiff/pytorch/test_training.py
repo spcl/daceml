@@ -35,6 +35,7 @@ def training_step(dace_model,
                   pt_model,
                   train_batch,
                   sdfg_name,
+                  gpu,
                   train_criterion=None):
 
     # copy over the weights
@@ -43,7 +44,10 @@ def training_step(dace_model,
                                  dace_model.state_dict().values()):
         assert np.allclose(dace_value, value)
 
-    dace_model = DaceModule(dace_model, backward=True, sdfg_name=sdfg_name)
+    dace_model = DaceModule(dace_model,
+                            backward=True,
+                            sdfg_name=sdfg_name,
+                            cuda=gpu)
 
     x, y = train_batch
     train_criterion = train_criterion or nn.NLLLoss()
@@ -77,7 +81,7 @@ def training_step(dace_model,
         torch_tensors_close(name, pt_param.detach(), dace_param.detach())
 
 
-def test_mnist(sdfg_name):
+def test_mnist(sdfg_name, gpu):
     input_size = 784
     hidden_sizes = [128, 64]
     output_size = 10
@@ -105,10 +109,11 @@ def test_mnist(sdfg_name):
     images = torch.randn(64, 784)
     labels = torch.randint(0, 10, [64], dtype=torch.long)
 
-    training_step(dace_model, model, (images, labels), sdfg_name)
+    training_step(dace_model, model, (images, labels), sdfg_name, gpu)
 
 
-def test_bert(sdfg_name):
+@pytest.mark.pure
+def test_bert(sdfg_name, gpu):
     batch_size = 2
     seq_len = 512
     hidden_size = 768
@@ -128,4 +133,4 @@ def test_bert(sdfg_name):
     labels = torch.tensor([0, 123], dtype=torch.long)
 
     training_step(BertTokenSoftmaxClf(), BertTokenSoftmaxClf(),
-                  (input, labels), sdfg_name)
+                  (input, labels), sdfg_name, gpu)
