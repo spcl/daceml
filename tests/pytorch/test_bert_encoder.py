@@ -52,6 +52,9 @@ from dace.libraries.standard.nodes.barrier import Barrier
 from dace.transformation.interstate.gpu_transform_sdfg import GPUTransformSDFG
 
 
+from dace.config import Config
+
+
 def test_bert_encoder(gpu, default_implementation, sdfg_name):
     if not gpu and default_implementation == 'onnxruntime':
         pytest.skip("combination is tested below")
@@ -250,7 +253,9 @@ def test_bert_encoder_transformations():
     dace_model.sdfg.save('attn7.sdfg')
     print('attn7.sdfg')
 
-    softmax_sdfg.apply_transformations_repeated([TrivialMapRangeElimination, TrivialMapElimination], validate_all=True, print_report=True)
+    # I tried to use TrivialMapRangeElimination before this transformation and it created empty map (with no ranges)
+    # that is not possible to remove with TrivialMapElimination
+    softmax_sdfg.apply_transformations_repeated([TrivialMapElimination], validate_all=True, print_report=True)
 
     dace_model.sdfg.save('attn7_1.sdfg')
     print('attn7_1.sdfg')
@@ -428,12 +433,23 @@ def test_bert_encoder_transformations():
     dace_model.sdfg.save('attn17.sdfg')
     print('attn17.sdfg')
 
+    # GPUTransformSDFG incorrectly wraps Tasklets of NestedSDFGs deep in the nesting hierarchy with empty maps
+    # it is easier to fix it here by applying TrivialMapElimination
+    softmax_sdfg.apply_transformations_repeated([TrivialMapElimination], validate_all=True, print_report=True)
+
+    dace_model.sdfg.save('attn18.sdfg')
+    print('attn18.sdfg')
+
     softmax_sdfg.expand_library_nodes()
 
     dace_model.sdfg.save('attn_last.sdfg')
     print('attn_last.sdfg')
 
-    dace_model.sdfg.from_file('attn_last.sdfg')
+    # compiler_cuda_args = Config.get("compiler", "cuda", "args")
+    # compiler_cuda_args += " -g -G"
+    # Config.set("compiler", "cuda", "args", value=compiler_cuda_args)
+
+    # Config.set("compiler", "use_cache", value=True)
 
     dace_outputs1 = dace_model(input.clone())
 
