@@ -253,9 +253,9 @@ def test_bert_encoder_transformations():
     dace_model.sdfg.save('attn7.sdfg')
     print('attn7.sdfg')
 
-    # I tried to use TrivialMapRangeElimination before this transformation and it created empty map (with no ranges)
-    # that is not possible to remove with TrivialMapElimination
-    softmax_sdfg.apply_transformations_repeated([TrivialMapElimination], validate_all=True, print_report=True)
+    # Buggy behavior of TrivialMapRangeElimination that leaves empty map that can't be removed with
+    # TrivialMapElimination helps here by blocking even more serious bug in ContantPropagation later
+    softmax_sdfg.apply_transformations_repeated([TrivialMapRangeElimination, TrivialMapElimination], validate_all=True, print_report=True)
 
     dace_model.sdfg.save('attn7_1.sdfg')
     print('attn7_1.sdfg')
@@ -448,7 +448,7 @@ def test_bert_encoder_transformations():
     # compiler_cuda_args = Config.get("compiler", "cuda", "args")
     # compiler_cuda_args += " -g -G"
     # Config.set("compiler", "cuda", "args", value=compiler_cuda_args)
-
+    #
     # Config.set("compiler", "use_cache", value=True)
 
     dace_outputs1 = dace_model(input.clone())
