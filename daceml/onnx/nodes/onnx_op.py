@@ -612,12 +612,8 @@ for schema in onnx.defs.get_all_schemas():
 
                 @classmethod
                 def expansion(cls, node, state, sdfg):
-                    # scalars on gpu don't work in dace at the moment.
-                    skip_due_to_scalars_on_gpu = (
-                        node.schedule == dtypes.ScheduleType.GPU_Default
-                        and any(
-                            isinstance(sdfg.arrays[e.data.data], data.Scalar)
-                            for e in state.out_edges(node)))
+                    # validate
+                    node.validate(sdfg, state)
 
                     if cls.forward_impl.forward_can_be_applied(
                             node, state, sdfg):
@@ -625,8 +621,9 @@ for schema in onnx.defs.get_all_schemas():
                     else:
                         # fall back to ORT
                         log.info(
-                            'Falling back to onnxruntime expansion for library node "{}". Reason: forward_can_be_applied returned False'
-                            .format(node.label))
+                            'Falling back to onnxruntime expansion for library node "{}". '
+                            'Reason: forward_can_be_applied returned False'.
+                            format(node.label))
                         result = expand_node(node, state, sdfg)
                         if not isinstance(result, SDFG):
                             # when we return an SDFG the the environments will be determined recursively by codegen.

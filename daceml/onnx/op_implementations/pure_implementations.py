@@ -104,9 +104,6 @@ class PureSqrt(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        node.validate(sdfg, state)
-
         def prog(X, Y):
             Y[:] = dace.elementwise(lambda x: sqrt(x), X)
 
@@ -125,9 +122,6 @@ class PurePow(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        node.validate(sdfg, state)
-
         def prog(X, Y, Z):
             Z[:] = X**Y
 
@@ -139,9 +133,6 @@ class PureAdd(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        node.validate(sdfg, state)
-
         def prog(A, B, C):
             C[:] = A + B
 
@@ -153,9 +144,6 @@ class PureSub(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        node.validate(sdfg, state)
-
         def prog(A, B, C):
             C[:] = A - B
 
@@ -167,9 +155,6 @@ class PureMul(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        node.validate(sdfg, state)
-
         def prog(A, B, C):
             C[:] = A * B
 
@@ -181,9 +166,6 @@ class PureDiv(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        node.validate(sdfg, state)
-
         def prog(A, B, C):
             C[:] = A / B
 
@@ -195,9 +177,6 @@ class PureReduceMean(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        node.validate(sdfg, state)
-
         axes = node.axes
 
         # when keepdims is true, this works but there is a useless copy. We just leave this for now; this can be fixed
@@ -220,9 +199,6 @@ class PureErf(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        node.validate(sdfg, state)
-
         def prog(input, output):
             output[:] = dace.elementwise(lambda x: erf(x), input)
 
@@ -244,8 +220,6 @@ class PureMatMul(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        node.validate(sdfg, state)
-
         A_desc = in_desc_with_name(node, state, sdfg, "A")
         B_desc = in_desc_with_name(node, state, sdfg, "B")
         Y_desc = out_desc_with_name(node, state, sdfg, "Y")
@@ -351,8 +325,6 @@ class PureEinsum(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        node.validate(sdfg, state)
-
         nsdfg = dace.SDFG(node.label + "_expansion")
         nstate = nsdfg.add_state()
 
@@ -383,9 +355,6 @@ class PureIdentity(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        node.validate(sdfg, state)
-
         def prog(input, output):
             output[:] = input
 
@@ -404,9 +373,6 @@ class PureReciprocal(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        node.validate(sdfg, state)
-
         dtype = in_desc_with_name(node, state, sdfg, 'X').dtype
         tanh_lambda = "lambda x: dace.{}(1) / x".format(dtype.to_string())
 
@@ -421,9 +387,6 @@ class PureTanh(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        node.validate(sdfg, state)
-
         def prog(input, output):
             output[:] = dace.elementwise(lambda x: tanh(x), input)
 
@@ -435,8 +398,6 @@ class PureReduceSum(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        node.validate(sdfg, state)
-
         axes = node.axes
 
         # when keepdims is true, this works but there is a useless copy. We just leave this for now; this can be fixed
@@ -452,8 +413,6 @@ class PureReduceMax(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        node.validate(sdfg, state)
-
         axes = node.axes
 
         # when keepdims is true, this works but there is a useless copy. We just leave this for now; this can be fixed
@@ -469,8 +428,6 @@ class PureReduceMin(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        node.validate(sdfg, state)
-
         axes = node.axes
 
         # when keepdims is true, this works but there is a useless copy. We just leave this for now; this can be fixed
@@ -509,8 +466,6 @@ class PureTranspose(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        node.validate(sdfg, state)
         perm = node.perm
 
         def prog(data, transposed):
@@ -567,8 +522,6 @@ class PureGemm(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        node.validate(sdfg, state)
-
         assert node.alpha == 1.0 and node.beta == 1.0 and node.transA == 0 and node.transB == 1
 
         # the gemm libnode is broken for now, so we just do it manually
