@@ -151,13 +151,22 @@ def test_bert_encoder_transformations():
 
     softmax_sdfg: dace_sdfg.SDFG = softmax_state.parent
 
+    # enable temporary array reuse
+
+    assert len(softmax_sdfg.nodes()) == 1
+
+    merge_symbols(softmax_sdfg, 'output', 'exp_arr')
+
+    dace_model.sdfg.save('attn2_1.sdfg')
+    print('attn2_1.sdfg')
+
     # remove view nodes
 
 
     softmax_sdfg.apply_transformations_repeated([SqueezeViewRemove], validate_all=True, print_report=True)
 
-    dace_model.sdfg.save('attn2_1.sdfg')
-    print('attn2_1.sdfg')
+    dace_model.sdfg.save('attn2_2.sdfg')
+    print('attn2_2.sdfg')
 
     # eliminate trivial map dimensions
 
@@ -225,7 +234,6 @@ def test_bert_encoder_transformations():
 
     # nest all maps into states
 
-
     softmax_sdfg.apply_transformations_repeated([NestMaps], validate_all=True, print_report=True)
 
     dace_model.sdfg.save('attn4.sdfg')
@@ -246,9 +254,9 @@ def test_bert_encoder_transformations():
     dace_model.sdfg.save('attn6.sdfg')
     print('attn6.sdfg')
 
-
     softmax_sdfg.apply_transformations_repeated(
         [CleanNestedSDFGConnectors, RemoveDanglingAccessNodes, NestTransients], validate_all=True, print_report=True)
+
 
     dace_model.sdfg.save('attn7.sdfg')
     print('attn7.sdfg')
@@ -392,20 +400,7 @@ def test_bert_encoder_transformations():
     dace_model.sdfg.save('attn16.sdfg')
     print('attn16.sdfg')
 
-    assert len(softmax_sdfg.nodes()) == 1
-    state_with_nsdfg: dace_state.SDFGState = softmax_sdfg.nodes()[0]
 
-
-    for n in state_with_nsdfg.nodes():
-        if isinstance(n, sdfg_nodes.NestedSDFG):
-            target_sdfg = n.sdfg
-
-            # TODO: for this we need transformation that detects opportunities for memory reuse
-            # TODO: try TransientReuse
-            merge_symbols(target_sdfg, 'n2_output', 'n1_tmp_out')
-
-    dace_model.sdfg.save('attn16_1.sdfg')
-    print('attn16_1.sdfg')
 
 
     # remove all barriers
@@ -426,6 +421,12 @@ def test_bert_encoder_transformations():
     dace_model.sdfg.save('attn16_3.sdfg')
     print('attn16_3.sdfg')
 
+    softmax_sdfg.apply_transformations_repeated([
+        NestedMapFusion, CleanNestedSDFGConnectors, RemoveDanglingAccessNodes, NestTransients,
+        UnifyInOutNestedSDFGConnectors, RemoveReadSDFGConnectors], validate_all=True, print_report=True)
+
+    dace_model.sdfg.save('attn16_4.sdfg')
+    print('attn16_4.sdfg')
 
     # it fails with strict_transform enabled for some reason
     softmax_sdfg.apply_transformations([GPUTransformSDFG], validate_all=True, print_report=True, options={'strict_transform': False})
