@@ -2019,28 +2019,23 @@ class FPGAMatMul(ONNXForward):
             # If this condition is not met, this will return a wrong result/deadlock
             # It is quite complicated to always satisfy this condition in current implementation.
 
-            # We check this with asserts to track these cases
-            #assert(N/P*M/T*K < P*T)
-
-            assert (K <= P * T)  # validity cehck.
+            assert (K <= P*T)  # validity check.
 
             def make_read_A(state):
                 entry, exit = state.add_map(
                     "read_A",
                     {
-                        "b": "0:{}".format(BATCH),
-                        "n0": "0:{}/{}".format(N, P),
-                        "tm": "0:{}/{}".format(
-                            M,
-                            T),  # must be repeated according to the tile size
-                        "k": "0:{}".format(K)
+                        "b": f"0:{BATCH}",
+                        "n0": f"0:{N}/{P}",
+                        "tm": f"0:{M}/{T}",  # must be repeated according to the tile size
+                        "k": f"0:{K}"
                     },
                     schedule=dace.ScheduleType.FPGA_Device)
 
                 # use a different map, and unroll it if necessary
                 unroll_inner_map = P > (M + L) and P <= 16
                 send_map_entry, send_map_exit = state.add_map(
-                    "send_A", {"n1": "0:{}".format(P)},
+                    "send_A", {"n1": f"0:{P}"},
                     schedule=dace.ScheduleType.FPGA_Device,
                     unroll=unroll_inner_map)
 
@@ -2056,24 +2051,24 @@ class FPGAMatMul(ONNXForward):
                                       tasklet,
                                       dst_conn="from_memory",
                                       memlet=dace.Memlet(
-                                          "A[b, n0 * {} + n1, k]".format(P)))
+                                          f"A[b, n0 * {P} + n1, k]"))
                 state.add_memlet_path(tasklet,
                                       send_map_exit,
                                       exit,
                                       pipe,
                                       src_conn="to_kernel",
                                       memlet=dace.Memlet(
-                                          "A_pipe[{} - n1 - 1]".format(P)))
+                                          f"A_pipe[{P} - n1 - 1]"))
 
             def make_read_B(state, vec_width=1):
 
                 entry, exit = state.add_map(
                     "read_B", {
-                        "b": "0:{}".format(BATCH),
-                        "n": "0:{}/{}".format(N, P),
-                        "tm": "0:{}/{}".format(M, T),
-                        "k": "0:{}".format(K),
-                        "m": "0:{}".format(T)
+                        "b": f"0:{BATCH}",
+                        "n": f"0:{N}/{P}",
+                        "tm": f"0:{M}/{T}",
+                        "k": f"0:{K}",
+                        "m": f"0:{T}"
                     },
                     schedule=dace.ScheduleType.FPGA_Device)
 
@@ -2088,8 +2083,7 @@ class FPGAMatMul(ONNXForward):
                     entry,
                     tasklet,
                     dst_conn="from_memory",
-                    memlet=dace.Memlet("B[{}k, tm*{} + m]".format(
-                        "b," if input1_dim == 3 else "", M / T)))
+                    memlet=dace.Memlet(f"B[{'b,' if input1_dim == 3 else ''}k, tm*{M / T} + m]"))
 
                 state.add_memlet_path(tasklet,
                                       exit,
@@ -2112,11 +2106,11 @@ class FPGAMatMul(ONNXForward):
                 entry_map, exit_map = state.add_map(
                     "write_Y",
                     {
-                        "b": "0:{}".format(BATCH),
-                        "n0": "0:{}/{}".format(N, P),
-                        "tm": "0:{}/{}".format(M, T),
-                        "n1": "0:{}".format(P),
-                        "m": "0:{}".format(T)  # considers also vectorization
+                        "b": f"0:{BATCH}",
+                        "n0": f"0:{N}/{P}",
+                        "tm": f"0:{M}/{T}",
+                        "n1": f"0:{P}",
+                        "m": f"0:{T}"  # considers also vectorization
                     },
                     schedule=dace.ScheduleType.FPGA_Device)
 
@@ -2130,7 +2124,7 @@ class FPGAMatMul(ONNXForward):
                                           tasklet,
                                           dst_conn="from_kernel",
                                           memlet=dace.Memlet(
-                                              "Y_pipe[{}-1]".format(P)))
+                                              f"Y_pipe[{P}-1]"))
 
                     state.add_memlet_path(
                         tasklet,
@@ -2138,10 +2132,10 @@ class FPGAMatMul(ONNXForward):
                         mem,
                         src_conn="to_memory",
                         memlet=dace.Memlet(
-                            "Y[b, n0 * {} + n1, tm*{}+ m]".format(P, T)))
+                            f"Y[b, n0 * {P} + n1, tm*{T}+ m]"))
                 else:
                     entry_write_map, exit_write_map = state.add_map(
-                        "write_Y_unrolled", {"i": "0:{}".format(B.veclen)},
+                        "write_Y_unrolled", {"i": f"0:{B.veclen}"},
                         unroll=True)
                     # local storage to unpack vectorized data
                     new_sdfg.add_array(
@@ -2155,7 +2149,7 @@ class FPGAMatMul(ONNXForward):
                                           entry_map,
                                           vec_res,
                                           memlet=dace.Memlet(
-                                              "Y_pipe[{}-1]".format(P)))
+                                              f"Y_pipe[{P}-1]"))
                     state.add_memlet_path(vec_res,
                                           entry_write_map,
                                           tasklet,
@@ -2169,8 +2163,7 @@ class FPGAMatMul(ONNXForward):
                         mem,
                         src_conn="to_memory",
                         memlet=dace.Memlet(
-                            "Y[b, n0 * {} + n1, (tm*{}+ m)*{} + i]".format(
-                                P, T, vec_width)))
+                            f"Y[b, n0 * {P} + n1, (tm*{T}+ m)*{vec_width} + i]"))
 
             def make_compute(sdfg, state, vec_width=1):
                 vec_type = dace.vector(Y.dtype.base_type, vec_width)
@@ -2183,11 +2176,11 @@ class FPGAMatMul(ONNXForward):
                 entry_pipeline, exit_pipeline = state.add_pipeline(
                     "compute_and_drain",
                     {
-                        "b": "0:{}".format(BATCH),
-                        "n0": "0:{}/{}".format(N, P),
-                        "tm": "0:{}/{}".format(M, T),
-                        "k": "0:{}".format(K),
-                        "m": "0:{} + {}".format(T, L)
+                        "b": f"0:{BATCH}",
+                        "n0": f"0:{N}/{P}",
+                        "tm": f"0:{M}/{T}",
+                        "k": f"0:{K}",
+                        "m": f"0:{T} + {L}"
                     },  # The + L is a safe delay between computing and drain. It must be computed by
                     #considering the latency for updating the same result (not just the FP32 multiply add, but
                     # also for reading/writing from BRAM)
@@ -2226,9 +2219,9 @@ class FPGAMatMul(ONNXForward):
                 buffer_a_tasklet = state.add_tasklet(
                     "buffer_a", {"a_in"}, {
                         "a_reg",
-                    }, """\
-if m == 0 and not {}:
-    a_reg = a_in""".format(entry_pipeline.pipeline.drain_condition()))
+                    }, f"""\
+if m == 0 and not {entry_pipeline.pipeline.drain_condition()}:
+    a_reg = a_in""")
                 state.add_memlet_path(A_pipe_in,
                                       entry_pipeline,
                                       buffer_a_tasklet,
@@ -2250,9 +2243,9 @@ if m == 0 and not {}:
                                storage=dace.dtypes.StorageType.FPGA_Local)
                 B_reg = state.add_access("B_reg")
                 buffer_b_tasklet = state.add_tasklet(
-                    "buffer_b", {"b_in"}, {"b_reg_out"}, """\
-if  m>={} and not {}:
-    b_reg_out = b_in""".format(L, entry_pipeline.pipeline.drain_condition()))
+                    "buffer_b", {"b_in"}, {"b_reg_out"}, f"""\
+if  m>={L} and not {entry_pipeline.pipeline.drain_condition()}:
+    b_reg_out = b_in""")
 
                 state.add_memlet_path(B_pipe_in,
                                       entry_pipeline,
@@ -2329,14 +2322,14 @@ else:
                                       compute_tasklet,
                                       dst_conn="y_in",
                                       memlet=dace.Memlet(
-                                          "Y_buffer[m-{}]".format(L),
+                                          f"Y_buffer[m-{L}]",
                                           allow_oob=True))
 
                 state.add_memlet_path(compute_tasklet,
                                       exit_pipeline,
                                       Y_buffer_out,
                                       memlet=dace.Memlet(
-                                          "Y_buffer[m-{}]".format(L),
+                                          f"Y_buffer[m-{L}]",
                                           allow_oob=True,
                                           dynamic=True),
                                       src_conn="y_out")
