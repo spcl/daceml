@@ -127,8 +127,8 @@ def test_attn(batch_size, configuration_name, execute_cpu_dace=False):
     ##################################
     # Vectorize
     # TODO: this is still partial
-    vec_width = 2  # we can not go further in this because of the systolic organization
-    vec_type = dace.vector(dace.float32, vec_width)
+    # vec_width = 2  # we can not go further in this because of the systolic organization
+    # vec_type = dace.vector(dace.float32, vec_width)
     #
     # #vectorize input B matmul, output not vectorized
     # input_data_name = "ONNX___tmp33"
@@ -194,7 +194,7 @@ def test_attn(batch_size, configuration_name, execute_cpu_dace=False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("B", type=int, nargs="?", default=2, help="Batch size")
+    parser.add_argument("B", type=int, nargs="?", default=1, help="Batch size")
     parser.add_argument("conf",
                         type=str,
                         nargs="?",
