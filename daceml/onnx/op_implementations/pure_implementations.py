@@ -741,4 +741,4 @@ class PureLogSoftmax(ONNXForward):
                             div_sum=tmp_sum,
                             div_output=output)
 
-        return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node)

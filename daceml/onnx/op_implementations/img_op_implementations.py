@@ -6,7 +6,7 @@ from dace import SDFGState, SDFG, dtypes
 from dace.registry import autoregister_params
 from dace.sdfg import nodes, propagation
 
-from daceml.onnx.implementation_abc import ONNXForward
+from daceml.onnx.forward_implementation_abc import ONNXForward
 from daceml.onnx.nodes.onnx_op import ONNXOp
 from daceml.util.utils import in_desc_with_name, out_desc_with_name
 
@@ -463,8 +463,7 @@ class Im2ColConv(ONNXForward):
         batch_me, batch_mx = new_state.add_map(
             'batch_map',
             dict(b="0:{}".format(batch_size)),
-            schedule=dtypes.ScheduleType.
-            Sequential  # todo why does non-sequential fail on CPU
+            schedule=dtypes.ScheduleType.Sequential
         )
 
         # for each image, we create the im2col matrix
@@ -533,7 +532,7 @@ class Im2ColConv(ONNXForward):
 
             gemm_sdfg = new_state.add_nested_sdfg(
                 matmul_nsdfg.to_sdfg(), None, {"weights", "im2col", "biases"},
-                {"result"})
+                {"result"}, schedule=node.schedule)
 
             # connect biases -> matmul
             new_state.add_edge(new_state.add_read("B"), None, batch_me, None,
@@ -549,7 +548,7 @@ class Im2ColConv(ONNXForward):
 
             gemm_sdfg = new_state.add_nested_sdfg(matmul_nsdfg.to_sdfg(), None,
                                                   {"weights", "im2col"},
-                                                  {"result"})
+                                                  {"result"}, schedule=node.schedule)
 
         # connect im2col -> matmul
         new_state.add_edge(access_I, None, gemm_sdfg, "im2col",
