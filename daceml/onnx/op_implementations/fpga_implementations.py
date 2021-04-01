@@ -2730,7 +2730,7 @@ if m>= {L} and not {entry_pipeline.pipeline.drain_condition()}:
 # How: 
 # - if k = K-1 and m>=L: then the PE drains its own result
 #-  otherwise, if k_drain<p forward data coming from previous PEs (this could happens also in the drain phase)
-if((floor((b_n*{P} )/{N})>0 or (b_n*{P})%{N} > 0 or tm > 0)  and k_drain <p and m_drain <{T}) or  (k=={K}-1 and m>= {L}) or ({entry_pipeline.pipeline.drain_condition()} and k_drain < p):
+if((((b_n*{P})/{N})>0 or (b_n*{P})%{N} > 0 or tm > 0)  and k_drain <p and m_drain <{T}) or  (k=={K}-1 and m>= {L}) or ({entry_pipeline.pipeline.drain_condition()} and k_drain < p):
     y_pipe_out = y_out if (p==0 or (k_drain=={K}-1 and not {entry_pipeline.pipeline.drain_condition()})) else forward_in
 
 # adjust draining iterators
