@@ -1948,10 +1948,12 @@ class FPGAMatMul(ONNXForward):
         if input0_dim == 3 and input1_dim == 2:
             return True
 
-        if input0_dim == 2 and input1_dim == 2:
-            return True
         if input0_dim == 3 and input1_dim == 3:
             return True
+
+        if input0_dim == 2 and input1_dim == 2:
+            print("MatMult 2D-2D not currently supported")
+            return False # TODO
 
         return False
 
@@ -1970,36 +1972,40 @@ class FPGAMatMul(ONNXForward):
         input1_dim = len(B.shape)
 
         # TODO: factorize: currently there are three different implementations
-        # also because of the systolic array architecture. Can we factorize something
+        # also because of the systolic array architecture.
+        # We can factorize more than this, for example by allowing 3D-3D and 3D-2D to
+        # be the same but with a different # PE selection (+ some memlets)
 
+        new_sdfg = dace.SDFG("fpga_matmul")
+        new_state = new_sdfg.add_state("mmm_compute")
+
+        # Input/Output shapes and strides are inferred by ONNX shape inference
+        # Matrix A, has shape (BATCH, N, K)
+        BATCH, N, K = A.shape
+        # its strides are (sAB, sAN, sAK)
+
+        # Matrix B has shape ([BATCH,] K, M)
+        M = B.shape[-1]  # Note, this accounts for vectorization
+        # its strides are (sBB, sBK, sBM)
+
+        # Matrix Y, the result has shape (BATCH, N, M)
+        # its shape is (sCB, sCN, sCM)
+
+        ###############################
+        # Add the containers to the new_sdfg
+        new_sdfg.add_datadesc("A", copy.deepcopy(A))
+        new_sdfg.add_datadesc("B", copy.deepcopy(B))
+        new_sdfg.add_datadesc("Y", copy.deepcopy(Y))
+        new_sdfg.arrays["A"].transient = False
+        new_sdfg.arrays["B"].transient = False
+        new_sdfg.arrays["Y"].transient = False
+
+        # This depends on the input. We deal with disalignment in input/output vectorization widths
+        vec_width = B.veclen
 
         if input0_dim == 3 and input1_dim == 3:
-            # This expansions performs the two following einsum:
+            # This expansions performs the following einsum:
             # - 'bik,bkj->bij' (batched matmul)
-            new_sdfg = dace.SDFG("fpga_matmul")
-            new_state = new_sdfg.add_state("mmm_compute")
-            # Batched MMM
-
-            # Input/Output shapes and strides are inferred by ONNX shape inference
-            # Matrix A, has shape (BATCH, N, K)
-            BATCH, N, K = A.shape
-            #its strides are (sAB, sAN, sAK)
-
-            # Matrix B has shape ([BATCH,] K, M)
-            M = B.shape[-1]  # Note, this accounts for vectorization
-            # its strides are (sBB, sBK, sBM)
-
-            #Matrix Y, the result has shape (BATCH, N, M)
-            # its shape is (sCB, sCN, sCM)
-
-            ###############################
-            # Add the containers to the new_sdfg
-            new_sdfg.add_datadesc("A", copy.deepcopy(A))
-            new_sdfg.add_datadesc("B", copy.deepcopy(B))
-            new_sdfg.add_datadesc("Y", copy.deepcopy(Y))
-            new_sdfg.arrays["A"].transient = False
-            new_sdfg.arrays["B"].transient = False
-            new_sdfg.arrays["Y"].transient = False
 
             # TODO: tiling
             # TODO: choose PE in a wiser way, and deal with PEs that do not divide N (or whatever dimension is meaningul)
@@ -2012,9 +2018,6 @@ class FPGAMatMul(ONNXForward):
             P = math.gcd(
                 K, P
             )  # (this to ensure that the cycles needed to compute on each PE > number of cycle to drain everything; see later)
-
-            # This depends on the input. We deal with disalignment in input/output vectorization widths
-            vec_width = B.veclen
 
             # In order to guarantee correctness an deadlock free:
             # -  we have to ensure that the number of cycles needed to drain everything must be less or equal to
@@ -2428,30 +2431,6 @@ else:
             # This implements the following einsum
             # -  'bik,kj->bij' (B is a 2D tensor)
 
-            new_sdfg = dace.SDFG("fpga_matmul")
-            new_state = new_sdfg.add_state("mmm_compute")
-            # Batched MMM
-
-            # Input/Output shapes and strides are inferred by ONNX shape inference
-            # Matrix A, has shape (BATCH, N, K)
-            BATCH, N, K = A.shape
-            # its strides are (sAB, sAN, sAK)
-
-            # Matrix B has shape ([BATCH,] K, M)
-            M = B.shape[-1]  # Note, this accounts for vectorization
-            # its strides are (sBB, sBK, sBM)
-
-            # Matrix Y, the result has shape (BATCH, N, M)
-            # its shape is (sCB, sCN, sCM)
-
-            ###############################
-            # Add the containers to the new_sdfg
-            new_sdfg.add_datadesc("A", copy.deepcopy(A))
-            new_sdfg.add_datadesc("B", copy.deepcopy(B))
-            new_sdfg.add_datadesc("Y", copy.deepcopy(Y))
-            new_sdfg.arrays["A"].transient = False
-            new_sdfg.arrays["B"].transient = False
-            new_sdfg.arrays["Y"].transient = False
 
             # TODO: tiling
             T = M  # T is expressed in vector data type (e.g. float4)
@@ -2465,8 +2444,7 @@ else:
                 K, P
             )  # (this to ensure that the cycles needed to compute on each PE > number of cycle to drain everything; see later)
 
-            # This depends on the input. We deal with disalignment in input/output vectorization widths
-            vec_width = B.veclen
+
 
             # In order to guarantee correctness an deadlock free:
             # -  we have to ensure that the number of cycles needed to drain everything must be less or equal to
@@ -2878,7 +2856,7 @@ else:
 
         if input0_dim == 2 and input1_dim == 2:
             # TODO
-            # - optimize if needed
+            # - optimize if needed, this is a pure expansion
             sdfg_exp = dace.SDFG('matmulExpansion')
             ii = in_edges[0].data.subset.size()[0]
             kk = in_edges[0].data.subset.size()[1]
