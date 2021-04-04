@@ -12,6 +12,7 @@ from daceml.autodiff.backward_pass_generator import BackwardPassGenerator
 from daceml.autodiff.base_abc import AutoDiffException
 from daceml.onnx.converters import clean_onnx_name
 from daceml.onnx.onnx_importer import create_output_array, ONNXModel
+from daceml import transformation
 
 log = logging.getLogger(__name__)
 
@@ -64,17 +65,34 @@ def make_backward_function(model: ONNXModel,
         assert type(forward_desc) is not dt.View
         if isinstance(forward_desc, dt.Scalar):
             # we can't return scalars from SDFGs, so we add a copy to an array of size 1
-            arr_name, _ = forward_sdfg.add_array(name + "_array", [1],
-                                                 forward_desc.dtype,
-                                                 transient=False,
-                                                 find_new_name=True)
-            copy_state = forward_sdfg.add_state_after(forward_state,
-                                                      label="copy_out_" +
-                                                      arr_name)
-            copy_state.add_edge(copy_state.add_read(name), None,
-                                copy_state.add_write(arr_name), None,
-                                dace.Memlet(name + "[0]"))
-            replaced_scalars[name] = arr_name
+            fwd_arr_name, _ = forward_sdfg.add_array(
+                name + "_array", [1],
+                forward_desc.dtype,
+                transient=False,
+                storage=forward_desc.storage,
+                find_new_name=True)
+            bwd_arr_name, _ = backward_sdfg.add_array(
+                name + "_array", [1],
+                forward_desc.dtype,
+                transient=False,
+                storage=forward_desc.storage,
+                find_new_name=True)
+            backward_sdfg.arrays[name].transient = True
+
+            fwd_copy_state = forward_sdfg.add_state_after(forward_state,
+                                                          label="copy_out_" +
+                                                          fwd_arr_name)
+            bwd_copy_state = backward_sdfg.add_state_before(backward_state,
+                                                            label="copy_in_" +
+                                                            bwd_arr_name)
+            fwd_copy_state.add_edge(fwd_copy_state.add_read(name), None,
+                                    fwd_copy_state.add_write(fwd_arr_name),
+                                    None, dace.Memlet(name + "[0]"))
+
+            bwd_copy_state.add_edge(bwd_copy_state.add_read(bwd_arr_name),
+                                    None, bwd_copy_state.add_write(name), None,
+                                    dace.Memlet(name + "[0]"))
+            replaced_scalars[name] = fwd_arr_name
         else:
             forward_sdfg.arrays[name].transient = False
 
@@ -127,16 +145,16 @@ def make_backward_function(model: ONNXModel,
                     raise AutoDiffException(
                         f"Could not get value of array {name}")
 
-                if isinstance(desc, dt.Scalar):
-                    return value.numpy()[0]
-                else:
-                    return value
+                return value
 
             # save the arrays we need for the backward pass
             backward_inputs = {
                 name: _get_arr(name, desc)
                 for name, desc in backward_input_arrays.items()
             }
+            for name in replaced_scalars:
+                backward_inputs[replaced_scalars[name]] = backward_inputs[name]
+                del backward_inputs[name]
             ctx.dace_backward_inputs = backward_inputs
             ctx.dace_symbols = symbols
 

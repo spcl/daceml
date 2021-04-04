@@ -55,7 +55,7 @@ codecov:
 	curl -s https://codecov.io/bash | bash
 
 clean-dacecaches:
-	find . -name ".dacecache" -type d -not -path "*CMakeFiles*" -exec rm -r {} \;
+	find . -name ".dacecache" -type d -not -path "*CMakeFiles*" -exec rm -r {} \; || true
 
 check-formatting:
 	$(ACTIVATE) $(YAPF) \

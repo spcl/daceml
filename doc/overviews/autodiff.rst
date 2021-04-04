@@ -60,10 +60,10 @@ There are two main ways to generate backward passes in DaCeML.
         Automatically expanded library node "ONNX_Relu_1" with implementation "onnxruntime".
         Automatically expanded library node "ONNX_Relu_3" with implementation "onnxruntime".
         Automatically expanded library node "ONNX_LogSoftmax_5" with implementation "onnxruntime".
-        gradients before: None
         Automatically expanded library node "ONNXExp" with implementation "onnxruntime".
         Automatically expanded library node "ONNXReduceSum" with implementation "onnxruntime".
         Automatically expanded library node "ONNXSub" with implementation "onnxruntime".
+        gradients before: None
         gradients after: ...
 
 
@@ -122,21 +122,34 @@ At a high level, it operates as follows:
       ``NestedSDFG`` nodes (forwarding intermediate values is a source of complexity here).
 
     * Connect required inputs. This includes gradients of outputs of the node, as well as the values of inputs of the
-      node (which potentially need to be routed through reversed maps, or through ``NestedSDFG`` s).
+      node (which potentially need to be routed through reversed maps, or through the hierarchy of ``NestedSDFG`` s).
 
 .. _mod_extending:
 
 Extending the Engine
 --------------------
-The automatic differentiation engine currently has several limitations that may cause it to be unable to differentiate
-certain library nodes. An example is :class:`~daceml.onnx.ONNXSoftmax`: a typical implementation includes a maximum
+
+When attempting to differentiate a ``LibraryNode``, the engine will recursively expand the node until it is in a form
+that the engine can differentiate. Usually, this means that the engine will expand the node down to the "pure"
+implementation consisting of simple tasklets and maps.
+
+However, it is sometimes desirable to "exit" this expansion process at a stage earlier than the lowest level.
+For instance, consider differentiating the :class:`~daceml.onnx.nodes.onnx_op.ONNXMatMul` library node. Since no
+backward implementation exists for this node, it will be expanded to its pure version, an
+:class:`~daceml.onnx.nodes.onnx_op.ONNXEinsum`. Fully expanding this node into its pure form would result in a mapped
+tasklet, which we could differentiate. However, we would like to use BLAS nodes on the forward and backward pass where
+possible. To achieve this, a custom backward implementation is registered for
+:class:`~daceml.onnx.nodes.onnx_op.ONNXEinsum`, which returns a ``NestedSDFG`` containing other einsums. Since we avoid
+lowering to the lowest level, we are able to preserve information, and can later potentially expand both the forward and
+backward pass einsums to more efficient BLAS calls.
+
+Another example is :class:`~daceml.onnx.nodes.onnx_op.ONNXSoftmax`: a typical implementation includes a maximum
 operation for numerical stablility. Differentiating this implementation results in several argmax calls, which is not
-desirable. Another example is :class:`~daceml.onnx.ONNXRelu`: the sympy symbolic differentiation outputs a call to the
-Heaviside function, which is currently not implemented in dace.
+desirable.
 
 In situations like these, it makes sense to provide a custom backward pass implementation.
 
-These implementations are registered using :class:`~daceml.autodiff.BackwardImplementation`. This requires implementation
-of :meth:`~Daceml.autodiff.BackwardImplementation.backward`. Examples of this are
-:class:`daceml.autodiff.implementations.onnx_ops.PureReluBackward` and
+These implementations are registered using :class:`~daceml.autodiff.BackwardImplementation`. This requires
+implementation of :meth:`~Daceml.autodiff.BackwardImplementation.backward`. Examples of this are
+:class:`daceml.autodiff.implementations.onnx_ops.DefaultEinsumBackward` and
 :class:`daceml.autodiff.implementations.onnx_ops.DefaultSoftmaxBackward`.

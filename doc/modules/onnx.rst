@@ -50,7 +50,7 @@ Schema Representation
 Op Implementation Registration
 ------------------------------
 
-.. autoclass:: daceml.onnx.implementation_abc.ONNXForward
+.. autoclass:: daceml.onnx.forward_implementation_abc.ONNXForward
     :members:
 
 .. _pure-ops:

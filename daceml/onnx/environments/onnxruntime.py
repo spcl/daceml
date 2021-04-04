@@ -2,17 +2,13 @@ import os
 import logging
 
 import dace.library
-from dace.config import Config
+from dace.config import Config, _env2bool
 
 log = logging.getLogger(__name__)
 
 if 'ORT_ROOT' not in os.environ and 'ORT_RELEASE' not in os.environ:
     raise ValueError("This environment expects the environment variable "
                      "ORT_ROOT or ORT_RELEASE to be set (see README.md)")
-
-if Config.get("compiler", "cuda", "max_concurrent_streams") != -1:
-    log.info("Setting compiler.cuda.max_concurrent_streams to -1")
-    Config.set("compiler", "cuda", "max_concurrent_streams", value=-1)
 
 
 def _get_src_includes():
@@ -122,24 +118,88 @@ class ONNXRuntimeCUDA:
     dependencies = [ONNXRuntime]
 
     headers = []
-    init_code = """
-    __ort_check_status(__state->ort_api, __state->ort_api->CreateMemoryInfo("Cuda", /*allocator_type=*/OrtDeviceAllocator, /*device=*/0, /*mem_type=*/OrtMemTypeDefault, &__state->ort_cuda_mem_info));
-    __ort_check_status(__state->ort_api, __state->ort_api->CreateMemoryInfo("CudaPinned", /*allocator_type=*/OrtDeviceAllocator, /*device=*/0, /*mem_type=*/OrtMemTypeCPU, &__state->ort_cuda_pinned_mem_info));
-    
-    OrtCUDAProviderOptions options = {
-        .device_id = 0,
-        .has_user_compute_stream = 1,
-        .user_compute_stream = nullptr
-    };
-    __ort_check_status(__state->ort_api, __state->ort_api->SessionOptionsAppendExecutionProvider_CUDA(__state->ort_session_options, &options));
-    
-    // overwrite the CPU ORT session with the CUDA session
-    
-    __state->ort_api->ReleaseKernelSession(__state->ort_session);
-    __ort_check_status(__state->ort_api, __state->ort_api->CreateKernelSession(__state->ort_session_options, &__state->ort_session, /*opset_version=*/12));
-    """
+    max_concurrent_streams = None
+    use_streams = False
+
+    @staticmethod
+    def init_code(_):
+
+        if ONNXRuntimeCUDA.use_streams and ONNXRuntimeCUDA.max_concurrent_streams == 0:
+            raise ValueError(
+                f"When ORT_USE_STREAMS is true, the environment requires a static number of max_concurrent_streams,"
+                f" got {ONNXRuntimeCUDA.max_concurrent_streams}")
+
+        if ONNXRuntimeCUDA.use_streams:
+            # add one provider per compute stream
+            providers_setup_code = "\n".join(f"""
+            {{
+            OrtCUDAProviderOptions options = {{
+                .device_id = 0,
+                .do_copy_in_default_stream = 0,
+                .user_compute_stream = __state->gpu_context->streams[{i}],
+            }};
+            __ort_check_status(__state->ort_api,
+    __state->ort_api->SessionOptionsAppendExecutionProvider_CUDA(__state->ort_session_options, &options));
+            }}
+            """ for i in range(ONNXRuntimeCUDA.max_concurrent_streams + 1))
+        else:
+            assert ONNXRuntimeCUDA.max_concurrent_streams == -1
+            providers_setup_code = """
+                    {
+                    OrtCUDAProviderOptions options = {
+                        .device_id = 0,
+                        .has_user_compute_stream = 1,
+                        .user_compute_stream = nullptr,
+                    };
+                    __ort_check_status(__state->ort_api,
+            __state->ort_api->SessionOptionsAppendExecutionProvider_CUDA(__state->ort_session_options, &options));
+                    }
+                    """
+
+        init_code = f"""
+        __ort_check_status(__state->ort_api, __state->ort_api->CreateMemoryInfo("Cuda",
+/*allocator_type=*/OrtDeviceAllocator, /*device=*/0, /*mem_type=*/OrtMemTypeDefault, &__state->ort_cuda_mem_info));
+        __ort_check_status(__state->ort_api, __state->ort_api->CreateMemoryInfo("CudaPinned",
+/*allocator_type=*/OrtDeviceAllocator, /*device=*/0, /*mem_type=*/OrtMemTypeCPU, &__state->ort_cuda_pinned_mem_info));
+        
+        {providers_setup_code}
+
+        // overwrite the CPU ORT session with the CUDA session
+        
+        __state->ort_api->ReleaseKernelSession(__state->ort_session);
+        __ort_check_status(__state->ort_api,
+__state->ort_api->CreateKernelSession(__state->ort_session_options, &__state->ort_session, /*opset_version=*/12));
+        """
+        return init_code
 
     finalize_code = """
     __state->ort_api->ReleaseMemoryInfo(__state->ort_cuda_mem_info);
     __state->ort_api->ReleaseMemoryInfo(__state->ort_cuda_pinned_mem_info);
     """
+
+
+def setup_env():
+    num_concurrent_streams = Config.get("compiler", "cuda",
+                                        "max_concurrent_streams")
+    if 'ORT_USE_STREAMS' in os.environ:
+        ONNXRuntimeCUDA.use_streams = _env2bool(os.environ["ORT_USE_STREAMS"])
+        if ONNXRuntimeCUDA.use_streams:
+            log.info("Using streams with ORT (experimental)")
+            if num_concurrent_streams == 0:
+                log.info("Setting compiler.cuda.max_concurrent_streams to 8")
+                Config.set("compiler",
+                           "cuda",
+                           "max_concurrent_streams",
+                           value=8)
+            elif num_concurrent_streams == -1:
+                ONNXRuntimeCUDA.use_streams = False
+    else:
+        if num_concurrent_streams != -1:
+            log.info("Setting compiler.cuda.max_concurrent_streams to -1")
+            Config.set("compiler", "cuda", "max_concurrent_streams", value=-1)
+        ONNXRuntimeCUDA.use_streams = False
+    ONNXRuntimeCUDA.max_concurrent_streams = Config.get(
+        "compiler", "cuda", "max_concurrent_streams")
+
+
+setup_env()

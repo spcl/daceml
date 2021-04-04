@@ -1,26 +1,27 @@
-import typing
-from collections import OrderedDict
+import collections
 from copy import deepcopy
 from itertools import chain, repeat
+from typing import Dict, Union, Tuple, Any, List, Optional, OrderedDict, Callable
 
 import numpy as np
 import torch
 
 import onnx
+from dace.codegen import compiled_sdfg
 from onnx import numpy_helper
 
 import dace
-import dace.data as dt
+from dace import data as dt, dtypes
 from dace.frontend.python.parser import infer_symbols_from_shapes
 from dace.sdfg import SDFG, SDFGState
-from dace.dtypes import AccessType, StorageType, AllocationLifetime
 import dace.sdfg.nodes as nd
 from dace.symbolic import pystr_to_symbolic
 
 from daceml.onnx.shape_inference import shape_inference
 from daceml.onnx.converters import convert_attribute_proto, onnx_tensor_type_to_typeclass, clean_onnx_name
 from daceml.onnx.schema import ONNXParameterType
-from daceml.onnx.nodes.onnx_op import get_onnx_node, has_onnx_node
+from daceml.onnx.nodes.onnx_op import get_onnx_node, has_onnx_node, ONNXOp
+from daceml.util import utils
 
 numpy_to_torch_dtype_dict = {
     np.bool: torch.bool,
@@ -69,7 +70,8 @@ class ONNXModel:
                     subprocess.check_call([
                         "wget",
                         "http://spclstorage.inf.ethz.ch/~rauscho/efficientnet-lite4-11.onnx",
-                        "--output-document={}".format(model_path)
+                        "--output-document={}".format(model_path),
+                        "--no-verbose"
                     ])
 
 
@@ -98,7 +100,9 @@ class ONNXModel:
                  model: onnx.ModelProto,
                  infer_shapes: bool = True,
                  cuda: bool = False,
-                 apply_strict: bool = False):
+                 apply_strict: bool = False,
+                 auto_optimize: bool = True,
+                 parent_pytorch_module: Optional[torch.nn.Module] = None):
         """
         :param name: the name for the SDFG.
         :param model: the model to import.
@@ -107,8 +111,12 @@ class ONNXModel:
         :param cuda: if ``True``, the model will be executed on the GPU.
         :param apply_strict: if ``True``, apply strict transformations after all nodes have
                              been expanded calling (warning: this can be very slow!)
+        :param auto_optimize: if ``True``, apply automatic optimizations before calling.
+        :param parent_pytorch_module: when not None, the weight tensors are loaded from the parameters of this model
+                                      rather than the ONNX graph.
         """
 
+        self.do_auto_optimize = auto_optimize
         if infer_shapes:
             model = shape_inference.infer_shapes(model)
 
@@ -126,8 +134,13 @@ class ONNXModel:
 
         self.value_infos = {}
 
-        self.inputs: typing.List[str] = []  #: the inputs to the model
-        self.outputs: typing.List[str] = []  #: the outputs of the model
+        self.inputs: List[str] = []  #: the inputs to the model
+        self.outputs: List[str] = []  #: the outputs of the model
+
+        #: hooks that are executed after the sdfg is compiled
+        self.post_compile_hooks: Dict[str,
+                                      Callable[[compiled_sdfg.CompiledSDFG],
+                                               None]] = {}
 
         for value, is_input in chain(zip(graph.input, repeat(True)),
                                      zip(graph.output, repeat(False))):
@@ -148,10 +161,10 @@ class ONNXModel:
                 self.value_infos[value.name] = value
 
         # add weights
-        self.weights: typing.Dict[str, torch.Tensor] = {
+        self.weights: Dict[str, torch.Tensor] = {
         }  #: mapping from weight name to array
         for init in graph.initializer:
-            self._add_constant_tensor(init)
+            self._add_constant_tensor(init, parent_pytorch_module)
 
         access_nodes = {}
         self._idx_to_node = []
@@ -192,8 +205,8 @@ class ONNXModel:
                     self._update_access_type(access, is_input)
                 else:
                     access = nd.AccessNode(
-                        clean_onnx_name(name), AccessType.ReadOnly
-                        if is_input else AccessType.WriteOnly)
+                        clean_onnx_name(name), dtypes.AccessType.ReadOnly
+                        if is_input else dtypes.AccessType.WriteOnly)
                     self.state.add_node(access)
                     access_nodes[name] = access
 
@@ -239,27 +252,16 @@ class ONNXModel:
                                                data_desc))
 
         if self.cuda:
-            # set all weights to be GPU_Global
-            # this was messing with the ORT arena allocator, probably because PT has its own
-            # for name, tensor in self.weights.items():
-            #     self.weights[name] = self.weights[name].cuda()
-            #     self.sdfg.arrays[clean_onnx_name(name)].storage = StorageType.GPU_Global
-
             self.sdfg.apply_gpu_transformations()
-
-            # set all gpu transients to be persistent
-            for _, _, arr in self.sdfg.arrays_recursive():
-                if arr.transient and arr.storage == StorageType.GPU_Global:
-                    arr.lifetime = AllocationLifetime.Persistent
 
     @staticmethod
     def _update_access_type(node: dace.nodes.AccessNode, is_input: bool):
-        if node.access == AccessType.ReadOnly and not is_input:
-            node.access = AccessType.ReadWrite
-        elif node.access == AccessType.WriteOnly and is_input:
-            node.access = AccessType.ReadWrite
+        if node.access == dtypes.AccessType.ReadOnly and not is_input:
+            node.access = dtypes.AccessType.ReadWrite
+        elif node.access == dtypes.AccessType.WriteOnly and is_input:
+            node.access = dtypes.AccessType.ReadWrite
 
-    def _add_constant_tensor(self, tensor: onnx.TensorProto):
+    def _add_constant_tensor(self, tensor: onnx.TensorProto, parent_pt_model):
         if not tensor.HasField("name"):
             raise ValueError("Got tensor without name")
 
@@ -290,8 +292,15 @@ class ONNXModel:
                         .format(name, existing_arr.shape, dims))
 
         weight_arr = numpy_helper.to_array(tensor)
-        # we need to copy here because the weight_arr tensor is not writable
-        self.weights[tensor.name] = torch.from_numpy(weight_arr.copy())
+
+        if parent_pt_model is not None:
+            parent_parameters = dict(parent_pt_model.named_parameters())
+
+        if parent_pt_model is not None and tensor.name in parent_parameters:
+            self.weights[tensor.name] = parent_parameters[tensor.name].data
+        else:
+            # we need to copy here because the weight_arr tensor is not writable
+            self.weights[tensor.name] = torch.from_numpy(weight_arr.copy())
 
     def _add_value_info(self, value_info: onnx.ValueInfoProto):
         if not value_info.HasField("name"):
@@ -348,9 +357,16 @@ class ONNXModel:
     def clean_weights(self):
         return {clean_onnx_name(k): v for k, v in self.weights.items()}
 
-    def __call__(
-            self, *args,
-            **kwargs) -> typing.Union[np.ndarray, typing.Tuple[np.ndarray]]:
+    def compile_and_init(self) -> compiled_sdfg.CompiledSDFG:
+        """ Compile the SDFG and load parameters into GPU memory. """
+
+        compiled_sdfg = self.sdfg.compile()
+        for _, hook in self.post_compile_hooks.items():
+            hook(compiled_sdfg)
+        return compiled_sdfg
+
+    def __call__(self, *args,
+                 **kwargs) -> Union[np.ndarray, Tuple[np.ndarray]]:
         """ Execute the model.
 
             :param args: positional arguments to the model. The i-th argument will be passed as the i-th input of the
@@ -362,13 +378,12 @@ class ONNXModel:
         inputs, params, symbols, outputs = self._call_args(args=args,
                                                            kwargs=kwargs)
 
-        sdfg = deepcopy(self.sdfg)
-        sdfg.expand_library_nodes()
+        if self.do_auto_optimize:
+            self.auto_optimize()
 
-        if self.apply_strict:
-            sdfg.apply_strict_transformations()
+        compiled = self.compile_and_init()
 
-        sdfg(**inputs, **outputs, **params, **symbols)
+        compiled(**inputs, **outputs, **params, **symbols)
 
         if len(outputs) == 1:
             return next(iter(outputs.values()))
@@ -381,9 +396,8 @@ class ONNXModel:
         args,
         kwargs,
         torch_outputs: bool = None
-    ) -> typing.Tuple[typing.Dict[str, typing.Any], typing.Dict[
-            str, typing.Any], typing.Dict[str, typing.Any], typing.OrderedDict[
-                str, typing.Any]]:
+    ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any], OrderedDict[
+            str, Any]]:
         """ Prepare the arguments for a call.
 
             This returns 4 dicts; one for each of the following:
@@ -450,7 +464,7 @@ class ONNXModel:
                 isinstance(inp, torch.Tensor)
                 for _, inp in clean_inputs.items())
 
-        outputs = OrderedDict()
+        outputs = collections.OrderedDict()
         # create numpy arrays for the outputs
         for output in self.outputs:
             clean_name = clean_onnx_name(output)
@@ -468,12 +482,20 @@ class ONNXModel:
 
         return clean_inputs, params, inferred_symbols, outputs
 
+    def expand_onnx_nodes(self):
+        utils.expand_onnx_nodes(self.sdfg)
+
+    def auto_optimize(self):
+        utils.auto_optimize(self.sdfg,
+                            self.cuda,
+                            apply_strict=self.apply_strict)
+
 
 def create_output_array(
-        inferred_symbols: typing.Dict[str, int],
+        inferred_symbols: Dict[str, int],
         desc: dt.Data,
         use_torch=False,
-        zeros: bool = False) -> typing.Union[np.ndarray, torch.tensor]:
+        zeros: bool = False) -> Union[np.ndarray, torch.tensor]:
     """ Create the array for an output. This is either a numpy array or a torch tensor depending on `use_torch`
 
         When `self.force_torch_outputs` is True, the outputs will be tensors. Otherwise, the outputs will be tensors
@@ -487,13 +509,24 @@ def create_output_array(
             dim = dim.subs(sym, inferred_symbols[sym.name])
         return dim
 
+    if dtypes.can_access(dtypes.ScheduleType.CPU_Multicore, desc.storage):
+        cuda = False
+    elif dtypes.can_access(dtypes.ScheduleType.GPU_Default, desc.storage):
+        cuda = True
+    else:
+        raise ValueError(f"Unsupported storage {desc.storage}")
+
+    if cuda and not use_torch:
+        raise ValueError("Got use_torch=False, but received a GPU descriptor")
+
     shape = [eval_dim(d) if type(d) is dace.symbol else d for d in desc.shape]
     if use_torch:
         # as_numpy_dtype doesn't seem to work for indexing into the dict
-        return (torch.zeros if zeros else torch.empty)(
+        tens = (torch.zeros if zeros else torch.empty)(
             *shape,
             dtype=numpy_to_torch_dtype_dict[getattr(np,
                                                     desc.dtype.to_string())])
+        return tens.cuda() if cuda else tens
     else:
         return (np.zeros if zeros else np.empty)(shape,
                                                  dtype=getattr(
