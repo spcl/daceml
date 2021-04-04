@@ -7,7 +7,7 @@ import torch
 from torchvision import datasets, transforms
 from torch import nn, optim
 from transformers import BertLayer, BertConfig
-
+import copy
 from daceml.pytorch import DaceModule
 
 
@@ -37,17 +37,6 @@ def training_step(dace_model,
                   sdfg_name,
                   gpu,
                   train_criterion=None):
-
-    # copy over the weights
-    dace_model.load_state_dict(pt_model.state_dict())
-    for dace_value, value in zip(pt_model.state_dict().values(),
-                                 dace_model.state_dict().values()):
-        assert np.allclose(dace_value, value)
-
-    dace_model = DaceModule(dace_model,
-                            backward=True,
-                            sdfg_name=sdfg_name,
-                            cuda=gpu)
 
     x, y = train_batch
     train_criterion = train_criterion or nn.NLLLoss()
@@ -96,13 +85,10 @@ def test_mnist(sdfg_name, gpu):
                           nn.LayerNorm(output_size),
                           nn.LogSoftmax(dim=1))
 
-    dace_model = nn.Sequential(nn.Linear(input_size, hidden_sizes[0]),
-                               nn.ReLU(),
-                               nn.Linear(hidden_sizes[0], hidden_sizes[1]),
-                               nn.ReLU(),
-                               nn.Linear(hidden_sizes[1], output_size),
-                               nn.LayerNorm(output_size),
-                               nn.LogSoftmax(dim=1))
+    dace_model = DaceModule(copy.deepcopy(model),
+                            backward=True,
+                            sdfg_name=sdfg_name,
+                            cuda=gpu)
     # yapf: enable
 
     # check forward pass using loss
@@ -128,9 +114,19 @@ def test_bert(sdfg_name, gpu):
             embs = self.bert(x)[0]
             return self.sm(embs.sum(dim=-1))
 
+    model = BertTokenSoftmaxClf()
+    dace_model = DaceModule(copy.deepcopy(model),
+                            backward=True,
+                            sdfg_name=sdfg_name,
+                            cuda=gpu)
+
     # check forward pass using loss
     input = torch.randn([batch_size, seq_len, hidden_size])
     labels = torch.tensor([0, 123], dtype=torch.long)
 
-    training_step(BertTokenSoftmaxClf(), BertTokenSoftmaxClf(),
+    training_step(dace_model, model,
                   (input, labels), sdfg_name, gpu)
+
+
+if __name__ == '__main__':
+    test_bert('sdfg1', True)
