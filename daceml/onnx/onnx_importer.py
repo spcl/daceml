@@ -116,6 +116,12 @@ class ONNXModel:
                                       rather than the ONNX graph.
         """
 
+        for opset in model.opset_import:
+            if opset.domain == "" and opset.version != 12:
+                raise ValueError(
+                    f"Expected the onnx model to be exported with opset 12, got {opset.version}"
+                )
+
         self.do_auto_optimize = auto_optimize
         if infer_shapes:
             model = shape_inference.infer_shapes(model)
