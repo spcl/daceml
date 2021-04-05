@@ -14,8 +14,9 @@ from dace import dtypes
 from dace.sdfg import utils as sdutil
 from dace.sdfg import nodes as sdfg_nodes
 from typing import List
+from dace.transformation.helpers import nest_state_subgraph
 
-
+from dace.transformation.transformation import PatternNode
 from dace.transformation.transformation import Transformation
 from dace.transformation.pattern_matching import enumerate_matches
 from dace.sdfg import utils as sdutil
@@ -168,14 +169,43 @@ def test_bert_encoder_transformations():
 
     # find softmax sdfg and state
 
-    pattern = sdutil.node_path_graph(dace.nodes.MapExit, dace.nodes.AccessNode, dace.nodes.MapEntry)
+    softmax_nodes = [
+        PatternNode(dace.nodes.MapEntry),
+        PatternNode(dace.nodes.Tasklet),
+        PatternNode(dace.nodes.MapExit),
+        PatternNode(dace.nodes.AccessNode),
+        PatternNode(dace.nodes.NestedSDFG),
+        PatternNode(dace.nodes.AccessNode),
+        PatternNode(dace.nodes.MapEntry),
+        PatternNode(dace.nodes.Tasklet),
+        PatternNode(dace.nodes.MapExit),
+        PatternNode(dace.nodes.AccessNode),
+        PatternNode(dace.nodes.MapEntry),
+        PatternNode(dace.nodes.Tasklet),
+        PatternNode(dace.nodes.MapExit),
+        PatternNode(dace.nodes.AccessNode),
+        PatternNode(dace.nodes.NestedSDFG),
+        PatternNode(dace.nodes.AccessNode),
+        PatternNode(dace.nodes.MapEntry),
+        PatternNode(dace.nodes.Tasklet),
+        PatternNode(dace.nodes.MapExit),
+    ]
+    pattern_graph = sdutil.node_path_graph(*softmax_nodes)
+    pattern_graph.add_edge(softmax_nodes[3], softmax_nodes[6], None)
+    pattern_graph.add_edge(softmax_nodes[13], softmax_nodes[16], None)
 
-    subgraphs = list(enumerate_matches(dace_model.sdfg, pattern))
-    assert(len(subgraphs) == 2) # there should be two matches
-    assert(subgraphs[0].graph == subgraphs[1].graph) # both matches should be inside the softmax
-    softmax_state: dace_state.SDFGState = subgraphs[0].graph
+    subgraphs = list(enumerate_matches(dace_model.sdfg, pattern_graph))
+    print(len(subgraphs))
 
-    softmax_sdfg: dace_sdfg.SDFG = softmax_state.parent
+    assert(len(subgraphs) == 1)
+    softmax_subgraph = subgraphs[0]
+    softmax_nsdfg: sdfg_nodes.NestedSDFG = nest_state_subgraph(softmax_subgraph.graph.parent, softmax_subgraph.graph, softmax_subgraph, 'softmax_nsdfg')
+
+    softmax_sdfg: dace_sdfg.SDFG = softmax_nsdfg.sdfg
+    softmax_state: dace_state.SDFGState = softmax_sdfg.nodes()[0]
+
+    dace_model.sdfg.save('attn2_0_1.sdfg')
+    print('attn2_0_1.sdfg')
 
     # enable temporary array reuse
 
