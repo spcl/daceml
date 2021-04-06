@@ -20,11 +20,6 @@ def test_bert_full(gpu, default_implementation, sdfg_name):
 
     model = onnx.load(bert_path)
 
-    # overwrite the opset version
-    for opset in model.opset_import:
-        if opset.domain == "":
-            opset.version = 12
-
     dace_model = donnx.ONNXModel(sdfg_name,
                                  model,
                                  cuda=gpu,
