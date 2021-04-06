@@ -453,8 +453,4 @@ def test_sum_arrays(input_desc, sdfg_name):
     np_result = (inputs[0] + inputs[1]) + inputs[2]
     result = prog(*inputs)
 
-    print(np_result)
-    print(result)
-
-    print(np_result - result)
     assert np.allclose(result, np_result)

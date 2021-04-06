@@ -342,7 +342,7 @@ def expand_node(node, state, sdfg):
 
         except ONNXOpValidationError as e:
             # fallback to CPU
-            print("Falling back to CPU for node {}. Reason:\n{}".format(
+            log.warning("Falling back to CPU for node {}. Reason:\n{}".format(
                 node.name, str(e)))
             provider_index = 0
     else:
