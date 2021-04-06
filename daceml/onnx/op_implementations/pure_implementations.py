@@ -647,11 +647,15 @@ class PureSum(ONNXForward):
         nsdfg = dace.SDFG(node.name)
         input_names = []
         for e in node.iter_inputs_in_onnx_order(state):
-            nsdfg.add_datadesc(
-                e.dst_conn, in_desc_with_name(node, state, sdfg, e.dst_conn))
+            new_desc = copy.deepcopy(
+                in_desc_with_name(node, state, sdfg, e.dst_conn))
+            new_desc.transient = False
+            nsdfg.add_datadesc(e.dst_conn, new_desc)
             input_names.append(e.dst_conn)
 
-        nsdfg.add_datadesc("sum", out_desc_with_name(node, state, sdfg, "sum"))
+        new_desc = copy.deepcopy(out_desc_with_name(node, state, sdfg, "sum"))
+        new_desc.transient = False
+        nsdfg.add_datadesc("sum", new_desc)
 
         nstate = nsdfg.add_state()
         # we know all shapes are equal to the output shape
