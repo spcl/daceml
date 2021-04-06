@@ -1,3 +1,4 @@
+import functools
 import typing
 from functools import wraps
 
@@ -145,3 +146,14 @@ def auto_optimize(sdfg: dace.SDFG, cuda, apply_strict=False):
         # we don't apply inline first
         sdfg.apply_transformations_repeated(interstate.InlineSDFG)
         sdfg.apply_strict_transformations()
+
+
+def iterables_equal(a, b) -> bool:
+    """ Return whether the two iterables ``a`` and ``b`` are equal. """
+    if len(a) != len(b):
+        return False
+    return all(x == y for x, y in zip(a, b))
+
+
+def prod(sequence):
+    return functools.reduce(lambda a, b: a * b, sequence, 1)

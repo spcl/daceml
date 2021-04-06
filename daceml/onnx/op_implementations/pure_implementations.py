@@ -19,7 +19,7 @@ from daceml.onnx import converters
 from daceml.onnx.forward_implementation_abc import ONNXForward
 import numpy as np
 
-from daceml.util.utils import in_desc_with_name, out_desc_with_name, in_edge_with_name
+from daceml.util.utils import in_desc_with_name, out_desc_with_name, in_edge_with_name, iterables_equal, prod
 
 log = logging.getLogger(__name__)
 
@@ -616,3 +616,68 @@ class PureReshape(ONNXForward):
             reshaped[:] = np.reshape(data, new_shape)
 
         return program_for_node(prog, sdfg, state, node)
+
+
+@autoregister_params(op="Sum", name="pure")
+class PureSum(ONNXForward):
+    @staticmethod
+    def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
+        # check that all shapes are arrays, and that the shapes are all equal
+        shape = None
+        for edge in node.iter_inputs_in_onnx_order(state):
+            desc = in_desc_with_name(node, state, sdfg, edge.dst_conn)
+            if shape is None:
+                shape = desc.shape
+
+            if not iterables_equal(shape, desc.shape):
+                return False
+
+        if not iterables_equal(
+                shape,
+                out_desc_with_name(node, state, sdfg, "sum").shape):
+            return False
+
+        return True
+
+    @staticmethod
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+
+        nsdfg = dace.SDFG(node.name)
+        input_names = []
+        for e in node.iter_inputs_in_onnx_order(state):
+            new_desc = copy.deepcopy(
+                in_desc_with_name(node, state, sdfg, e.dst_conn))
+            new_desc.transient = False
+            nsdfg.add_datadesc(e.dst_conn, new_desc)
+            input_names.append(e.dst_conn)
+
+        new_desc = copy.deepcopy(out_desc_with_name(node, state, sdfg, "sum"))
+        new_desc.transient = False
+        nsdfg.add_datadesc("sum", new_desc)
+
+        nstate = nsdfg.add_state()
+        # we know all shapes are equal to the output shape
+        shape = out_desc_with_name(node, state, sdfg, "sum").shape
+        map_ranges = {f"i{i}": f"0:{s}" for i, s in enumerate(shape)}
+        index_str = f"{', '.join(map_ranges.keys())}"
+        tasklet, _, _ = nstate.add_mapped_tasklet(
+            node.name + "_tasklet",
+            map_ranges=map_ranges,
+            inputs={
+                f"__{inp}": dace.Memlet(f"{inp}[{index_str}]")
+                for inp in input_names
+            },
+            code=f"__sum = {' + '.join(f'__{inp}' for inp in input_names)}",
+            outputs={"__sum": dace.Memlet(f"sum[{index_str}]")},
+            external_edges=True)
+
+        tasklet.in_connectors = {
+            f"__{inp}": in_desc_with_name(node, state, sdfg, inp).dtype
+            for inp in input_names
+        }
+        tasklet.out_connectors = {
+            "__sum": out_desc_with_name(node, state, sdfg, "sum").dtype
+        }
+        return nsdfg
