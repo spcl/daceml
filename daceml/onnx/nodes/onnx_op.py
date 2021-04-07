@@ -483,6 +483,17 @@ _ONNX_OPS_BY_NAME = {}
 for schema in _get_schemas_from_version(12):
     try:
         dace_schema = ONNXSchema.from_onnx_proto(schema)
+        # if the schema has a parameter name that exists as both an input and an output, prepend "in_" and "out_"
+        intersecting_names = set(i.name
+                                 for i in dace_schema.inputs).intersection(
+                                     o.name for o in dace_schema.outputs)
+        for name in intersecting_names:
+            in_cands = [i for i in dace_schema.inputs if i.name == name]
+            out_cands = [i for i in dace_schema.outputs if i.name == name]
+            assert len(in_cands) == len(out_cands) == 1
+            in_cands[0].name = "in_" + name
+            out_cands[0].name = "out_" + name
+
     except Exception as e:
         log.debug("Import of {} failed: {}".format(schema.name, e))
         continue
