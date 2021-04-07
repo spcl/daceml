@@ -63,6 +63,14 @@ Pure ONNX Implementations
     :show-inheritance:
     :exclude-members: program_for_node, forward_can_be_applied, forward
 
+Image Related Implementations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. automodule:: daceml.onnx.op_implementations.img_op_implementations
+    :members:
+    :show-inheritance:
+    :exclude-members: program_for_node, forward_can_be_applied, forward
+
 Dace CMake Environments
 -----------------------
 

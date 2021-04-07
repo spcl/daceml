@@ -634,3 +634,28 @@ class PureSum(ONNXForward):
             "__sum": out_desc_with_name(node, state, sdfg, "sum").dtype
         }
         return nsdfg
+
+
+@autoregister_params(op="LogSoftmax", name="pure")
+class PureLogSoftmax(ONNXForward):
+    @staticmethod
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[nodes.Node, SDFG]:
+
+        axis = node.axis
+
+        reduced_shape = list(
+            copy.deepcopy(in_desc_with_name(node, state, sdfg, "input").shape))
+        reduced_shape[axis] = 1
+
+        def prog(input, output):
+            max = np.max(input, axis=axis)
+            max_keepdims = np.reshape(max, reduced_shape)
+            max_sub = input - max_keepdims
+            exp_arr = np.exp(max_sub)
+            sum = np.sum(exp_arr, axis=axis)
+            sum_keepdims = np.reshape(sum, reduced_shape)
+            log_sum = np.log(sum_keepdims)
+            output[:] = max_sub - log_sum
+
+        return program_for_node(prog, sdfg, state, node)
