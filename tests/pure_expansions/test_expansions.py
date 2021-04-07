@@ -1,9 +1,11 @@
+import copy
+
 import numpy as np
 import torch
 import pytest
 
 import dace
-from dace import transformation
+from dace import transformation, data as dt
 import dace.transformation.interstate
 from dace.libraries import blas
 
@@ -460,3 +462,34 @@ def test_reshape_add():
                   target_shape=np.array([3, 3]).astype(np.int64))
 
     assert np.allclose(result, inp.reshape(3, 3) + bias)
+
+
+@pytest.mark.parametrize("input_desc",
+                         [dace.float32[2, 3], dace.float32[1], dace.float32])
+@pytest.mark.pure
+def test_sum_arrays(input_desc, sdfg_name):
+
+    if isinstance(input_desc, dt.Array):
+        shape = input_desc.shape
+    else:
+        shape = [1]
+
+    def prog(inp0: copy.deepcopy(input_desc), inp1: copy.deepcopy(input_desc),
+             inp2: copy.deepcopy(input_desc)):
+        result = dace.define_local(shape, dace.float32)
+        donnx.ONNXSum(data_0__0=inp0,
+                      data_0__1=inp1,
+                      data_0__2=inp2,
+                      sum=result)
+        return result
+
+    prog.__name__ = sdfg_name
+    prog = dace.program(prog)
+
+    inputs = [np.random.randn(*shape).astype(np.float32) for _ in range(3)]
+    if not isinstance(input_desc, dt.Array):
+        inputs = [i[0] for i in inputs]
+    np_result = (inputs[0] + inputs[1]) + inputs[2]
+    result = prog(*inputs)
+
+    assert np.allclose(result, np_result)

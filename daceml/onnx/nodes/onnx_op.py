@@ -1,5 +1,6 @@
 import itertools
 import logging
+import collections
 from typing import Iterator, Tuple, List, Dict, Type
 
 import dace
@@ -461,9 +462,25 @@ def register_op_repo_replacement(cls: Type[ONNXOp], cls_name: str,
         return []
 
 
+def _get_schemas_from_version(version: int):
+    name_to_schemas = collections.defaultdict(list)
+    for schema in onnx.defs.get_all_schemas_with_history():
+        name_to_schemas[schema.name].append(schema)
+
+    all_schemas = []
+    for name, schemas in name_to_schemas.items():
+        schemas = sorted(schemas, key=lambda x: x.since_version)
+        while schemas[-1].since_version > version:
+            schemas.pop()
+
+        all_schemas.append(schemas[-1])
+
+    return all_schemas
+
+
 _ONNX_OPS_BY_NAME = {}
 # Generate all of the Op Nodes
-for schema in onnx.defs.get_all_schemas():
+for schema in _get_schemas_from_version(12):
     try:
         dace_schema = ONNXSchema.from_onnx_proto(schema)
     except Exception as e:

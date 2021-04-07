@@ -1,5 +1,5 @@
 import collections
-from copy import deepcopy
+import logging
 from itertools import chain, repeat
 from typing import Dict, Union, Tuple, Any, List, Optional, OrderedDict, Callable
 
@@ -20,6 +20,8 @@ from daceml.onnx.converters import convert_attribute_proto, onnx_tensor_type_to_
 from daceml.onnx.schema import ONNXParameterType
 from daceml.onnx.nodes.onnx_op import get_onnx_node, has_onnx_node, ONNXOp
 from daceml.util import utils
+
+log = logging.getLogger(__name__)
 
 numpy_to_torch_dtype_dict = {
     np.bool: torch.bool,
@@ -115,6 +117,12 @@ class ONNXModel:
                                       rather than the ONNX graph.
         :param save_transients: if not None, save transients to this dict (for debugging).
         """
+
+        for opset in model.opset_import:
+            if opset.domain == "" and opset.version != 12:
+                log.warning(
+                    f"Expected the onnx model to be exported with opset 12, got {opset.version}. This model may fail "
+                    f"to import as a result.")
 
         self.do_auto_optimize = auto_optimize
         if infer_shapes:
