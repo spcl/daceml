@@ -11,10 +11,8 @@ from dace.codegen import compiled_sdfg
 from onnx import numpy_helper
 
 import dace
-from dace import data as dt, dtypes
+from dace import data as dt, dtypes, nodes, SDFG, SDFGState
 from dace.frontend.python.parser import infer_symbols_from_shapes
-from dace.sdfg import SDFG, SDFGState
-import dace.sdfg.nodes as nd
 from dace.symbolic import pystr_to_symbolic
 
 from daceml.onnx.shape_inference import shape_inference
@@ -102,7 +100,8 @@ class ONNXModel:
                  cuda: bool = False,
                  apply_strict: bool = False,
                  auto_optimize: bool = True,
-                 parent_pytorch_module: Optional[torch.nn.Module] = None):
+                 parent_pytorch_module: Optional[torch.nn.Module] = None,
+                 save_transients: Optional[Dict[str, torch.Tensor]] = None):
         """
         :param name: the name for the SDFG.
         :param model: the model to import.
@@ -114,6 +113,7 @@ class ONNXModel:
         :param auto_optimize: if ``True``, apply automatic optimizations before calling.
         :param parent_pytorch_module: when not None, the weight tensors are loaded from the parameters of this model
                                       rather than the ONNX graph.
+        :param save_transients: if not None, save transients to this dict (for debugging).
         """
 
         self.do_auto_optimize = auto_optimize
@@ -121,7 +121,7 @@ class ONNXModel:
             model = shape_inference.infer_shapes(model)
 
         graph: onnx.GraphProto = model.graph
-
+        self.save_transients = save_transients
         self.sdfg: SDFG = SDFG(name)  #: the generated SDFG.
         self.sdfg._parent_onnx_model = self
         self.cuda = cuda
@@ -204,7 +204,7 @@ class ONNXModel:
                     access = access_nodes[name]
                     self._update_access_type(access, is_input)
                 else:
-                    access = nd.AccessNode(
+                    access = nodes.AccessNode(
                         clean_onnx_name(name), dtypes.AccessType.ReadOnly
                         if is_input else dtypes.AccessType.WriteOnly)
                     self.state.add_node(access)
@@ -377,13 +377,25 @@ class ONNXModel:
 
         inputs, params, symbols, outputs = self._call_args(args=args,
                                                            kwargs=kwargs)
+        transient_kwargs = {}
+        if self.save_transients is not None:
+            for node, parent in self.sdfg.all_nodes_recursive():
+                if isinstance(node, nodes.AccessNode):
+                    desc = self.sdfg.arrays[node.data]
+                    if desc.transient and dace.can_access(
+                            dtypes.ScheduleType.CPU_Multicore, desc.storage):
+                        desc.transient = False
+                        transient_kwargs[node.data] = create_output_array(
+                            {}, desc, use_torch=True, zeros=False)
+                        self.save_transients[node.data] = transient_kwargs[
+                            node.data]
 
         if self.do_auto_optimize:
             self.auto_optimize()
 
         compiled = self.compile_and_init()
 
-        compiled(**inputs, **outputs, **params, **symbols)
+        compiled(**inputs, **outputs, **params, **symbols, **transient_kwargs)
 
         if len(outputs) == 1:
             return next(iter(outputs.values()))
