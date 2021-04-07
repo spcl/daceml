@@ -78,6 +78,7 @@ class SymbolicShapeInference:
             'Add'                   : self._infer_symbolic_compute_ops,
             'ArrayFeatureExtractor' : self._infer_ArrayFeatureExtractor,
             'AveragePool'           : self._infer_Pool,
+            'BatchNormalization'    : self._infer_BatchNormalization,
             'Cast'                  : self._infer_Cast,
             'CategoryMapper'        : self._infer_CategoryMapper,
             'Compress'              : self._infer_Compress,
@@ -120,6 +121,7 @@ class SymbolicShapeInference:
             'Sub'                   : self._infer_symbolic_compute_ops,
             'Tile'                  : self._infer_Tile,
             'TopK'                  : self._infer_TopK,
+            'Transpose'             : self._infer_Transpose,
             'Unsqueeze'             : self._infer_Unsqueeze,
             'Where'                 : self._infer_symbolic_compute_ops,
             'ZipMap'                : self._infer_ZipMap}
@@ -283,8 +285,11 @@ class SymbolicShapeInference:
             new_shape = [new_dim] + new_shape
         return new_shape
 
-    def _get_shape(self, node, idx):
-        name = node.input[idx]
+    def _get_shape(self, node, idx, input=True):
+        if input:
+            name = node.input[idx]
+        else:
+            name = node.output[idx]
         if name in self.known_vi_:
             return get_shape_from_type_proto(self.known_vi_[name].type)
         else:
@@ -672,6 +677,22 @@ class SymbolicShapeInference:
             vi = self.known_vi_[node.output[0]]
             vi.CopyFrom(helper.make_tensor_value_info(node.output[0], self.known_vi_[node.input[0]].type.tensor_type.elem_type, new_shape))
 
+    def _infer_Transpose(self, node):
+        data_shape = self._get_shape(node, 0)
+        vi = self.known_vi_[node.output[0]]
+        perm = get_attribute(node, 'perm', reversed(list(range(len(data_shape)))))
+
+        new_sympy_shape = self._get_sympy_shape(node, 0)
+        for i, perm_idx in enumerate(perm):
+            new_sympy_shape[i] = data_shape[perm_idx]
+
+        vi.CopyFrom(helper.make_tensor_value_info(node.output[0],
+                                                  vi.type.tensor_type.elem_type,
+                                                  get_shape_from_sympy_shape(new_sympy_shape)))
+        if node.input[0] in self.sympy_data_:
+            input_data = self.sympy_data_[node.input[0]]
+            self.sympy_data_[node.output[0]] = np.transpose(np.array(input_data).reshape(*data_shape), axes=tuple(perm)).flatten().tolist()
+
     def _infer_Gather(self, node):
         data_shape = self._get_shape(node, 0)
         axis = handle_negative_axis(get_attribute(node, 'axis', 0), len(data_shape))
@@ -819,6 +840,24 @@ class SymbolicShapeInference:
                 continue
             vi = self.known_vi_[o]
             vi.CopyFrom(helper.make_tensor_value_info(o, vi.type.tensor_type.elem_type, get_shape_from_sympy_shape(sympy_shape)))
+
+    def _infer_BatchNormalization(self, node):
+        new_sympy_shape = self._get_shape(node, 0)
+        vi_y = self.known_vi_[node.output[0]]
+        vi_y.CopyFrom(helper.make_tensor_value_info(node.output[0],
+                                                  vi_y.type.tensor_type.elem_type,
+                                                  get_shape_from_sympy_shape(new_sympy_shape)))
+
+        # this works for opsets < 14 and 14 since we check i < len(node.output) in the loop
+        c_sized_input_vi = self.known_vi_[node.input[1]]
+        for i in [1, 2, 3, 4]:
+            if i < len(node.output):
+                # all of these parameters have the same shape as the 1st input
+                new_sympy_shape = self._get_shape(node, 1)
+                vi_c_shaped_output = self.known_vi_[node.output[i]]
+                vi_c_shaped_output.CopyFrom(helper.make_tensor_value_info(node.output[i],
+                                                                          c_sized_input_vi.type.tensor_type.elem_type,
+                                                                          get_shape_from_sympy_shape(new_sympy_shape)))
 
     def _infer_Range(self, node):
         vi = self.known_vi_[node.output[0]]
@@ -1043,7 +1082,8 @@ class SymbolicShapeInference:
             assert [0] == axes
             assert len(starts) == 1
             assert len(ends) == 1
-            self.sympy_data_[node.output[0]] = self.sympy_data_[node.input[0]][starts[0]:ends[0]]
+            assert len(steps) == 1
+            self.sympy_data_[node.output[0]] = self.sympy_data_[node.input[0]][starts[0]:ends[0]:steps[0]]
 
     def _infer_Split_Common(self, node, make_value_info_func):
         input_sympy_shape = self._get_sympy_shape(node, 0)
