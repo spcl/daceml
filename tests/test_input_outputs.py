@@ -18,7 +18,7 @@ import pytest
 
 import dace
 import daceml.onnx as donnx
-from daceml.onnx.check_impl import OpChecker, ONNXOpValidationError
+from daceml.onnx.binary_utilities.op_checker import OpChecker, ONNXOpValidationError
 
 
 class BreakOpChecker:

@@ -1,9 +1,8 @@
 import logging
-from collections import defaultdict
 from collections.abc import Iterable
 from copy import deepcopy
 from functools import reduce
-from typing import Dict, NamedTuple, Tuple, List, Optional
+from typing import Dict, Tuple, List, Optional
 
 import dace
 import dace.data as dt
@@ -13,7 +12,7 @@ import numpy as np
 import dace.library
 from dace.libraries.standard.nodes.code import _get_inputs_and_outputs
 
-from daceml.onnx.check_impl import check_op, ONNXOpValidationError
+from daceml.onnx.binary_utilities.op_checker import check_op, ONNXOpValidationError
 from daceml.onnx.converters import clean_onnx_name, typeclass_to_onnx_str
 from daceml.onnx.nodes.node_utils import get_position
 from daceml.onnx.schema import ONNXAttributeType, _ATTR_TYPE_TO_PYTHON_TYPE, ONNXAttribute
