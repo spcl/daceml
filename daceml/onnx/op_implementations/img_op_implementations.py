@@ -3,11 +3,11 @@ import typing
 
 import dace
 from dace import SDFGState, SDFG, dtypes
-from dace.registry import autoregister_params
 from dace.sdfg import nodes, propagation
 
 from daceml.onnx.forward_implementation_abc import ONNXForward
 from daceml.onnx.nodes.onnx_op import ONNXOp
+from daceml.onnx.op_implementations.utils import op_implementation
 from daceml.util.utils import in_desc_with_name, out_desc_with_name
 
 
@@ -16,7 +16,7 @@ def _2d_sliding_window_index_expr(x_or_y, stride, kernel_size):
     return index_expression.format(x_or_y=x_or_y, stride=stride)
 
 
-@autoregister_params(op="MaxPool", name="pure")
+@op_implementation(op="MaxPool", name="pure")
 class PureMaxPool2D(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
@@ -152,7 +152,7 @@ class PureMaxPool2D(ONNXForward):
         return new_sdfg
 
 
-@autoregister_params(op="Conv", name="pure")
+@op_implementation(op="Conv", name="pure")
 class PureConv2D(ONNXForward):
     """ The "trivial" convolution implementation, i.e. two nested maps.
     """
@@ -360,7 +360,7 @@ class PureConv2D(ONNXForward):
         return new_sdfg
 
 
-@autoregister_params(op="Conv", name="im2col")
+@op_implementation(op="Conv", name="im2col")
 class Im2ColConv(ONNXForward):
     """ Conv implementation based on Gemm
 

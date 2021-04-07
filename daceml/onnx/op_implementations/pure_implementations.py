@@ -1,80 +1,25 @@
 import copy
-import inspect
 import itertools
 import logging
 import typing
 
 import dace
-from dace import SDFGState, SDFG, dtypes, data as dt, nodes
+import numpy as np
+from dace import SDFGState, SDFG, nodes
 from dace.frontend.common import create_einsum_sdfg
-from dace.frontend.python.parser import DaceProgram
-from dace.registry import autoregister_params
-import dace.libraries.blas as blas
 from dace.sdfg.nodes import Node
 
-from daceml.transformation import constant_folding
-from daceml.onnx.nodes import onnx_op
-from daceml.onnx.nodes.node_utils import parse_variadic_param
 from daceml.onnx import converters
 from daceml.onnx.forward_implementation_abc import ONNXForward
-import numpy as np
-
-from daceml.util.utils import in_desc_with_name, out_desc_with_name, in_edge_with_name, iterables_equal, prod
+from daceml.onnx.nodes import onnx_op
+from daceml.onnx.op_implementations.utils import op_implementation, program_for_node
+from daceml.transformation import constant_folding
+from daceml.util.utils import in_desc_with_name, out_desc_with_name, in_edge_with_name, iterables_equal
 
 log = logging.getLogger(__name__)
 
 
-def program_for_node(program, sdfg: SDFG, state: SDFGState,
-                     node: onnx_op.ONNXOp) -> SDFG:
-    """ Expand a function to a dace program.
-
-        The dtypes for the arguments will be extracted by matching the parameter names to edges.
-    """
-    input_names = node.schema.non_variadic_inputs()
-    variadic_input_names = node.schema.variadic_inputs()
-
-    output_names = node.schema.non_variadic_outputs()
-    variadic_output_names = node.schema.variadic_outputs()
-
-    if set(input_names).intersection(output_names):
-        # this is currently the case for only one onnx op
-        raise ValueError(
-            "program_for_node cannot be applied on nodes of this type;"
-            " '{}' is both an input and an output".format(
-                next(input_names.intersection(output_names))))
-
-    params = inspect.signature(program).parameters
-
-    annotations = {}
-    for name, param in params.items():
-        if name in input_names or ("__" in name
-                                   and parse_variadic_param(name)[0]
-                                   in variadic_input_names):
-            annotations[name] = in_desc_with_name(node, state, sdfg, name)
-        elif name in output_names or ("__" in name
-                                      and parse_variadic_param(name)[0]
-                                      in variadic_output_names):
-            annotations[name] = out_desc_with_name(node, state, sdfg, name)
-        else:
-            raise ValueError(
-                "'{}' was not found as an input or output for {}".format(
-                    name, node.schema.name))
-
-    program.__annotations__ = annotations
-
-    result = DaceProgram(program, (), {}, False, dace.DeviceType.CPU)
-    result.name = node.label + "_expansion"
-
-    sdfg = result.to_sdfg()
-
-    if node.schedule in [dtypes.ScheduleType.GPU_Default
-                         ] + dtypes.GPU_SCHEDULES:
-        sdfg.apply_gpu_transformations()
-
-    return sdfg
-
-
-@autoregister_params(op="Log", name="pure")
+@op_implementation(op="Log", name="pure")
 class PureLog(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
@@ -92,7 +37,7 @@ class PureLog(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Sqrt", name="pure")
+@op_implementation(op="Sqrt", name="pure")
 class PureSqrt(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
@@ -110,7 +55,7 @@ class PureSqrt(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Pow", name="pure")
+@op_implementation(op="Pow", name="pure")
 class PurePow(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
@@ -128,7 +73,7 @@ class PurePow(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Add", name="pure")
+@op_implementation(op="Add", name="pure")
 class PureAdd(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
@@ -139,7 +84,7 @@ class PureAdd(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Sub", name="pure")
+@op_implementation(op="Sub", name="pure")
 class PureSub(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
@@ -150,7 +95,7 @@ class PureSub(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Mul", name="pure")
+@op_implementation(op="Mul", name="pure")
 class PureMul(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
@@ -161,7 +106,7 @@ class PureMul(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Div", name="pure")
+@op_implementation(op="Div", name="pure")
 class PureDiv(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
@@ -172,7 +117,7 @@ class PureDiv(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="ReduceMean", name="pure")
+@op_implementation(op="ReduceMean", name="pure")
 class PureReduceMean(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
@@ -187,7 +132,7 @@ class PureReduceMean(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Erf", name="pure")
+@op_implementation(op="Erf", name="pure")
 class PureErf(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
@@ -205,7 +150,7 @@ class PureErf(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="MatMul", name="pure")
+@op_implementation(op="MatMul", name="pure")
 class PureMatMul(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
@@ -313,7 +258,7 @@ class PureMatMul(ONNXForward):
         return nsdfg
 
 
-@autoregister_params(op="Einsum", name="pure")
+@op_implementation(op="Einsum", name="pure")
 class PureEinsum(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
@@ -345,7 +290,7 @@ class PureEinsum(ONNXForward):
         return nsdfg
 
 
-@autoregister_params(op="Identity", name="pure")
+@op_implementation(op="Identity", name="pure")
 class PureIdentity(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
@@ -361,7 +306,7 @@ class PureIdentity(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Reciprocal", name="pure")
+@op_implementation(op="Reciprocal", name="pure")
 class PureReciprocal(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
@@ -382,7 +327,7 @@ class PureReciprocal(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Tanh", name="pure")
+@op_implementation(op="Tanh", name="pure")
 class PureTanh(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
@@ -393,7 +338,7 @@ class PureTanh(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="ReduceSum", name="pure")
+@op_implementation(op="ReduceSum", name="pure")
 class PureReduceSum(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
@@ -408,7 +353,7 @@ class PureReduceSum(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="ReduceMax", name="pure")
+@op_implementation(op="ReduceMax", name="pure")
 class PureReduceMax(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
@@ -423,7 +368,7 @@ class PureReduceMax(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="ReduceMin", name="pure")
+@op_implementation(op="ReduceMin", name="pure")
 class PureReduceMin(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
@@ -438,7 +383,7 @@ class PureReduceMin(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Softmax", name="pure")
+@op_implementation(op="Softmax", name="pure")
 class PureSoftmax(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
@@ -461,7 +406,7 @@ class PureSoftmax(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Transpose", name="pure")
+@op_implementation(op="Transpose", name="pure")
 class PureTranspose(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
@@ -474,7 +419,7 @@ class PureTranspose(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Cast", name="pure")
+@op_implementation(op="Cast", name="pure")
 class PureCast(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
@@ -510,7 +455,7 @@ class PureCast(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Gemm", name="pure")
+@op_implementation(op="Gemm", name="pure")
 class PureGemm(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
@@ -539,7 +484,7 @@ class PureGemm(ONNXForward):
         return sdfg
 
 
-@autoregister_params(op="Relu", name="pure")
+@op_implementation(op="Relu", name="pure")
 class PureRelu(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
@@ -554,7 +499,7 @@ class PureRelu(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Reshape", name="pure")
+@op_implementation(op="Reshape", name="pure")
 class PureReshape(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
@@ -571,7 +516,7 @@ class PureReshape(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Sum", name="pure")
+@op_implementation(op="Sum", name="pure")
 class PureSum(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
@@ -636,7 +581,7 @@ class PureSum(ONNXForward):
         return nsdfg
 
 
-@autoregister_params(op="LogSoftmax", name="pure")
+@op_implementation(op="LogSoftmax", name="pure")
 class PureLogSoftmax(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,

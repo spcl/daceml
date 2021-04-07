@@ -53,17 +53,19 @@ Op Implementation Registration
 .. autoclass:: daceml.onnx.forward_implementation_abc.ONNXForward
     :members:
 
+.. autofunction:: daceml.onnx.op_implementations.utils.op_implementation
+
 .. _pure-ops:
 
-Pure ONNX Implementations
--------------------------
+SDFG-based ONNX Implementations
+-------------------------------
 
 .. automodule:: daceml.onnx.op_implementations.pure_implementations
     :members:
     :show-inheritance:
     :exclude-members: program_for_node, forward_can_be_applied, forward
 
-Image Related Implementations
+Image-related Implementations
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. automodule:: daceml.onnx.op_implementations.img_op_implementations
