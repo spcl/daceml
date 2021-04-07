@@ -592,7 +592,7 @@ class PureLogSoftmax(ONNXForward):
                 inparr.shape)):
             raise ValueError("expected axis to be an integer in range"
                              " [-{}, {}), got {}".format(
-                len(inparr.shape), len(inparr.shape), axis))
+                                 len(inparr.shape), len(inparr.shape), axis))
 
         if axis < 0:
             axis += len(inparr.shape)
@@ -616,21 +616,21 @@ class PureLogSoftmax(ONNXForward):
             },
             inputs={
                 '__max':
-                    dace.Memlet.simple(
-                        "exp_tmp_max", ','.join("__i" + str(i)
-                                                for i in range(len(inparr.shape))
-                                                if i != axis)),
+                dace.Memlet.simple(
+                    "exp_tmp_max", ','.join("__i" + str(i)
+                                            for i in range(len(inparr.shape))
+                                            if i != axis)),
                 '__x':
-                    dace.Memlet.simple(
-                        "exp_input",
-                        ','.join("__i" + str(i) for i in range(len(inparr.shape))))
+                dace.Memlet.simple(
+                    "exp_input",
+                    ','.join("__i" + str(i) for i in range(len(inparr.shape))))
             },
             code='__out = exp(__x - __max)',
             outputs={
                 '__out':
-                    dace.Memlet.simple(
-                        "exp_output",
-                        ','.join("__i" + str(i) for i in range(len(inparr.shape))))
+                dace.Memlet.simple(
+                    "exp_output",
+                    ','.join("__i" + str(i) for i in range(len(inparr.shape))))
             },
             external_edges=True)
 
@@ -651,26 +651,26 @@ class PureLogSoftmax(ONNXForward):
             },
             inputs={
                 '__sum':
-                    dace.Memlet.simple(
-                        "div_sum", ','.join("__i" + str(i)
-                                            for i in range(len(inparr.shape))
-                                            if i != axis)),
+                dace.Memlet.simple(
+                    "div_sum", ','.join("__i" + str(i)
+                                        for i in range(len(inparr.shape))
+                                        if i != axis)),
                 '__max':
-                    dace.Memlet.simple(
-                        "div_max", ','.join("__i" + str(i)
-                                            for i in range(len(inparr.shape))
-                                            if i != axis)),
+                dace.Memlet.simple(
+                    "div_max", ','.join("__i" + str(i)
+                                        for i in range(len(inparr.shape))
+                                        if i != axis)),
                 '__x':
-                    dace.Memlet.simple(
-                        "div_X",
-                        ','.join("__i" + str(i) for i in range(len(inparr.shape))))
+                dace.Memlet.simple(
+                    "div_X",
+                    ','.join("__i" + str(i) for i in range(len(inparr.shape))))
             },
             code='__out = __x - __max - log(__sum)',
             outputs={
                 '__out':
-                    dace.Memlet.simple(
-                        "div_output",
-                        ','.join("__i" + str(i) for i in range(len(inparr.shape))))
+                dace.Memlet.simple(
+                    "div_output",
+                    ','.join("__i" + str(i) for i in range(len(inparr.shape))))
             },
             external_edges=True)
 

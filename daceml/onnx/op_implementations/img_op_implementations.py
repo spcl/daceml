@@ -463,8 +463,7 @@ class Im2ColConv(ONNXForward):
         batch_me, batch_mx = new_state.add_map(
             'batch_map',
             dict(b="0:{}".format(batch_size)),
-            schedule=dtypes.ScheduleType.Sequential
-        )
+            schedule=dtypes.ScheduleType.Sequential)
 
         # for each image, we create the im2col matrix
         # im2col_map fills one entry in I per "iteration"
@@ -531,8 +530,9 @@ class Im2ColConv(ONNXForward):
                 donnx.ONNXGemm(A=weights, B=im2col, C=biases, Y=result)
 
             gemm_sdfg = new_state.add_nested_sdfg(
-                matmul_nsdfg.to_sdfg(), None, {"weights", "im2col", "biases"},
-                {"result"}, schedule=node.schedule)
+                matmul_nsdfg.to_sdfg(),
+                None, {"weights", "im2col", "biases"}, {"result"},
+                schedule=node.schedule)
 
             # connect biases -> matmul
             new_state.add_edge(new_state.add_read("B"), None, batch_me, None,
@@ -546,9 +546,10 @@ class Im2ColConv(ONNXForward):
                              result: result_desc):
                 donnx.ONNXGemm(A=weights, B=im2col, Y=result)
 
-            gemm_sdfg = new_state.add_nested_sdfg(matmul_nsdfg.to_sdfg(), None,
-                                                  {"weights", "im2col"},
-                                                  {"result"}, schedule=node.schedule)
+            gemm_sdfg = new_state.add_nested_sdfg(matmul_nsdfg.to_sdfg(),
+                                                  None, {"weights", "im2col"},
+                                                  {"result"},
+                                                  schedule=node.schedule)
 
         # connect im2col -> matmul
         new_state.add_edge(access_I, None, gemm_sdfg, "im2col",
