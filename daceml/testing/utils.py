@@ -1,7 +1,10 @@
 import numpy as np
 import torch
 
+
 def torch_tensors_close(name, torch_v, dace_v):
+    """ Assert that the two torch tensors are close. Prints a nice error string if not.
+    """
     rtol = 1e-6
     atol = 1e-4
     if not torch.allclose(torch_v, dace_v, rtol=rtol, atol=atol):
