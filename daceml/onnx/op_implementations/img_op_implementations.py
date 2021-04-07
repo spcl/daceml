@@ -371,7 +371,7 @@ class Im2ColConv(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
-        return False # currently broken, see Issue #49
+        return False  # currently broken, see Issue #49
         X = in_desc_with_name(node, state, sdfg, "X")
         W = in_desc_with_name(node, state, sdfg, "W")
         try:
