@@ -182,11 +182,47 @@ class ONNXModel:
                     node.op_type))
 
             # extract the op attributes
-
             op_attributes = {
                 attribute_proto.name: convert_attribute_proto(attribute_proto)
                 for attribute_proto in node.attribute
             }
+
+            if node.op_type == "Constant":
+                # Add constants to weights immediately
+                possible_values = [
+                    "sparse_value", "value", "value_float", "value_floats",
+                    "value_int", "value_ints", "value_string", "value_strings"
+                ]
+
+                # do some manual validation here since the node validation will never run
+                if set(op_attributes).difference(possible_values):
+                    raise ValueError(
+                        f"Got unexpected attributes on Constant node "
+                        f"{set(op_attributes).difference(possible_values)}")
+
+                if len(op_attributes) != 1:
+                    raise ValueError(
+                        "Expected Constant node to have exactly one of its attributes set"
+                    )
+
+                if len(node.input) != 0 or len(node.output) != 1:
+                    raise ValueError(
+                        "Expected Constant node to have no inputs and exactly 1 output"
+                    )
+
+                value_name = next(iter(op_attributes))
+
+                if node.output[0] not in self.value_infos:
+                    raise ValueError(
+                        "Could not find array with name '{}'".format(
+                            node.output[0]))
+                self._add_value_info(self.value_infos[node.output[0]])
+                self.sdfg.arrays[clean_onnx_name(
+                    node.output[0])].transient = False
+
+                self.weights[node.output[0]] = torch.from_numpy(
+                    op_attributes[value_name].copy())
+                continue
 
             if node.HasField("name"):
                 node_name = clean_onnx_name(node.name)
