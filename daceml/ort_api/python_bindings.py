@@ -55,7 +55,7 @@ class MemoryInfo:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.api.ReleaseEnv(self.ptr)
+        self.api.ReleaseMemoryInfo(self.ptr)
 
 
 class SessionOptions:
@@ -262,6 +262,6 @@ class ExecutableKernel:
     def __exit__(self, exc_type, exc_val, exc_tb):
 
         for value in self.values:
-            self.api.ReleaseValue(value)
+            self.api.ReleaseValue(value.ptr)
 
         self.api.ReleaseExecutableKernel(self.ptr)

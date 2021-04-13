@@ -65,6 +65,7 @@ class ORTCAPIInterface:
         "ExecutableKernelContext",
         "KernelSession",
         "SessionOptions",
+        "MemoryInfo",
         "Status",
         "Env",
         "Value"
@@ -137,8 +138,8 @@ class ORTCAPIInterface:
                 except Exception as e:
                     raise TypeError(f"Could not convert argument {arg}") from e
 
+            result = func_ptr(*converted_args)
             if not function_name.startswith("Release"):
-                result = func_ptr(*converted_args)
                 self._check_status(result)
 
         wrapper.__name__ = function_name

@@ -52,24 +52,22 @@ def evaluate_node(sdfg, state, node,
 
                 if dtypes.can_access(dtypes.ScheduleType.CPU_Multicore,
                                      desc.storage):
-                    cuda = False
+                    pass
                 elif dtypes.can_access(dtypes.ScheduleType.GPU_Default,
                                        desc.storage):
-                    cuda = True
+                    # outputs should be on CPU
                     desc.storage = dtypes.StorageType.CPU_Heap
                 else:
                     raise ValueError(f"Unsupported storage {desc.storage}")
 
                 output_arr = create_output_array({}, desc, use_torch=False)
-                outputs[edge.src_conn] = (output_arr, cuda)
+                outputs[edge.src_conn] = output_arr
                 kernel.add_output(output_arr, i)
 
             kernel.compute()
 
-            for name, (value, cuda) in outputs.items():
+            for name, value in outputs.items():
                 tensor = torch.from_numpy(value)
-                if cuda:
-                    tensor = tensor.cuda()
                 outputs[name] = tensor
 
             return outputs
