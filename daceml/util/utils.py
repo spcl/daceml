@@ -6,12 +6,13 @@ import dace
 from dace import nodes as nd
 from dace.libraries import blas
 from dace.sdfg.state import MultiConnectorEdge
-from dace.transformation import interstate
+from dace.transformation import interstate, dataflow
 from dace import SDFG, SDFGState
 import dace.data as dt
 from dace.transformation.auto_optimize import set_fast_implementations
 
 from daceml.onnx.nodes.onnx_op import ONNXOp
+from daceml import transformation
 
 
 def is_desc_contiguous(desc: dt.Data) -> bool:
@@ -128,13 +129,22 @@ def expand_onnx_nodes(sdfg: dace.SDFG):
             states.append(state)  # Nodes have changed. Check state again
 
 
-def auto_optimize(sdfg: dace.SDFG, cuda, apply_strict=False):
+def auto_optimize(sdfg: dace.SDFG,
+                  cuda,
+                  apply_strict=False,
+                  fold_constants=True):
     """ Automatically optimize ``sdfg``.
 
         :param sdfg: the sdfg to optimize (inplace).
         :param cuda: whether to optimize for cuda.
         :param apply_strict: whether to apply strict transformations to the sdfg after optimization.
+        :param fold_constants: whether to apply constant folding.
     """
+    if fold_constants:
+        sdfg.apply_transformations_repeated(
+            [transformation.ConstantFolding, dataflow.RedundantSecondArray],
+            validate_all=True,
+            strict=True)
     expand_onnx_nodes(sdfg)
     # MKL is currently broken
     set_fast_implementations(

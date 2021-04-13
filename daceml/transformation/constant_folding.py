@@ -84,6 +84,16 @@ class ConstantFolding(transformation.Transformation):
             return False
 
         if isinstance(node, donnx.ONNXShape):
+            assert len(graph.in_edges(node)) == 1
+            shape_in_edge = graph.in_edges(node)[0]
+            assert shape_in_edge.dst_conn == "data"
+            shape_desc = sdfg.arrays[shape_in_edge.src.data]
+            try:
+                np.array(shape_desc.shape, np.int64)
+            except Exception:
+                # this happens if the shape is symbolic, for example
+                return False
+
             return True
 
         # all inputs are constant

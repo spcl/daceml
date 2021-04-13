@@ -102,6 +102,7 @@ class ONNXModel:
                  cuda: bool = False,
                  apply_strict: bool = False,
                  auto_optimize: bool = True,
+                 fold_constants: bool = True,
                  parent_pytorch_module: Optional[torch.nn.Module] = None,
                  save_transients: Optional[Dict[str, torch.Tensor]] = None):
         """
@@ -134,6 +135,7 @@ class ONNXModel:
         self.sdfg._parent_onnx_model = self
         self.cuda = cuda
         self.apply_strict = apply_strict
+        self.fold_constants = fold_constants
         self.state: SDFGState = self.sdfg.add_state(
         )  #: the state containing the model computation.
 
@@ -543,7 +545,8 @@ class ONNXModel:
     def auto_optimize(self):
         utils.auto_optimize(self.sdfg,
                             self.cuda,
-                            apply_strict=self.apply_strict)
+                            apply_strict=self.apply_strict,
+                            fold_constants=self.fold_constants)
 
 
 def create_output_array(

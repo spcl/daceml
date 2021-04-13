@@ -150,6 +150,7 @@ class ORTCAPIInterface:
             error = ctypes.c_char_p(
                 self._function_pointers["GetErrorMessage"](status))
             self.ReleaseStatus(status)
+            print(error.value)
             raise ORTAPIError(error.value.decode("ascii"))
 
     def get_enum_value(self, enum_value_name: str) -> ctypes.c_int:
