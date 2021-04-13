@@ -574,13 +574,26 @@ def create_output_array(
     if cuda and not use_torch:
         raise ValueError("Got use_torch=False, but received a GPU descriptor")
 
-    shape = [eval_dim(d) if type(d) is dace.symbol else d for d in desc.shape]
+    if isinstance(desc, dt.Scalar):
+        shape = []
+    else:
+        shape = [
+            eval_dim(d) if type(d) is dace.symbol else d for d in desc.shape
+        ]
+
     if use_torch:
+        # torch functions don't accept the empty shape, so create shape [1] then reshape to ()
+        if len(shape) == 0:
+            shape = [1]
+
         # as_numpy_dtype doesn't seem to work for indexing into the dict
         tens = (torch.zeros if zeros else torch.empty)(
             *shape,
             dtype=numpy_to_torch_dtype_dict[getattr(np,
                                                     desc.dtype.to_string())])
+        if isinstance(desc, dt.Scalar):
+            tens = tens.reshape(())
+
         return tens.cuda() if cuda else tens
     else:
         return (np.zeros if zeros else np.empty)(shape,

@@ -34,9 +34,13 @@ class OrtCUDAProviderOptions(ctypes.Structure):
 class ORTCAPIInterface:
     dll = None
 
+    # yapf: disable
     functions_to_expose = [
-        "CreateEnv", "CreateSessionOptions", "CreateKernelSession",
-        "CreateExecutableKernelContext", "ExecutableKernelContext_AddInput",
+        "CreateEnv",
+        "CreateSessionOptions",
+        "CreateKernelSession",
+        "CreateExecutableKernelContext",
+        "ExecutableKernelContext_AddInput",
         "ExecutableKernelContext_AddOutput",
         "ExecutableKernelContext_AddAttributeString",
         "ExecutableKernelContext_AddAttributeStrings",
@@ -44,9 +48,17 @@ class ORTCAPIInterface:
         "ExecutableKernelContext_AddAttributeFloats",
         "ExecutableKernelContext_AddAttributeInt",
         "ExecutableKernelContext_AddAttributeInts",
-        "ExecutableKernelContext_AddAttributeTensor", "CreateExecutableKernel",
-        "ExecutableKernel_IsOutputOnCpu", "ExecutableKernel_IsInputOnCpu",
-        "SessionOptionsAppendExecutionProvider_CUDA"
+        "ExecutableKernelContext_AddAttributeTensor",
+        "CreateExecutableKernel",
+        "ExecutableKernel_IsOutputOnCpu",
+        "ExecutableKernel_IsInputOnCpu",
+        "ExecutableKernel_SetInput",
+        "ExecutableKernel_SetOutput",
+        "ExecutableKernel_Compute",
+        "SessionOptionsAppendExecutionProvider_CUDA",
+        "CreateCpuMemoryInfo",
+        "CreateMemoryInfo",
+        "CreateTensorWithDataAsOrtValue",
     ]
     release_functions_to_expose = [
         "ExecutableKernel",
@@ -55,8 +67,12 @@ class ORTCAPIInterface:
         "SessionOptions",
         "Status",
         "Env",
+        "Value"
     ]
+    # yapf: enable
     enums_to_expose = {
+        "OrtMemType": ["OrtMemTypeDefault", "OrtMemTypeCPU"],
+        "OrtAllocatorType": ["OrtDeviceAllocator"],
         "OrtLoggingLevel": ["ORT_LOGGING_LEVEL_WARNING"],
         "ONNXTensorElementDataType": [
             "ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED",
@@ -163,7 +179,7 @@ class ORTCAPIInterface:
         for arg in args_str.split(","):
             c_var_name_regex = r"[a-zA-Z_][a-zA-Z_0-9]*"
             match = re.search(
-                fr"(?:const )?\s*({c_var_name_regex})([*\s]+)({c_var_name_regex})",
+                fr"(?:const )?(?:enum )?\s*({c_var_name_regex})([*\s]+)({c_var_name_regex})",
                 arg.strip())
 
             if match is None:

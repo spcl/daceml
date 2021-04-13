@@ -15,6 +15,7 @@ from dace.sdfg import nodes as nd
 from dace.sdfg import utils as sdutil
 
 import daceml.onnx as donnx
+from daceml.onnx.binary_utilities.python_onnx_node_evaluation import evaluate_node
 from daceml.onnx.converters import clean_onnx_name
 from daceml.onnx.nodes.onnx_op import ONNXOp
 from daceml.onnx import ONNXModel
@@ -40,9 +41,6 @@ NONDETERMINISTIC_OPS = {'ONNXDropout',
                         'ONNXTreeEnsembleClassifier',
                         'ONNXTreeEnsembleRegressor'}
 # yapf: enable
-
-global UNIQUE_ID
-UNIQUE_ID = 0
 
 
 @registry.autoregister_params(singlestate=True)
@@ -101,10 +99,6 @@ class ConstantFolding(transformation.Transformation):
         return "Precompute outputs of {}".format(node)
 
     def apply(self, sdfg: dace.SDFG):
-        # Extract the subgraph, execute it and insert an AccessNode to the result
-        # this method of execution is slow but simple. A better option would be to call the ORT
-        # C API from a python object (like the OpChecker).
-
         parent: ONNXModel = sdfg._parent_onnx_model
         state = sdfg.nodes()[self.state_id]
         node = state.nodes()[self.subgraph[ConstantFolding._onnx_node]]
@@ -133,16 +127,7 @@ class ConstantFolding(transformation.Transformation):
                            output_edge.dst_conn,
                            sdfg.make_array_memlet(clean_constant_name))
         else:
-            # otherwise compute the result of the op
-            global UNIQUE_ID
-            UNIQUE_ID += 1
-            sub_sdfg = dace.SDFG("sub_sdfg_" + str(UNIQUE_ID))
-            sub_state = sub_sdfg.add_state()
-
-            node_copy = copy.deepcopy(node)
-            # always use ORT for constant folding
-            node_copy.implementation = "onnxruntime"
-            sub_state.add_node(node_copy)
+            # otherwise compute the result of the op using the ORT API
 
             inputs = {}
             for edge in state.in_edges(node):
@@ -151,74 +136,17 @@ class ConstantFolding(transformation.Transformation):
                         and hasattr(sdfg, "_parent_onnx_model") and
                         edge.src.data in sdfg._parent_onnx_model.clean_weights)
 
-                desc = copy.deepcopy(sdfg.arrays[edge.data.data])
-                desc.transient = False
-                sub_sdfg.add_datadesc('array_' + edge.dst_conn, desc)
-
                 input_value = sdfg._parent_onnx_model.clean_weights[
                     edge.src.data]
 
-                if len(input_value.shape) == 0:
-                    inputs['array_' +
-                           edge.dst_conn] = input_value.cpu().numpy()[()]
-                else:
-                    inputs['array_' + edge.dst_conn] = input_value.clone()
+                inputs[edge.dst_conn] = input_value.clone()
 
-                access = sub_state.add_access('array_' + edge.dst_conn)
-                sub_state.add_edge(
-                    access, None, node_copy, edge.dst_conn,
-                    sub_sdfg.make_array_memlet('array_' + edge.dst_conn))
-
-            outputs = {}
-            for edge in state.out_edges(node):
-                desc = copy.deepcopy(sdfg.arrays[edge.data.data])
-                if isinstance(desc, dt.Scalar):
-                    # we need to copy to an array of size [1] so that we can "return" the output from the sdfg
-                    desc.transient = True
-                    sub_sdfg.add_datadesc('scalar_array_' + edge.src_conn,
-                                          desc)
-                    sub_sdfg.add_array('array_' + edge.src_conn, [1],
-                                       desc.dtype,
-                                       transient=False)
-
-                    access_scalar = sub_state.add_access('scalar_array_' +
-                                                         edge.src_conn)
-                    access = sub_state.add_access('array_' + edge.src_conn)
-                    sub_state.add_edge(
-                        node_copy, edge.src_conn, access_scalar, None,
-                        sub_sdfg.make_array_memlet('scalar_array_' +
-                                                   edge.src_conn))
-
-                    sub_state.add_edge(
-                        access_scalar, None, access, None,
-                        sub_sdfg.make_array_memlet('array_' + edge.src_conn))
-                else:
-                    desc.transient = False
-                    sub_sdfg.add_datadesc('array_' + edge.src_conn, desc)
-                    access = sub_state.add_access('array_' + edge.src_conn)
-                    sub_state.add_edge(
-                        node_copy, edge.src_conn, access, None,
-                        sub_sdfg.make_array_memlet('array_' + edge.src_conn))
-
-                if len(desc.shape) == 0:
-                    empty_array = np.empty((1, ), desc.dtype.as_numpy_dtype())
-                else:
-                    empty_array = np.empty(tuple(desc.shape),
-                                           desc.dtype.as_numpy_dtype())
-
-                empty_array = torch.from_numpy(empty_array)
-
-                if desc.storage is dtypes.StorageType.GPU_Global:
-                    empty_array = empty_array.cuda()
-
-                outputs['array_' + edge.src_conn] = empty_array
-
-            sub_sdfg(**outputs, **inputs)
+            outputs = evaluate_node(sdfg, state, node, inputs)
 
             for edge in state.out_edges(node):
                 desc = copy.deepcopy(sdfg.arrays[edge.data.data])
                 desc.transient = False
-                output_value = outputs['array_' + edge.src_conn]
+                output_value = outputs[edge.src_conn]
 
                 constant_name = sdfg.temp_data_name()
                 clean_constant_name = clean_onnx_name(constant_name)
@@ -247,10 +175,7 @@ class ConstantFolding(transformation.Transformation):
                     access_constant = state.add_read(clean_constant_name)
                     name_to_add = constant_name
 
-                if isinstance(desc, dt.Scalar):
-                    parent.weights[name_to_add] = output_value.reshape(())
-                else:
-                    parent.weights[name_to_add] = output_value
+                parent.weights[name_to_add] = output_value
 
                 state.add_edge(access_constant, None, edge.dst, edge.dst_conn,
                                sdfg.make_array_memlet(clean_constant_name))

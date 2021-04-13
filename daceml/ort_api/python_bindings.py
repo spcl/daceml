@@ -7,6 +7,11 @@ from daceml.onnx.schema import ONNXAttributeType
 from daceml.onnx.converters import ONNX_DTYPES_TO_DACE_TYPE_CLASS
 from daceml.ort_api.raw_api_bindings import OrtCUDAProviderOptions, ORTCAPIInterface, ORTAPIError
 
+dt_to_onnx_string = {
+    v: k.upper()
+    for k, v in ONNX_DTYPES_TO_DACE_TYPE_CLASS.items()
+}
+
 
 class Env:
     def __init__(self, api):
@@ -16,6 +21,37 @@ class Env:
         self.ptr = ctypes.c_void_p()
         self.api.CreateEnv("ORT_LOGGING_LEVEL_WARNING", b"ort_api",
                            ctypes.byref(self.ptr))
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.api.ReleaseEnv(self.ptr)
+
+
+class MemoryInfo:
+    def __init__(self, api, cuda: bool, pinned: bool):
+        self.cuda = cuda
+        self.pinned = pinned
+        self.api = api
+
+    @staticmethod
+    def for_cpu(api):
+        return MemoryInfo(api, cuda=False, pinned=False)
+
+    @staticmethod
+    def for_cuda(api, pinned: bool):
+        return MemoryInfo(api, cuda=True, pinned=pinned)
+
+    def __enter__(self):
+        self.ptr = ctypes.c_void_p()
+        if not self.cuda:
+            self.api.CreateCpuMemoryInfo("OrtDeviceAllocator",
+                                         "OrtMemTypeDefault",
+                                         ctypes.byref(self.ptr))
+        else:
+            self.api.CreateMemoryInfo(
+                f"Cuda{'Pinned' if self.pinned else ''}", "OrtDeviceAllocator",
+                0, "OrtMemTypeCPU" if self.pinned else "OrtMemTypeDefault",
+                ctypes.byref(self.ptr))
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -82,10 +118,6 @@ class ExecutableKernelContext:
         self.n_outputs = 0
         self.name = name
         self.op_type = op_type
-        self.dt_to_onnx_string = {
-            v: k.upper()
-            for k, v in ONNX_DTYPES_TO_DACE_TYPE_CLASS.items()
-        }
 
     def __enter__(self):
         self.ptr = ctypes.c_void_p()
@@ -101,13 +133,13 @@ class ExecutableKernelContext:
         self.n_inputs += 1
         self.api.ExecutableKernelContext_AddInput(
             self.ptr,
-            f"ONNX_TENSOR_ELEMENT_DATA_TYPE_{self.dt_to_onnx_string[dtype]}")
+            f"ONNX_TENSOR_ELEMENT_DATA_TYPE_{dt_to_onnx_string[dtype]}")
 
     def add_output(self, dtype: dace.typeclass):
         self.n_outputs += 1
         self.api.ExecutableKernelContext_AddOutput(
             self.ptr,
-            f"ONNX_TENSOR_ELEMENT_DATA_TYPE_{self.dt_to_onnx_string[dtype]}")
+            f"ONNX_TENSOR_ELEMENT_DATA_TYPE_{dt_to_onnx_string[dtype]}")
 
     def add_attribute(self, attr_name, attr_value,
                       attr_type: ONNXAttributeType):
@@ -133,7 +165,7 @@ class ExecutableKernelContext:
 
             data = [data_val.item() for data_val in np.nditer(attr_value)]
             ctype = np.ctypeslib.as_ctypes_type(attr_value.dtype)
-            type_str = self.dt_to_onnx_string[dace.DTYPE_TO_TYPECLASS[
+            type_str = dt_to_onnx_string[dace.DTYPE_TO_TYPECLASS[
                 attr_value.dtype.type]]
             type = f"ONNX_TENSOR_ELEMENT_DATA_TYPE_{type_str}"
             p_data = (ctype * len(data))(*data)
@@ -146,12 +178,42 @@ class ExecutableKernelContext:
         return ExecutableKernel(self.api, self, provider_id)
 
 
+class Value:
+    def __init__(self, api, array: np.ndarray):
+        self.api = api
+        self.mem_info = MemoryInfo.for_cpu(api)
+        self.array = array
+
+    def __enter__(self):
+        self.ptr = ctypes.c_void_p()
+
+        shape = (ctypes.c_int64 * len(self.array.shape))(*self.array.shape)
+        data_ctype = np.ctypeslib.as_ctypes_type(self.array.dtype)
+
+        data_ptr = ctypes.c_void_p(self.array.__array_interface__['data'][0])
+
+        type_str = dt_to_onnx_string[dace.DTYPE_TO_TYPECLASS[
+            self.array.dtype.type]]
+        type = f"ONNX_TENSOR_ELEMENT_DATA_TYPE_{type_str}"
+
+        with self.mem_info:
+            self.api.CreateTensorWithDataAsOrtValue(
+                self.mem_info.ptr, data_ptr,
+                ctypes.sizeof(data_ctype) * self.array.size, shape,
+                len(self.array.shape), type, ctypes.byref(self.ptr))
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.api.ReleaseValue(self.ptr)
+
+
 class ExecutableKernel:
     def __init__(self, api, kernel_context: ExecutableKernelContext,
                  provider_id: int):
         self.api = api
         self.provider_id = provider_id
         self.kernel_context = kernel_context
+        self.values = []
 
     def __enter__(self):
         self.ptr = ctypes.c_void_p()
@@ -160,6 +222,19 @@ class ExecutableKernel:
                                         self.provider_id,
                                         ctypes.byref(self.ptr))
         return self
+
+    def add_input(self, array: np.ndarray, idx: int):
+        value = Value(self.api, array).__enter__()
+        self.values.append(value)
+        self.api.ExecutableKernel_SetInput(self.ptr, idx, value.ptr)
+
+    def add_output(self, array: np.ndarray, idx: int):
+        value = Value(self.api, array).__enter__()
+        self.values.append(value)
+        self.api.ExecutableKernel_SetOutput(self.ptr, idx, value.ptr)
+
+    def compute(self):
+        self.api.ExecutableKernel_Compute(self.ptr)
 
     def check_io_locations(self):
 
@@ -185,4 +260,8 @@ class ExecutableKernel:
         return inputs_on_cpu, outputs_on_cpu
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+
+        for value in self.values:
+            self.api.ReleaseValue(value)
+
         self.api.ReleaseExecutableKernel(self.ptr)
