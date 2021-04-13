@@ -16,6 +16,8 @@ from daceml.onnx import ONNXModel
 from daceml.onnx.shape_inference import infer_shapes
 from daceml.util import utils, find_str_not_in_set
 
+log = logging.getLogger(__name__)
+
 
 class DaceModule(nn.Module):
     """ A wrapper that converts a PyTorch ``nn.Module`` to a PyTorch compatible data-centric ``nn.Module``.
@@ -116,18 +118,30 @@ class DaceModule(nn.Module):
 
     def prepend_post_onnx_hook(self, name: str, func: Callable[[ONNXModel],
                                                                None]):
+        if self.function is not None:
+            log.warning(
+                f"Added a hook after the model was already initialized. This hook "
+                f"(with name {name}) will not be executed!")
         name = find_str_not_in_set(set(self.post_onnx_hooks), name)
         self.post_onnx_hooks[name] = func
         self.post_onnx_hooks.move_to_end(name, last=False)
 
     def append_post_onnx_hook(self, name: str, func: Callable[[ONNXModel],
                                                               None]):
+        if self.function is not None:
+            log.warning(
+                f"Added a hook after the model was already initialized. This hook "
+                f"(with name {name}) will not be executed!")
         name = find_str_not_in_set(set(self.post_onnx_hooks), name)
         self.post_onnx_hooks[name] = func
 
     def prepend_post_autodiff_hook(self, name: str,
                                    func: Callable[[dace.SDFG, dace.SDFG],
                                                   None]):
+        if self.function is not None:
+            log.warning(
+                f"Added a hook after the model was already initialized. This hook "
+                f"(with name {name}) will not be executed!")
         name = find_str_not_in_set(set(self.post_autodiff_hooks), name)
         self.post_autodiff_hooks[name] = func
         self.post_autodiff_hooks.move_to_end(name, last=False)
@@ -135,6 +149,10 @@ class DaceModule(nn.Module):
     def append_post_autodiff_hook(self, name: str,
                                   func: Callable[[dace.SDFG, dace.SDFG],
                                                  None]):
+        if self.function is not None:
+            log.warning(
+                f"Added a hook after the model was already initialized. This hook "
+                f"(with name {name}) will not be executed!")
         name = find_str_not_in_set(set(self.post_autodiff_hooks), name)
         self.post_autodiff_hooks[name] = func
 
