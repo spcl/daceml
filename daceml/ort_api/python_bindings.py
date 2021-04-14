@@ -19,7 +19,7 @@ class Env:
 
     def __enter__(self):
         self.ptr = ctypes.c_void_p()
-        self.api.CreateEnv("ORT_LOGGING_LEVEL_WARNING", b"ort_api",
+        self.api.CreateEnv("ORT_LOGGING_LEVEL_WARNING", "ort_api",
                            ctypes.byref(self.ptr))
         return self
 
@@ -121,8 +121,7 @@ class ExecutableKernelContext:
 
     def __enter__(self):
         self.ptr = ctypes.c_void_p()
-        self.api.CreateExecutableKernelContext(self.name.encode("ascii"),
-                                               self.op_type.encode("ascii"),
+        self.api.CreateExecutableKernelContext(self.name, self.op_type,
                                                ctypes.byref(self.ptr))
         return self
 
@@ -145,7 +144,7 @@ class ExecutableKernelContext:
                       attr_type: ONNXAttributeType):
         if attr_value is None:
             return
-        attr_name = attr_name.encode("ascii")
+        attr_name = attr_name
         add_attr_function = getattr(
             self.api, f"ExecutableKernelContext_AddAttribute{attr_type.name}")
 

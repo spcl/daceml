@@ -1,4 +1,5 @@
 import functools
+import logging
 import typing
 from functools import wraps
 
@@ -13,6 +14,8 @@ from dace.transformation.auto_optimize import set_fast_implementations
 
 from daceml.onnx.nodes.onnx_op import ONNXOp
 from daceml import transformation
+
+log = logging.getLogger(__name__)
 
 
 def is_desc_contiguous(desc: dt.Data) -> bool:
@@ -140,18 +143,23 @@ def auto_optimize(sdfg: dace.SDFG,
         :param apply_strict: whether to apply strict transformations to the sdfg after optimization.
         :param fold_constants: whether to apply constant folding.
     """
+    log.debug("Applying automatic optimizations")
     if fold_constants:
+        log.debug("Applying constant folding")
         sdfg.apply_transformations_repeated(
             [transformation.ConstantFolding, dataflow.RedundantSecondArray],
             validate_all=True,
             strict=True)
+    log.debug("Expanding ONNX nodes")
     expand_onnx_nodes(sdfg)
+    log.debug("Setting fast implementations")
     # MKL is currently broken
     set_fast_implementations(
         sdfg,
         dace.DeviceType.GPU if cuda else dace.DeviceType.CPU,
         blocklist=["MKL"])
     if apply_strict:
+        log.debug("Applying strict transforms")
         # there is a nondeterministic bug in redundant array that appears if
         # we don't apply inline first
         sdfg.apply_transformations_repeated(interstate.InlineSDFG)

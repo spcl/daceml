@@ -9,7 +9,7 @@ from daceml.ort_api import ORTCAPIInterface, OrtCUDAProviderOptions
 def test_basic():
     with ORTCAPIInterface() as api:
         env = ctypes.c_void_p()
-        api.CreateEnv("ORT_LOGGING_LEVEL_WARNING", b"ort_api",
+        api.CreateEnv("ORT_LOGGING_LEVEL_WARNING", "ort_api",
                       ctypes.byref(env))
 
         session_opts = ctypes.c_void_p()
@@ -25,7 +25,7 @@ def test_basic():
 def test_basic_gpu():
     with ORTCAPIInterface() as api:
         env = ctypes.c_void_p()
-        api.CreateEnv("ORT_LOGGING_LEVEL_WARNING", b"ort_api",
+        api.CreateEnv("ORT_LOGGING_LEVEL_WARNING", "ort_api",
                       ctypes.byref(env))
 
         session_opts = ctypes.c_void_p()

@@ -1,14 +1,10 @@
-import ctypes
-from typing import Optional, List, Tuple
+import logging
+from typing import List, Tuple
 
-import dace
-import numpy as np
-from dace.dtypes import DTYPE_TO_TYPECLASS
+from daceml.ort_api import KernelSession, ExecutableKernelContext
+from daceml.ort_api import ORTCAPIInterface
 
-from daceml.onnx.converters import ONNX_DTYPES_TO_DACE_TYPE_CLASS
-from daceml.onnx.schema import ONNXAttributeType
-from daceml.ort_api import KernelSession, ExecutableKernelContext, ExecutableKernel
-from daceml.ort_api import ORTAPIError, ORTCAPIInterface
+log = logging.getLogger(__name__)
 
 
 def check_op(sdfg, state, node, cuda=False) -> Tuple[List[bool], List[bool]]:
@@ -22,6 +18,7 @@ def check_op(sdfg, state, node, cuda=False) -> Tuple[List[bool], List[bool]]:
                  to be allocated in host memory. The second list is the same, but for the outputs.
         :raises: :class:`~daceml.ort_api.ORTAPIError` if ORT doesn't support the node.
     """
+    log.debug(f"Checking node {node}")
 
     with ORTCAPIInterface() as api,\
             KernelSession(api) as session,\

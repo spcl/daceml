@@ -7,7 +7,8 @@ from daceml.pytorch import DaceModule
 
 
 @pytest.mark.slow
-def test_bert_encoder_backward(gpu, default_implementation, sdfg_name):
+@pytest.mark.pure
+def test_bert_encoder_backward(gpu, sdfg_name):
     batch_size = 2
     seq_len = 512
     hidden_size = 768

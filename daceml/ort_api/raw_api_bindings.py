@@ -1,4 +1,5 @@
 import collections
+import copy
 import ctypes
 import os
 import re
@@ -104,6 +105,8 @@ class ORTCAPIInterface:
             # build the dll
             ORTCAPIInterface.dll = self.build_dll()
 
+        self.dll.GetErrorMessage.restype = ctypes.c_char_p
+
         # lazily constructed dict of function pointers
         self._function_pointers = keydefaultdict(
             lambda name: self._dll_get_fptr(name))
@@ -115,7 +118,11 @@ class ORTCAPIInterface:
             lbd()
 
     def _dll_get_fptr(self, function_name):
-        return getattr(self.dll, function_name)
+        func_ptr = getattr(self.dll, function_name)
+        if function_name in self.functions_to_expose:
+            # annotate functions that return a status
+            func_ptr.restype = ctypes.c_void_p
+        return func_ptr
 
     def __getattr__(self, function_name):
         def wrapper(*args):
@@ -147,11 +154,10 @@ class ORTCAPIInterface:
 
     def _check_status(self, status: ctypes.c_void_p):
         if status:
-            error = ctypes.c_char_p(
-                self._function_pointers["GetErrorMessage"](status))
-            self.ReleaseStatus(status)
-            print(error.value)
-            raise ORTAPIError(error.value.decode("ascii"))
+            msg = self.dll.GetErrorMessage(ctypes.c_void_p(status))
+            error_string = copy.deepcopy(msg.decode("ascii"))
+            self.dll.ReleaseStatus(ctypes.c_void_p(status))
+            raise ORTAPIError(error_string)
 
     def get_enum_value(self, enum_value_name: str) -> ctypes.c_int:
         """ Given an enum value, get the integer that represents it.
@@ -196,7 +202,7 @@ class ORTCAPIInterface:
             if type_name in ctypes_mapping and num_indirection == 0:
                 ctypes_type = ctypes_mapping[type_name]
             elif type_name == "char" and num_indirection == 1:
-                ctypes_type = ctypes.c_char_p
+                ctypes_type = lambda x: ctypes.c_char_p(x.encode("ascii"))
             elif hasattr(ctypes, f"c_{type_name}") and num_indirection == 0:
                 ctypes_type = getattr(ctypes, f"c_{type_name}")
             elif type_name in ORTCAPIInterface.enums_to_expose:
