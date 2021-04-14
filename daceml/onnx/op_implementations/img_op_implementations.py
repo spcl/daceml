@@ -97,7 +97,7 @@ class PureMaxPool2D(ONNXForward):
 
         # the outer map loops over every entry in the output array
         outer_me, outer_mx = new_state.add_map(
-            'outer_conv_map',
+            'outer_pool_map',
             dict(b="0:{}".format(batch_size),
                  c="0:{}".format(num_channels),
                  out_x="0:{}".format(output_size_x),
@@ -105,7 +105,7 @@ class PureMaxPool2D(ONNXForward):
 
         # the inner map computes the value for a single entry in the output array (i.e. Y[b, c, x, y])
         inner_me, inner_mx = new_state.add_map(
-            'inner_conv_map',
+            'inner_pool_map',
             dict(hx="0:{}".format(filter_hx), hy="0:{}".format(filter_hy)))
 
         compute_tasklet = new_state.add_tasklet("compute_entry",
