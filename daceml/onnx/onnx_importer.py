@@ -426,8 +426,7 @@ class ONNXModel:
             for node, parent in self.sdfg.all_nodes_recursive():
                 if isinstance(node, nodes.AccessNode):
                     desc = self.sdfg.arrays[node.data]
-                    if desc.transient and dace.can_access(
-                            dtypes.ScheduleType.CPU_Multicore, desc.storage):
+                    if desc.transient:
                         desc.transient = False
                         transient_kwargs[node.data] = create_output_array(
                             {}, desc, use_torch=True, zeros=False)
