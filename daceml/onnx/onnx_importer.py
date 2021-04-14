@@ -421,8 +421,6 @@ class ONNXModel:
             :return: the output of the model (or a tuple of outputs if there are multiple).
         """
 
-        inputs, params, symbols, outputs = self._call_args(args=args,
-                                                           kwargs=kwargs)
         transient_kwargs = {}
         if self.save_transients is not None:
             for node, parent in self.sdfg.all_nodes_recursive():
@@ -437,6 +435,9 @@ class ONNXModel:
 
         if self.do_auto_optimize:
             self.auto_optimize()
+
+        inputs, params, symbols, outputs = self._call_args(args=args,
+                                                           kwargs=kwargs)
 
         compiled = self.compile_and_init()
 

@@ -46,19 +46,19 @@ jobs:
 
     - name: Install dependencies
       run: |
-        wget https://github.com/orausch/onnxruntime/releases/download/build1/onnxruntime_dist_cpu.tar.gz
-        tar -xzf onnxruntime_dist_cpu.tar.gz
+        wget https://github.com/orausch/onnxruntime/releases/download/v2/onnxruntime-daceml-patched.tgz
+        tar -xzf onnxruntime-daceml-patched.tgz
         make install
 
     - name: Test with pytest
       env:
-        ORT_RELEASE: ${{ github.workspace }}/onnxruntime_dist_cpu
+        ORT_RELEASE: ${{ github.workspace }}/onnxruntime-daceml-patched
         PYTEST_ARGS: --cov=daceml --cov-report=term --cov-report xml --cov-config=.coveragerc -m "not slow"
       run: make test
 
     - name: Test with doctest
       env:
-        ORT_RELEASE: ${{ github.workspace }}/onnxruntime_dist_cpu
+        ORT_RELEASE: ${{ github.workspace }}/onnxruntime-daceml-patched
       run: make doctest
 
     - name: Upload coverage
