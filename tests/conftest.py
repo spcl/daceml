@@ -24,18 +24,22 @@ def skip_gpu_test_on_cpu():
 
 
 def pytest_generate_tests(metafunc):
+
+    # if @pytest.mark.gpu is applied skip the test on CPU
     if "gpu" in (m.name for m in metafunc.definition.iter_markers()):
         if not (metafunc.config.getoption("--gpu")
                 or metafunc.config.getoption("--gpu-only")):
             metafunc.fixturenames.insert(0, "skip_gpu_test_on_cpu")
-
-    if "gpu" in metafunc.fixturenames:
+    # else: if the gpu fixture is used, parameterize the test
+    elif "gpu" in metafunc.fixturenames:
         if metafunc.config.getoption("--gpu"):
             metafunc.parametrize("gpu", [True, False])
         elif metafunc.config.getoption("--gpu-only"):
             metafunc.parametrize("gpu", [True])
         else:
             metafunc.parametrize("gpu", [False])
+    # otherwise: this test is not marked with @pytest.mark.gpu, and doesn't have the gpu fixture:
+    # skip it if --gpu-only is passed
     elif metafunc.config.getoption("--gpu-only"):
         metafunc.fixturenames.insert(0, "skip_non_gpu_test")
 

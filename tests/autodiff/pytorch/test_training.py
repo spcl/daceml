@@ -13,6 +13,7 @@ from daceml.pytorch import DaceModule
 import daceml.onnx as donnx
 from dace.sdfg import state as dace_state
 from daceml.pytorch import DaceModule
+from daceml.testing.utils import torch_tensors_close
 from daceml.transformation import ConstantFolding
 from dace import dtypes
 from dace.sdfg import utils as sdutil
@@ -502,7 +503,7 @@ def test_bert(sdfg_name, gpu):
         def __init__(self):
             super(BertTokenSoftmaxClf, self).__init__()
             self.bert = BertLayer(BertConfig(hidden_act="relu")).eval()
-            self.sm = nn.LogSoftmax(dim=-1)
+            self.sm = nn.LogSoftmax(dim=-1)Ok, so by the way
 
         def forward(self, x):
             embs = self.bert(x)[0]

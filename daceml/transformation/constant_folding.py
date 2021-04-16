@@ -141,6 +141,8 @@ class ConstantFolding(transformation.Transformation):
             sub_state = sub_sdfg.add_state()
 
             node_copy = copy.deepcopy(node)
+            # always use ORT for constant folding
+            node_copy.implementation = "onnxruntime"
             sub_state.add_node(node_copy)
 
             inputs = {}

@@ -129,27 +129,41 @@ Note that if an implementation doesn't exist, or cannot be applied, the node exp
 Implementation Registration
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Implementations for an ONNX node can be registered by implementing the abstract
-:class:`~daceml.onnx.implementation_abc.ONNXForward` class. The implementation can be registered using the
-``autoregister_params`` decorator from dace. For registration, the parameters ``op`` and ``name`` must be passed,
-where ``op`` is the name of the ONNX op (without the ``ONNX`` prefix), and ``name`` is the name of the implementation.
+:class:`~daceml.onnx.forward_implementation_abc.ONNXForward` class. The implementation can be registered using the
+:func:`~daceml.onnx.op_implementations.utils.op_implementation` decorator. For registration, the parameters ``op`` and
+``name`` must be passed, where ``op`` is the name of the ONNX op (without the ``ONNX`` prefix), and ``name`` is the name
+of the implementation.
+
 For example:
 
 .. code-block:: python
 
     import daceml.onnx as donnx
-    from dace.registry import autoregister_params
-    from daceml.onnx.implementation_abc import ONNXForward
+    from daceml.onnx.op_implementations import op_implementation
+    from daceml.onnx.forward_implementation_abc import ONNXForward
 
-    @autoregister_params(op="MatMul", name="my_implementation_name")
+    @op_implementation(op="MatMul", name="my_implementation_name")
     class MyMatMul(ONNXForward):
         ...
 
     # can then be used with the library nodes
     donnx.ONNXMatMul.default_implementation = "my_implementation_name"
 
+
+Implementations should assume that the node has been validated before it was passed to the expansion. This means that:
+
+* input edges are only connected to valid connectors for the ONNX op
+* all ONNX required parameters have been connected
+* variadic parameters are correctly passed (correctly formed, and without gaps in the indexing)
+* the types of parameters solve correctly according to the type constraints given by the onnx specification
+* all required attributes have been set
+
+Implementations can choose to reject certain classes of the node the expand, by implementing the (optional)
+:meth:`~daceml.onnx.forward_implementation_abc.ONNXForward.forward_can_be_applied` method.
+
 Pure Implementations
 ~~~~~~~~~~~~~~~~~~~~
-Several nodes have a pure (i.e. analyzable SDFG IR) implementation. The list of all implementations can be found
+Several nodes have an SDFG implementation (i.e. not ONNXRuntime based). The list of all implementations can be found
 :ref:`here <pure-ops>`.
 
 Importing ONNX models

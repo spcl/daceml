@@ -4,7 +4,7 @@ PYTEST ?= pytest
 PIP ?= pip
 YAPF ?= yapf
 
-TORCH_VERSION ?= torch==1.7.1 torchvision==0.8.2 torchaudio==0.7.2
+TORCH_VERSION ?= torch==1.8.1 torchvision==0.9.1 torchaudio==0.8.1
 DACE_VERSION ?=
 UPDATE_PIP ?= python -m pip install --upgrade pip
 
