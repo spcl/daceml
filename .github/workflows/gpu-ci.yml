@@ -28,8 +28,7 @@ jobs:
 
       - name: Test with pytest
         env:
-          DACEML_LOG_LEVEL: debug
-          PYTEST_ARGS: --cov=daceml --cov-report=term --cov-report xml --cov-config=.coveragerc --gpu-only -m "not slow" -s -v
+          PYTEST_ARGS: --cov=daceml --cov-report=term --cov-report xml --cov-config=.coveragerc --gpu-only -m "not slow"
         run: make test
 
       - name: Upload coverage
