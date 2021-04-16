@@ -18,23 +18,24 @@ import pytest
 
 import dace
 import daceml.onnx as donnx
-from daceml.onnx.check_impl import OpChecker, ONNXOpValidationError
+from daceml.ort_api import ORTAPIError
+from daceml.ort_api.python_bindings import ExecutableKernelContext
 
 
 class BreakOpChecker:
     def __enter__(self):
         # monkey patch try_create to always fail
-        self.old_try_create = OpChecker.try_create
+        self.old_try_create = ExecutableKernelContext.try_create_kernel
 
-        def fail_create(self, cuda=False):
-            if cuda or self.check_io_locations:
-                raise ONNXOpValidationError("oh no :(")
+        def fail_create(self, provider_id):
+            raise ORTAPIError("oh no :(")
 
-        OpChecker.try_create = types.MethodType(fail_create, OpChecker)
+        ExecutableKernelContext.try_create_kernel = types.MethodType(
+            fail_create, ExecutableKernelContext)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         # undo the change
-        OpChecker.try_create = self.old_try_create
+        ExecutableKernelContext.try_create_kernel = self.old_try_create
 
 
 @pytest.mark.parametrize("break_opchecker", [True, False])

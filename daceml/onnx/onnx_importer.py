@@ -102,6 +102,7 @@ class ONNXModel:
                  cuda: bool = False,
                  apply_strict: bool = False,
                  auto_optimize: bool = True,
+                 fold_constants: bool = True,
                  parent_pytorch_module: Optional[torch.nn.Module] = None,
                  save_transients: Optional[Dict[str, torch.Tensor]] = None):
         """
@@ -134,6 +135,7 @@ class ONNXModel:
         self.sdfg._parent_onnx_model = self
         self.cuda = cuda
         self.apply_strict = apply_strict
+        self.fold_constants = fold_constants
         self.state: SDFGState = self.sdfg.add_state(
         )  #: the state containing the model computation.
 
@@ -419,8 +421,6 @@ class ONNXModel:
             :return: the output of the model (or a tuple of outputs if there are multiple).
         """
 
-        inputs, params, symbols, outputs = self._call_args(args=args,
-                                                           kwargs=kwargs)
         transient_kwargs = {}
         if self.save_transients is not None:
             for node, parent in self.sdfg.all_nodes_recursive():
@@ -435,6 +435,9 @@ class ONNXModel:
 
         if self.do_auto_optimize:
             self.auto_optimize()
+
+        inputs, params, symbols, outputs = self._call_args(args=args,
+                                                           kwargs=kwargs)
 
         compiled = self.compile_and_init()
 
@@ -543,7 +546,8 @@ class ONNXModel:
     def auto_optimize(self):
         utils.auto_optimize(self.sdfg,
                             self.cuda,
-                            apply_strict=self.apply_strict)
+                            apply_strict=self.apply_strict,
+                            fold_constants=self.fold_constants)
 
 
 def create_output_array(
@@ -574,13 +578,26 @@ def create_output_array(
     if cuda and not use_torch:
         raise ValueError("Got use_torch=False, but received a GPU descriptor")
 
-    shape = [eval_dim(d) if type(d) is dace.symbol else d for d in desc.shape]
+    if isinstance(desc, dt.Scalar):
+        shape = []
+    else:
+        shape = [
+            eval_dim(d) if type(d) is dace.symbol else d for d in desc.shape
+        ]
+
     if use_torch:
+        # torch functions don't accept the empty shape, so create shape [1] then reshape to ()
+        if len(shape) == 0:
+            shape = [1]
+
         # as_numpy_dtype doesn't seem to work for indexing into the dict
         tens = (torch.zeros if zeros else torch.empty)(
             *shape,
             dtype=numpy_to_torch_dtype_dict[getattr(np,
                                                     desc.dtype.to_string())])
+        if isinstance(desc, dt.Scalar):
+            tens = tens.reshape(())
+
         return tens.cuda() if cuda else tens
     else:
         return (np.zeros if zeros else np.empty)(shape,
