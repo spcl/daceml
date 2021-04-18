@@ -1,5 +1,7 @@
 ignore:
-  - "dace/jupyter.py"  # Omit files that cannot be tested
+  - "tests"
+  - "daceml/testing"
+  - "daceml/onnx/shape_inference/symbolic_shape_infer.py"
 
 coverage:
   range: 40..90
