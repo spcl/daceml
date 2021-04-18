@@ -1,7 +1,5 @@
-import pytest
 import numpy as np
 import torch
-from dace.transformation.dataflow import RedundantSecondArray
 from transformers import BertConfig, BertLayer
 import dace
 from dace.sdfg import sdfg as dace_sdfg
@@ -52,15 +50,11 @@ from dace.transformation.interstate.state_elimination import EmptyStateEliminati
 from dace.libraries.standard.nodes.barrier import Barrier
 from dace.transformation.interstate.gpu_transform_sdfg import GPUTransformSDFG
 
-
 from dace.config import Config
 from daceml.transformation import ConstantFolding, parameter_to_transient
 
 
 def test_bert_encoder(gpu, default_implementation, sdfg_name):
-    if not gpu and default_implementation == 'onnxruntime':
-        pytest.skip("combination is tested below")
-
     batch_size = 8
     seq_len = 512
     hidden_size = 768
@@ -74,12 +68,15 @@ def test_bert_encoder(gpu, default_implementation, sdfg_name):
                             cuda=gpu,
                             train=False,
                             sdfg_name=sdfg_name,
-                            apply_strict=True,
-                            dummy_inputs=(input.clone(), ))
+                            apply_strict=True)
 
     if gpu:
-        for name, _ in dace_model.model.named_parameters():
-            parameter_to_transient(dace_model, name)
+
+        def param_to_trans(model):
+            for name, _ in model.model.named_parameters():
+                parameter_to_transient(model, name)
+
+        dace_model.append_post_onnx_hook("param_to_transient", param_to_trans)
 
     dace_outputs0 = dace_model(input.clone())
 
@@ -137,10 +134,8 @@ def test_bert_cf(sdfg_name):
     assert np.max(diff) < 1e-5
 
 
+@pytest.mark.pure
 def test_bert_encoder_transformations():
-    default_impl = donnx.default_implementation
-    donnx.default_implementation = "pure"
-
     batch_size = 8
     seq_len = 64
     hidden_size = 16
@@ -148,14 +143,20 @@ def test_bert_encoder_transformations():
     num_attention_heads = 8
     intermediate_size = 128
 
-
     input = torch.randn([batch_size, seq_len, hidden_size])
 
-    ptmodel = BertLayer(BertConfig(hidden_size=hidden_size, num_hidden_layers=num_hidden_layers, max_position_embeddings=seq_len,
-                                   num_attention_heads=num_attention_heads, intermediate_size=intermediate_size)).eval()
+    ptmodel = BertLayer(
+        BertConfig(hidden_size=hidden_size,
+                   num_hidden_layers=num_hidden_layers,
+                   max_position_embeddings=seq_len,
+                   num_attention_heads=num_attention_heads,
+                   intermediate_size=intermediate_size)).eval()
     pt_outputs = ptmodel(input.clone())
 
-    dace_model = DaceModule(ptmodel, dummy_inputs=input.clone(), cuda=False, train=False)
+    dace_model = DaceModule(ptmodel,
+                            dummy_inputs=input.clone(),
+                            cuda=False,
+                            train=False)
 
     # Transformed version
 
@@ -197,9 +198,11 @@ def test_bert_encoder_transformations():
     subgraphs = list(enumerate_matches(dace_model.sdfg, pattern_graph))
     print(len(subgraphs))
 
-    assert(len(subgraphs) == 1)
+    assert (len(subgraphs) == 1)
     softmax_subgraph = subgraphs[0]
-    softmax_nsdfg: sdfg_nodes.NestedSDFG = nest_state_subgraph(softmax_subgraph.graph.parent, softmax_subgraph.graph, softmax_subgraph, 'softmax_nsdfg')
+    softmax_nsdfg: sdfg_nodes.NestedSDFG = nest_state_subgraph(
+        softmax_subgraph.graph.parent, softmax_subgraph.graph,
+        softmax_subgraph, 'softmax_nsdfg')
 
     softmax_sdfg: dace_sdfg.SDFG = softmax_nsdfg.sdfg
     softmax_state: dace_state.SDFGState = softmax_sdfg.nodes()[0]
@@ -218,35 +221,44 @@ def test_bert_encoder_transformations():
 
     # remove view nodes
 
-
-    softmax_sdfg.apply_transformations_repeated([SqueezeViewRemove], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([SqueezeViewRemove],
+                                                validate_all=True,
+                                                print_report=True)
 
     dace_model.sdfg.save('attn2_2.sdfg')
     print('attn2_2.sdfg')
 
     # eliminate trivial map dimensions
 
-    softmax_state.parent.apply_transformations_repeated([TrivialMapElimination, TrivialMapRangeElimination],
-                                                        validate_all=True, print_report=True)
+    softmax_state.parent.apply_transformations_repeated(
+        [TrivialMapElimination, TrivialMapRangeElimination],
+        validate_all=True,
+        print_report=True)
 
     dace_model.sdfg.save('attn3.sdfg')
     print('attn3.sdfg')
 
     # split last dimension out of 4 dimensional maps
 
-
-    pattern = sdutil.node_path_graph(dace.nodes.MapEntry(dace.nodes.Map('_', [], [])))
-    occurences = [(subgraph.nodes()[0], subgraph.graph) for subgraph in enumerate_matches(softmax_sdfg, pattern)]
+    pattern = sdutil.node_path_graph(
+        dace.nodes.MapEntry(dace.nodes.Map('_', [], [])))
+    occurences = [(subgraph.nodes()[0], subgraph.graph)
+                  for subgraph in enumerate_matches(softmax_sdfg, pattern)]
     for map_entry, state in occurences:
         if map_entry.map.range.dims() == 4:
-            print("Applying MapExpansion tranformation ", state.label, ". Nodes:", map_entry)
-            entries = MapExpansion.apply_to(sdfg=state.parent, map_entry=map_entry)
+            print("Applying MapExpansion tranformation ", state.label,
+                  ". Nodes:", map_entry)
+            entries = MapExpansion.apply_to(sdfg=state.parent,
+                                            map_entry=map_entry)
             assert len(entries) == 4
-            print("Applying MapCollapse tranformation ", state.label, ". Nodes:", map_entry)
-            new_entry, new_exit = MapCollapse.apply_to(sdfg=state.parent,
-                                                       _outer_map_entry=entries[0],
-                                                       _inner_map_entry=entries[1])
-            print("Applying MapCollapse tranformation again ", state.label, ". Nodes:", map_entry)
+            print("Applying MapCollapse tranformation ", state.label,
+                  ". Nodes:", map_entry)
+            new_entry, new_exit = MapCollapse.apply_to(
+                sdfg=state.parent,
+                _outer_map_entry=entries[0],
+                _inner_map_entry=entries[1])
+            print("Applying MapCollapse tranformation again ", state.label,
+                  ". Nodes:", map_entry)
             MapCollapse.apply_to(sdfg=state.parent,
                                  _outer_map_entry=new_entry,
                                  _inner_map_entry=entries[2])
@@ -256,17 +268,20 @@ def test_bert_encoder_transformations():
 
     # apply strip mining for future use as warps
 
-
-    pattern = sdutil.node_path_graph(dace.nodes.MapEntry(dace.nodes.Map('_', [], [])))
+    pattern = sdutil.node_path_graph(
+        dace.nodes.MapEntry(dace.nodes.Map('_', [], [])))
 
     for subgraph in enumerate_matches(softmax_sdfg, pattern):
         map_entry: sdfg_nodes.MapEntry = subgraph.nodes()[0]
         if map_entry.map.range.dims() == 1:
-            print("Applying StripMining tranformation ", subgraph.graph.label, ". Nodes:", subgraph.nodes())
+            print("Applying StripMining tranformation ", subgraph.graph.label,
+                  ". Nodes:", subgraph.nodes())
             StripMining.apply_to(sdfg=subgraph.graph.parent,
-                                 options={'tile_size': seq_len // 32,
-                                          'tiling_type': dace.TilingType.CeilRange,
-                                          'divides_evenly': True},
+                                 options={
+                                     'tile_size': seq_len // 32,
+                                     'tiling_type': dace.TilingType.CeilRange,
+                                     'divides_evenly': True
+                                 },
                                  _map_entry=map_entry)
 
     dace_model.sdfg.validate()
@@ -276,80 +291,99 @@ def test_bert_encoder_transformations():
 
     # add temp transient
 
-    pattern = sdutil.node_path_graph(dace.nodes.MapExit(dace.nodes.Map('_', [], [])),
-                                     dace.nodes.MapExit(dace.nodes.Map('_', [], [])),
-                                     dace.nodes.MapExit(dace.nodes.Map('_', [], [])))
-    occurences = [(subgraph.nodes(), subgraph.graph) for subgraph in enumerate_matches(softmax_sdfg, pattern)]
+    pattern = sdutil.node_path_graph(
+        dace.nodes.MapExit(dace.nodes.Map('_', [], [])),
+        dace.nodes.MapExit(dace.nodes.Map('_', [], [])),
+        dace.nodes.MapExit(dace.nodes.Map('_', [], [])))
+    occurences = [(subgraph.nodes(), subgraph.graph)
+                  for subgraph in enumerate_matches(softmax_sdfg, pattern)]
     for nodes, state in occurences:
         if state.edges_between(nodes[0], nodes[1])[0].data.wcr:
-            print("Applying AccumulateTransient tranformation ", state.label, ". Nodes:", nodes)
-            AccumulateTransient.apply_to(sdfg=state.parent, map_exit=nodes[0], outer_map_exit=nodes[1])
+            print("Applying AccumulateTransient tranformation ", state.label,
+                  ". Nodes:", nodes)
+            AccumulateTransient.apply_to(sdfg=state.parent,
+                                         map_exit=nodes[0],
+                                         outer_map_exit=nodes[1])
 
     dace_model.sdfg.save('attn3_3.sdfg')
     print('attn3_3.sdfg')
 
     # nest all maps into states
 
-    softmax_sdfg.apply_transformations_repeated([NestMaps], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([NestMaps],
+                                                validate_all=True,
+                                                print_report=True)
 
     dace_model.sdfg.save('attn4.sdfg')
     print('attn4.sdfg')
 
     # nest access nodes into maps
 
-
-    softmax_sdfg.apply_transformations_repeated([
-        NestExitAccessNode, NestEntryAccessNode, RemoveUnusedAccessNode], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated(
+        [NestExitAccessNode, NestEntryAccessNode, RemoveUnusedAccessNode],
+        validate_all=True,
+        print_report=True)
 
     dace_model.sdfg.save('attn5.sdfg')
     print('attn5.sdfg')
 
-
-    softmax_sdfg.apply_transformations_repeated([NestedSDFGFusion], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([NestedSDFGFusion],
+                                                validate_all=True,
+                                                print_report=True)
 
     dace_model.sdfg.save('attn6.sdfg')
     print('attn6.sdfg')
 
     softmax_sdfg.apply_transformations_repeated(
-        [CleanNestedSDFGConnectors, RemoveDanglingAccessNodes, NestTransients], validate_all=True, print_report=True)
-
+        [CleanNestedSDFGConnectors, RemoveDanglingAccessNodes, NestTransients],
+        validate_all=True,
+        print_report=True)
 
     dace_model.sdfg.save('attn7.sdfg')
     print('attn7.sdfg')
 
     # Buggy behavior of TrivialMapRangeElimination that leaves empty map that can't be removed with
     # TrivialMapElimination helps here by blocking even more serious bug in ContantPropagation later
-    softmax_sdfg.apply_transformations_repeated([TrivialMapRangeElimination, TrivialMapElimination], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated(
+        [TrivialMapRangeElimination, TrivialMapElimination],
+        validate_all=True,
+        print_report=True)
 
     dace_model.sdfg.save('attn7_1.sdfg')
     print('attn7_1.sdfg')
 
-
-    softmax_sdfg.apply_transformations_repeated([NestMapContent], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([NestMapContent],
+                                                validate_all=True,
+                                                print_report=True)
 
     dace_model.sdfg.save('attn8.sdfg')
     print('attn8.sdfg')
 
-
-    softmax_sdfg.apply_transformations_repeated([NestedMapFusion], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([NestedMapFusion],
+                                                validate_all=True,
+                                                print_report=True)
 
     dace_model.sdfg.save('attn9.sdfg')
     print('attn9.sdfg')
 
     softmax_sdfg.apply_transformations_repeated(
-        [CleanNestedSDFGConnectors, RemoveDanglingAccessNodes, NestTransients], validate_all=True, print_report=True)
+        [CleanNestedSDFGConnectors, RemoveDanglingAccessNodes, NestTransients],
+        validate_all=True,
+        print_report=True)
 
     dace_model.sdfg.save('attn10.sdfg')
     print('attn10.sdfg')
 
-
-    softmax_sdfg.apply_transformations_repeated([UnifyInOutNestedSDFGConnectors], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated(
+        [UnifyInOutNestedSDFGConnectors], validate_all=True, print_report=True)
 
     dace_model.sdfg.save('attn11.sdfg')
     print('attn11.sdfg')
 
-
-    softmax_sdfg.apply_transformations_repeated([WarpAllReduceDetectionNoTasklet], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated(
+        [WarpAllReduceDetectionNoTasklet],
+        validate_all=True,
+        print_report=True)
 
     dace_model.sdfg.save('attn11_1.sdfg')
     print('attn11_1.sdfg')
@@ -359,20 +393,23 @@ def test_bert_encoder_transformations():
     dace_model.sdfg.save('attn11_2.sdfg')
     print('attn11_2.sdfg')
 
-
-    softmax_sdfg.apply_transformations_repeated([AddNestedSDFGInputConnector], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([AddNestedSDFGInputConnector],
+                                                validate_all=True,
+                                                print_report=True)
 
     dace_model.sdfg.save('attn11_3.sdfg')
     print('attn11_3.sdfg')
 
-
-    softmax_sdfg.apply_transformations_repeated([RemoveReadSDFGConnectors], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([RemoveReadSDFGConnectors],
+                                                validate_all=True,
+                                                print_report=True)
 
     dace_model.sdfg.save('attn12.sdfg')
     print('attn12.sdfg')
 
-
-    softmax_sdfg.apply_transformations_repeated([NestTransients], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([NestTransients],
+                                                validate_all=True,
+                                                print_report=True)
 
     dace_model.sdfg.save('attn12_1.sdfg')
     print('attn12_1.sdfg')
@@ -380,119 +417,149 @@ def test_bert_encoder_transformations():
     # TODO: it should be done in transformation that can detect if barrier removable or not
     pattern = sdutil.node_path_graph(Barrier)
 
-    matches = [(subgraph.graph, subgraph.nodes()) for subgraph in enumerate_matches(softmax_sdfg, pattern)]
+    matches = [(subgraph.graph, subgraph.nodes())
+               for subgraph in enumerate_matches(softmax_sdfg, pattern)]
     for state, nodes in matches:
         print("Match found in state", state.label, ". Nodes:", nodes)
 
-        EmptyStateElimination.apply_to(state.parent, empty_state=state, verify=False)
+        EmptyStateElimination.apply_to(state.parent,
+                                       empty_state=state,
+                                       verify=False)
 
     dace_model.sdfg.save('attn12_2.sdfg')
     print('attn12_2.sdfg')
 
-
-    softmax_sdfg.apply_transformations_repeated([CleanNestedWrites], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([CleanNestedWrites],
+                                                validate_all=True,
+                                                print_report=True)
 
     dace_model.sdfg.save('attn13.sdfg')
     print('attn13.sdfg')
 
-
-    softmax_sdfg.apply_transformations_repeated([RemoveUnusedStates], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([RemoveUnusedStates],
+                                                validate_all=True,
+                                                print_report=True)
 
     dace_model.sdfg.save('attn14.sdfg')
     print('attn14.sdfg')
 
-
-    softmax_sdfg.apply_transformations_repeated(
-        [PruneConnectors], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([PruneConnectors],
+                                                validate_all=True,
+                                                print_report=True)
 
     dace_model.sdfg.save('attn14_1.sdfg')
     print('attn14_1.sdfg')
 
-    softmax_sdfg.apply_transformations_repeated(
-        [RemoveDanglingAccessNodes], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([RemoveDanglingAccessNodes],
+                                                validate_all=True,
+                                                print_report=True)
 
     dace_model.sdfg.save('attn15.sdfg')
     print('attn15.sdfg')
 
-
-    softmax_sdfg.apply_transformations_repeated([ConstantPropagation], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([ConstantPropagation],
+                                                validate_all=True,
+                                                print_report=True)
 
     dace_model.sdfg.save('attn15_1.sdfg')
     print('attn15_1.sdfg')
 
-    softmax_sdfg.apply_transformations_repeated([EmptyStateElimination], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([EmptyStateElimination],
+                                                validate_all=True,
+                                                print_report=True)
 
     dace_model.sdfg.save('attn15_2.sdfg')
     print('attn15_2.sdfg')
 
-    softmax_sdfg.apply_transformations_repeated([NestedMapFusion], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([NestedMapFusion],
+                                                validate_all=True,
+                                                print_report=True)
 
     dace_model.sdfg.save('attn15_3.sdfg')
     print('attn15_3.sdfg')
 
-    softmax_sdfg.apply_transformations_repeated([CleanNestedSDFGConnectors, RemoveDanglingAccessNodes],
-                                                validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated(
+        [CleanNestedSDFGConnectors, RemoveDanglingAccessNodes],
+        validate_all=True,
+        print_report=True)
 
     dace_model.sdfg.save('attn15_3_1.sdfg')
     print('attn15_3_1.sdfg')
 
-    softmax_sdfg.apply_transformations_repeated([UnifyInOutNestedSDFGConnectors], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated(
+        [UnifyInOutNestedSDFGConnectors], validate_all=True, print_report=True)
 
     dace_model.sdfg.save('attn15_6.sdfg')
     print('attn15_6.sdfg')
 
-    softmax_sdfg.apply_transformations_repeated([RemoveReadSDFGConnectors], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([RemoveReadSDFGConnectors],
+                                                validate_all=True,
+                                                print_report=True)
 
     dace_model.sdfg.save('attn15_6_1.sdfg')
     print('attn15_6_1.sdfg')
 
-    softmax_sdfg.apply_transformations_repeated([NestTransients], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([NestTransients],
+                                                validate_all=True,
+                                                print_report=True)
 
     dace_model.sdfg.save('attn15_7.sdfg')
     print('attn15_7.sdfg')
 
-    softmax_sdfg.apply_transformations_repeated([CleanNestedSDFGConnectors], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([CleanNestedSDFGConnectors],
+                                                validate_all=True,
+                                                print_report=True)
 
     dace_model.sdfg.save('attn16.sdfg')
     print('attn16.sdfg')
-
-
-
 
     # remove all barriers
     # TODO: it should be done in transformation that can detect if barrier removable or not
     pattern = sdutil.node_path_graph(Barrier)
 
     for subgraph in enumerate_matches(softmax_sdfg, pattern):
-        print("Match found in state", subgraph.graph.label, ". Nodes:", subgraph.nodes())
+        print("Match found in state", subgraph.graph.label, ". Nodes:",
+              subgraph.nodes())
 
-        EmptyStateElimination.apply_to(subgraph.graph.parent, empty_state=subgraph.graph, verify=False)
+        EmptyStateElimination.apply_to(subgraph.graph.parent,
+                                       empty_state=subgraph.graph,
+                                       verify=False)
 
     dace_model.sdfg.save('attn16_2.sdfg')
     print('attn16_2.sdfg')
 
-
-    softmax_sdfg.apply_transformations_repeated([EmptyStateElimination], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([EmptyStateElimination],
+                                                validate_all=True,
+                                                print_report=True)
 
     dace_model.sdfg.save('attn16_3.sdfg')
     print('attn16_3.sdfg')
 
     softmax_sdfg.apply_transformations_repeated([
-        NestedMapFusion, CleanNestedSDFGConnectors, RemoveDanglingAccessNodes, NestTransients,
-        UnifyInOutNestedSDFGConnectors, RemoveReadSDFGConnectors], validate_all=True, print_report=True)
+        NestedMapFusion, CleanNestedSDFGConnectors, RemoveDanglingAccessNodes,
+        NestTransients, UnifyInOutNestedSDFGConnectors,
+        RemoveReadSDFGConnectors
+    ],
+                                                validate_all=True,
+                                                print_report=True)
 
     dace_model.sdfg.save('attn16_4.sdfg')
     print('attn16_4.sdfg')
 
     # it fails with strict_transform enabled for some reason
-    softmax_sdfg.apply_transformations([GPUTransformSDFG], validate_all=True, print_report=True, options={'strict_transform': False})
+    softmax_sdfg.apply_transformations([GPUTransformSDFG],
+                                       validate_all=True,
+                                       print_report=True,
+                                       options={'strict_transform': False})
 
     dace_model.sdfg.save('attn17.sdfg')
     print('attn17.sdfg')
 
     # GPUTransformSDFG incorrectly wraps Tasklets of NestedSDFGs deep in the nesting hierarchy with empty maps
     # it is easier to fix it here by applying TrivialMapElimination
-    softmax_sdfg.apply_transformations_repeated([TrivialMapElimination], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([TrivialMapElimination],
+                                                validate_all=True,
+                                                print_report=True)
 
     dace_model.sdfg.save('attn18.sdfg')
     print('attn18.sdfg')
@@ -510,12 +577,7 @@ def test_bert_encoder_transformations():
 
     dace_outputs1 = dace_model(input.clone())
 
-    diff = np.abs(dace_outputs1.detach().numpy() - pt_outputs[0].detach().numpy())
+    diff = np.abs(dace_outputs1.detach().numpy() -
+                  pt_outputs[0].detach().numpy())
 
     assert np.max(diff) < 1e-6
-
-    donnx.default_implementation = default_impl
-
-
-if __name__ == "__main__":
-    test_bert_encoder_transformations()

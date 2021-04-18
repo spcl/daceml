@@ -1,23 +1,23 @@
 import logging
-from collections import defaultdict
 from collections.abc import Iterable
 from copy import deepcopy
 from functools import reduce
-from typing import Dict, NamedTuple, Tuple, List, Optional
+from typing import Dict, Tuple, List, Optional
 
 import dace
 import dace.data as dt
-from dace import dtypes, SDFGState, SDFG
+import dace.library
 import dace.sdfg.nodes as nd
 import numpy as np
-import dace.library
+from dace import dtypes, SDFGState, SDFG
 from dace.libraries.standard.nodes.code import _get_inputs_and_outputs
 
-from daceml.onnx.check_impl import check_op, ONNXOpValidationError
+from daceml.onnx.binary_utilities.op_checker import check_op
 from daceml.onnx.converters import clean_onnx_name, typeclass_to_onnx_str
+from daceml.onnx.environments import ONNXRuntime, ONNXRuntimeCUDA
 from daceml.onnx.nodes.node_utils import get_position
 from daceml.onnx.schema import ONNXAttributeType, _ATTR_TYPE_TO_PYTHON_TYPE, ONNXAttribute
-from daceml.onnx.environments import ONNXRuntime, ONNXRuntimeCUDA
+from daceml.ort_api import ORTAPIError
 
 log = logging.getLogger(__name__)
 
@@ -340,7 +340,7 @@ def expand_node(node, state, sdfg):
                                                        node,
                                                        cuda=True)
 
-        except ONNXOpValidationError as e:
+        except ORTAPIError as e:
             # fallback to CPU
             log.warning("Falling back to CPU for node {}. Reason:\n{}".format(
                 node.name, str(e)))
