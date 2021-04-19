@@ -1,56 +1,47 @@
-import numpy as np
-import torch
-from transformers import BertConfig, BertLayer
 import dace
-from dace.sdfg import sdfg as dace_sdfg
+import numpy as np
+import pytest
+import torch
 
-import daceml.onnx as donnx
-from dace.sdfg import state as dace_state
-from daceml.pytorch import DaceModule
-from daceml.transformation import ConstantFolding
-from dace import dtypes
-from dace.sdfg import utils as sdutil
+from dace.libraries.standard.nodes.barrier import Barrier
 from dace.sdfg import nodes as sdfg_nodes
-from typing import List
-from dace.transformation.helpers import nest_state_subgraph
-
-from dace.transformation.transformation import PatternNode
-from dace.transformation.transformation import Transformation
-from dace.transformation.pattern_matching import enumerate_matches
+from dace.sdfg import sdfg as dace_sdfg
+from dace.sdfg import state as dace_state
 from dace.sdfg import utils as sdutil
+from dace.sdfg.propagation import propagate_memlets_sdfg
+from dace.transformation.dataflow import PruneConnectors, RedundantSecondArray
+from dace.transformation.dataflow.add_nsdfg_connector import AddNestedSDFGInputConnector
+from dace.transformation.dataflow.clean_connectors import CleanNestedSDFGConnectors, RemoveDanglingAccessNodes
+from dace.transformation.dataflow.clean_connectors import CleanNestedWrites
+from dace.transformation.dataflow.clean_connectors import NestTransients
+from dace.transformation.dataflow.clean_connectors import RemoveReadSDFGConnectors
+from dace.transformation.dataflow.clean_connectors import UnifyInOutNestedSDFGConnectors
+from dace.transformation.dataflow.clean_connectors import merge_symbols
+from dace.transformation.dataflow.constant_propagation import ConstantPropagation
+from dace.transformation.dataflow.map_collapse import MapCollapse
+from dace.transformation.dataflow.map_expansion import MapExpansion
+from dace.transformation.dataflow.nest_access_nodes import NestEntryAccessNode
+from dace.transformation.dataflow.nest_access_nodes import NestExitAccessNode
+from dace.transformation.dataflow.nest_access_nodes import RemoveUnusedAccessNode
+from dace.transformation.dataflow.nest_maps import NestMapContent
+from dace.transformation.dataflow.nest_maps import NestMaps
+from dace.transformation.dataflow.nested_sdfg_fusion import NestedSDFGFusion
 from dace.transformation.dataflow.squeeze_view_remove import SqueezeViewRemove
+from dace.transformation.dataflow.stream_transient import AccumulateTransient
+from dace.transformation.dataflow.strip_mining import StripMining
 from dace.transformation.dataflow.trivial_map_elimination import TrivialMapElimination
 from dace.transformation.dataflow.trivial_map_range_elimination import TrivialMapRangeElimination
-from dace.transformation.dataflow.map_expansion import MapExpansion
-from dace.transformation.dataflow.map_collapse import MapCollapse
-from dace.transformation.dataflow.strip_mining import StripMining
-from dace.transformation.dataflow.stream_transient import AccumulateTransient
-from dace.transformation.dataflow.nest_maps import NestMaps
-from dace.transformation.dataflow.nest_access_nodes import NestExitAccessNode
-from dace.transformation.dataflow.nest_access_nodes import NestEntryAccessNode
-from dace.transformation.dataflow.nest_access_nodes import RemoveUnusedAccessNode
-from dace.transformation.dataflow.nested_sdfg_fusion import NestedSDFGFusion
-from dace.transformation.dataflow.clean_connectors import CleanNestedSDFGConnectors, RemoveDanglingAccessNodes, NestTransients
-from dace.transformation.dataflow.nest_maps import NestMapContent
-from dace.transformation.interstate.nested_map_fusion import NestedMapFusion
-from dace.transformation.dataflow.clean_connectors import UnifyInOutNestedSDFGConnectors
-from dace.transformation.interstate.warp_all_reduce_detection import WarpAllReduceDetectionNoTasklet
-from dace.sdfg.propagation import propagate_memlets_sdfg
-from dace.transformation.dataflow.add_nsdfg_connector import AddNestedSDFGInputConnector
-from dace.transformation.dataflow.clean_connectors import RemoveReadSDFGConnectors
-from dace.transformation.dataflow.clean_connectors import NestTransients
-from dace.transformation.interstate.state_elimination import EmptyStateElimination
-from dace.libraries.standard.nodes.barrier import Barrier
-from dace.transformation.dataflow.clean_connectors import CleanNestedWrites
-from dace.transformation.interstate.remove_unused_states import RemoveUnusedStates
-from dace.transformation.dataflow import PruneConnectors
-from dace.transformation.dataflow.constant_propagation import ConstantPropagation
-from dace.transformation.dataflow.clean_connectors import merge_symbols
-from dace.transformation.interstate.state_elimination import EmptyStateElimination
-from dace.libraries.standard.nodes.barrier import Barrier
+from dace.transformation.helpers import nest_state_subgraph
 from dace.transformation.interstate.gpu_transform_sdfg import GPUTransformSDFG
+from dace.transformation.interstate.nested_map_fusion import NestedMapFusion
+from dace.transformation.interstate.remove_unused_states import RemoveUnusedStates
+from dace.transformation.interstate.state_elimination import EmptyStateElimination
+from dace.transformation.interstate.warp_all_reduce_detection import WarpAllReduceDetectionNoTasklet
+from dace.transformation.pattern_matching import enumerate_matches
+from dace.transformation.transformation import PatternNode
+from transformers import BertConfig, BertLayer
 
-from dace.config import Config
+from daceml.pytorch import DaceModule
 from daceml.transformation import ConstantFolding, parameter_to_transient
 
 
