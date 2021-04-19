@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from daceml.pytorch import DaceModule
+from daceml.testing import torch_tensors_close
 
 
 def run_pytorch_module(module,
@@ -34,9 +35,6 @@ def run_pytorch_module(module,
         pytorch_s = module(pytorch_input).sum()
     pytorch_s.backward()
 
-    print("Pytorch output:")
-    print(pytorch_input.grad)
-
     dace_module = DaceModule(module,
                              backward=True,
                              cuda=gpu,
@@ -48,12 +46,7 @@ def run_pytorch_module(module,
     else:
         dace_s = dace_module(dace_input).sum()
     dace_s.backward()
-    print("Dace output:")
-    print(dace_input.grad)
-    assert torch.allclose(pytorch_input.grad,
-                          dace_input.grad,
-                          rtol=1e-6,
-                          atol=1e-4)
+    torch_tensors_close("output", pytorch_input.grad, dace_input.grad)
 
 
 def test_simple(sdfg_name, gpu):
