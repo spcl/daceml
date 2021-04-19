@@ -67,7 +67,7 @@ class DaceModule(nn.Module):
         self.sdfg: Optional[dace.SDFG] = None
         self.cuda = cuda
         self.sdfg_name = sdfg_name or "dace_model"
-
+        self.auto_optimize = auto_optimize
         self.function = None
 
         #: hooks that are executed after onnx graph is imported to an SDFG
