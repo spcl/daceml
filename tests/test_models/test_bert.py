@@ -20,10 +20,13 @@ def test_bert_full(gpu, default_implementation, sdfg_name):
 
     model = onnx.load(bert_path)
 
-    dace_model = donnx.ONNXModel(sdfg_name,
-                                 model,
-                                 cuda=gpu,
-                                 infer_shapes=False)
+    dace_model = donnx.ONNXModel(
+        sdfg_name,
+        model,
+        cuda=gpu,
+        infer_shapes=False,
+        # constant folding is too slow on this model
+        fold_constants=False)
     feed = {
         "input_ids:0": np.load(os.path.join(data_directory, "input_ids.npy")),
         "input_mask:0": np.load(os.path.join(data_directory,

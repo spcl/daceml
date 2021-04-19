@@ -1,5 +1,6 @@
 import itertools
 import logging
+import collections
 from typing import Iterator, Tuple, List, Dict, Type
 
 import dace
@@ -463,11 +464,38 @@ def register_op_repo_replacement(cls: Type[ONNXOp], cls_name: str,
         return []
 
 
+def _get_schemas_from_version(version: int):
+    name_to_schemas = collections.defaultdict(list)
+    for schema in onnx.defs.get_all_schemas_with_history():
+        name_to_schemas[schema.name].append(schema)
+
+    all_schemas = []
+    for name, schemas in name_to_schemas.items():
+        schemas = sorted(schemas, key=lambda x: x.since_version)
+        while schemas[-1].since_version > version:
+            schemas.pop()
+
+        all_schemas.append(schemas[-1])
+
+    return all_schemas
+
+
 _ONNX_OPS_BY_NAME = {}
 # Generate all of the Op Nodes
-for schema in onnx.defs.get_all_schemas():
+for schema in _get_schemas_from_version(12):
     try:
         dace_schema = ONNXSchema.from_onnx_proto(schema)
+        # if the schema has a parameter name that exists as both an input and an output, prepend "in_" and "out_"
+        intersecting_names = set(i.name
+                                 for i in dace_schema.inputs).intersection(
+                                     o.name for o in dace_schema.outputs)
+        for name in intersecting_names:
+            in_cands = [i for i in dace_schema.inputs if i.name == name]
+            out_cands = [i for i in dace_schema.outputs if i.name == name]
+            assert len(in_cands) == len(out_cands) == 1
+            in_cands[0].name = "in_" + name
+            out_cands[0].name = "out_" + name
+
     except Exception as e:
         log.debug("Import of {} failed: {}".format(schema.name, e))
         continue
@@ -614,12 +642,8 @@ for schema in onnx.defs.get_all_schemas():
 
                 @classmethod
                 def expansion(cls, node, state, sdfg):
-                    # scalars on gpu don't work in dace at the moment.
-                    skip_due_to_scalars_on_gpu = (
-                        node.schedule == dtypes.ScheduleType.GPU_Default
-                        and any(
-                            isinstance(sdfg.arrays[e.data.data], data.Scalar)
-                            for e in state.out_edges(node)))
+                    # validate
+                    node.validate(sdfg, state)
 
                     if cls.forward_impl.forward_can_be_applied(
                             node, state, sdfg):
@@ -627,8 +651,9 @@ for schema in onnx.defs.get_all_schemas():
                     else:
                         # fall back to ORT
                         log.info(
-                            'Falling back to onnxruntime expansion for library node "{}". Reason: forward_can_be_applied returned False'
-                            .format(node.label))
+                            'Falling back to onnxruntime expansion for library node "{}". '
+                            'Reason: forward_can_be_applied returned False'.
+                            format(node.label))
                         result = expand_node(node, state, sdfg)
                         if not isinstance(result, SDFG):
                             # when we return an SDFG the the environments will be determined recursively by codegen.

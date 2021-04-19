@@ -55,3 +55,36 @@ implementation that is used, tests can be decorated with the following two marke
 
 If you provide the fixture (i.e., an argument to the test) with name ``default_implementation``, then the test will be
 parameterized to test both implementations.
+
+Useful Snippets
+---------------
+
+GPU Leak checker
+~~~~~~~~~~~~~~~~
+Put this code in ``tests/conf.py``::
+
+    import xml.etree.ElementTree as ET
+    import subprocess
+    import shlex
+
+    import torch
+    # initialize torch cuda context
+    a = torch.ones(1, 1).cuda()
+
+
+    def _get_gpu_mem_usage():
+        result = subprocess.check_output(shlex.split("nvidia-smi -x -q"))
+        usage_str = ET.fromstring(result).find("gpu").find("fb_memory_usage").find("used").text
+        if not usage_str.endswith(" MiB"):
+            raise RuntimeError("Couldn't parse nvidia-smi output")
+
+        return int(usage_str[:-4])
+
+    @pytest.fixture(autouse=True)
+    def memory_printer():
+        before = _get_gpu_mem_usage()
+        log.debug(f"Usage before: {before}")
+        yield
+        after = _get_gpu_mem_usage()
+        log.debug(f"Usage after: {after}, delta: {after - before}")
+        assert after - before < 200

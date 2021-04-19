@@ -1,80 +1,25 @@
 import copy
-import inspect
 import itertools
 import logging
 import typing
 
 import dace
-from dace import SDFGState, SDFG, dtypes, data as dt, nodes
+import numpy as np
+from dace import SDFGState, SDFG, nodes
 from dace.frontend.common import create_einsum_sdfg
-from dace.frontend.python.parser import DaceProgram
-from dace.registry import autoregister_params
-import dace.libraries.blas as blas
 from dace.sdfg.nodes import Node
 
-from daceml.transformation import constant_folding
-from daceml.onnx.nodes import onnx_op
-from daceml.onnx.nodes.node_utils import parse_variadic_param
 from daceml.onnx import converters
 from daceml.onnx.forward_implementation_abc import ONNXForward
-import numpy as np
-
-from daceml.util.utils import in_desc_with_name, out_desc_with_name, in_edge_with_name
+from daceml.onnx.nodes import onnx_op
+from daceml.onnx.op_implementations.utils import op_implementation, program_for_node
+from daceml.transformation import constant_folding
+from daceml.util.utils import in_desc_with_name, out_desc_with_name, in_edge_with_name, iterables_equal
 
 log = logging.getLogger(__name__)
 
 
-def program_for_node(program, sdfg: SDFG, state: SDFGState,
-                     node: onnx_op.ONNXOp) -> SDFG:
-    """ Expand a function to a dace program.
-
-        The dtypes for the arguments will be extracted by matching the parameter names to edges.
-    """
-    input_names = node.schema.non_variadic_inputs()
-    variadic_input_names = node.schema.variadic_inputs()
-
-    output_names = node.schema.non_variadic_outputs()
-    variadic_output_names = node.schema.variadic_outputs()
-
-    if set(input_names).intersection(output_names):
-        # this is currently the case for only one onnx op
-        raise ValueError(
-            "program_for_node cannot be applied on nodes of this type;"
-            " '{}' is both an input and an output".format(
-                next(input_names.intersection(output_names))))
-
-    params = inspect.signature(program).parameters
-
-    annotations = {}
-    for name, param in params.items():
-        if name in input_names or ("__" in name
-                                   and parse_variadic_param(name)[0]
-                                   in variadic_input_names):
-            annotations[name] = in_desc_with_name(node, state, sdfg, name)
-        elif name in output_names or ("__" in name
-                                      and parse_variadic_param(name)[0]
-                                      in variadic_output_names):
-            annotations[name] = out_desc_with_name(node, state, sdfg, name)
-        else:
-            raise ValueError(
-                "'{}' was not found as an input or output for {}".format(
-                    name, node.schema.name))
-
-    program.__annotations__ = annotations
-
-    result = DaceProgram(program, (), {}, False, dace.DeviceType.CPU)
-    result.name = node.label + "_expansion"
-
-    sdfg = result.to_sdfg()
-
-    if node.schedule in [dtypes.ScheduleType.GPU_Default
-                         ] + dtypes.GPU_SCHEDULES:
-        sdfg.apply_gpu_transformations()
-
-    return sdfg
-
-
-@autoregister_params(op="Log", name="pure")
+@op_implementation(op="Log", name="pure")
 class PureLog(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
@@ -92,7 +37,7 @@ class PureLog(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Sqrt", name="pure")
+@op_implementation(op="Sqrt", name="pure")
 class PureSqrt(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
@@ -104,16 +49,13 @@ class PureSqrt(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        node.validate(sdfg, state)
-
         def prog(X, Y):
             Y[:] = dace.elementwise(lambda x: sqrt(x), X)
 
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Pow", name="pure")
+@op_implementation(op="Pow", name="pure")
 class PurePow(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
@@ -125,79 +67,61 @@ class PurePow(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        node.validate(sdfg, state)
-
         def prog(X, Y, Z):
             Z[:] = X**Y
 
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Add", name="pure")
+@op_implementation(op="Add", name="pure")
 class PureAdd(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        node.validate(sdfg, state)
-
         def prog(A, B, C):
             C[:] = A + B
 
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Sub", name="pure")
+@op_implementation(op="Sub", name="pure")
 class PureSub(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        node.validate(sdfg, state)
-
         def prog(A, B, C):
             C[:] = A - B
 
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Mul", name="pure")
+@op_implementation(op="Mul", name="pure")
 class PureMul(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        node.validate(sdfg, state)
-
         def prog(A, B, C):
             C[:] = A * B
 
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Div", name="pure")
+@op_implementation(op="Div", name="pure")
 class PureDiv(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        node.validate(sdfg, state)
-
         def prog(A, B, C):
             C[:] = A / B
 
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="ReduceMean", name="pure")
+@op_implementation(op="ReduceMean", name="pure")
 class PureReduceMean(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        node.validate(sdfg, state)
-
         axes = node.axes
 
         # when keepdims is true, this works but there is a useless copy. We just leave this for now; this can be fixed
@@ -208,7 +132,7 @@ class PureReduceMean(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Erf", name="pure")
+@op_implementation(op="Erf", name="pure")
 class PureErf(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
@@ -220,16 +144,13 @@ class PureErf(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        node.validate(sdfg, state)
-
         def prog(input, output):
             output[:] = dace.elementwise(lambda x: erf(x), input)
 
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="MatMul", name="pure")
+@op_implementation(op="MatMul", name="pure")
 class PureMatMul(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
@@ -244,8 +165,6 @@ class PureMatMul(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        node.validate(sdfg, state)
-
         A_desc = in_desc_with_name(node, state, sdfg, "A")
         B_desc = in_desc_with_name(node, state, sdfg, "B")
         Y_desc = out_desc_with_name(node, state, sdfg, "Y")
@@ -339,7 +258,7 @@ class PureMatMul(ONNXForward):
         return nsdfg
 
 
-@autoregister_params(op="Einsum", name="pure")
+@op_implementation(op="Einsum", name="pure")
 class PureEinsum(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
@@ -351,8 +270,6 @@ class PureEinsum(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        node.validate(sdfg, state)
-
         nsdfg = dace.SDFG(node.label + "_expansion")
         nstate = nsdfg.add_state()
 
@@ -373,7 +290,7 @@ class PureEinsum(ONNXForward):
         return nsdfg
 
 
-@autoregister_params(op="Identity", name="pure")
+@op_implementation(op="Identity", name="pure")
 class PureIdentity(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
@@ -383,16 +300,13 @@ class PureIdentity(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        node.validate(sdfg, state)
-
         def prog(input, output):
             output[:] = input
 
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Reciprocal", name="pure")
+@op_implementation(op="Reciprocal", name="pure")
 class PureReciprocal(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
@@ -404,9 +318,6 @@ class PureReciprocal(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        node.validate(sdfg, state)
-
         dtype = in_desc_with_name(node, state, sdfg, 'X').dtype
         tanh_lambda = "lambda x: dace.{}(1) / x".format(dtype.to_string())
 
@@ -416,27 +327,22 @@ class PureReciprocal(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Tanh", name="pure")
+@op_implementation(op="Tanh", name="pure")
 class PureTanh(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        node.validate(sdfg, state)
-
         def prog(input, output):
             output[:] = dace.elementwise(lambda x: tanh(x), input)
 
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="ReduceSum", name="pure")
+@op_implementation(op="ReduceSum", name="pure")
 class PureReduceSum(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        node.validate(sdfg, state)
-
         axes = node.axes
 
         # when keepdims is true, this works but there is a useless copy. We just leave this for now; this can be fixed
@@ -447,13 +353,11 @@ class PureReduceSum(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="ReduceMax", name="pure")
+@op_implementation(op="ReduceMax", name="pure")
 class PureReduceMax(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        node.validate(sdfg, state)
-
         axes = node.axes
 
         # when keepdims is true, this works but there is a useless copy. We just leave this for now; this can be fixed
@@ -464,13 +368,11 @@ class PureReduceMax(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="ReduceMin", name="pure")
+@op_implementation(op="ReduceMin", name="pure")
 class PureReduceMin(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        node.validate(sdfg, state)
-
         axes = node.axes
 
         # when keepdims is true, this works but there is a useless copy. We just leave this for now; this can be fixed
@@ -481,7 +383,7 @@ class PureReduceMin(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Softmax", name="pure")
+@op_implementation(op="Softmax", name="pure")
 class PureSoftmax(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
@@ -504,13 +406,11 @@ class PureSoftmax(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Transpose", name="pure")
+@op_implementation(op="Transpose", name="pure")
 class PureTranspose(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        node.validate(sdfg, state)
         perm = node.perm
 
         def prog(data, transposed):
@@ -519,7 +419,7 @@ class PureTranspose(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Cast", name="pure")
+@op_implementation(op="Cast", name="pure")
 class PureCast(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
@@ -555,7 +455,7 @@ class PureCast(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Gemm", name="pure")
+@op_implementation(op="Gemm", name="pure")
 class PureGemm(ONNXForward):
     @staticmethod
     def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
@@ -567,8 +467,6 @@ class PureGemm(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        node.validate(sdfg, state)
-
         assert node.alpha == 1.0 and node.beta == 1.0 and node.transA == 0 and node.transB == 1
 
         # the gemm libnode is broken for now, so we just do it manually
@@ -586,7 +484,7 @@ class PureGemm(ONNXForward):
         return sdfg
 
 
-@autoregister_params(op="Relu", name="pure")
+@op_implementation(op="Relu", name="pure")
 class PureRelu(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
@@ -601,7 +499,7 @@ class PureRelu(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="Reshape", name="pure")
+@op_implementation(op="Reshape", name="pure")
 class PureReshape(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
@@ -618,127 +516,91 @@ class PureReshape(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@autoregister_params(op="LogSoftmax", name="pure")
-class PureLogSoftmax(ONNXForward):
+@op_implementation(op="Sum", name="pure")
+class PureSum(ONNXForward):
+    @staticmethod
+    def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
+        # check that all shapes are arrays, and that the shapes are all equal
+        shape = None
+        for edge in node.iter_inputs_in_onnx_order(state):
+            desc = in_desc_with_name(node, state, sdfg, edge.dst_conn)
+            if shape is None:
+                shape = desc.shape
+
+            if not iterables_equal(shape, desc.shape):
+                return False
+
+        if not iterables_equal(
+                shape,
+                out_desc_with_name(node, state, sdfg, "sum").shape):
+            return False
+
+        return True
+
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
-        # NOTE: once there is a reshape node this whole expansion becomes much simpler:
-        #
-        # exp = np.exp(X - np.max(X, axis=axis, keepdims=True))
-        # sum = np.sum(exp, axis=axis, keepdims=True)
+        nsdfg = dace.SDFG(node.name)
+        input_names = []
+        for e in node.iter_inputs_in_onnx_order(state):
+            new_desc = copy.deepcopy(
+                in_desc_with_name(node, state, sdfg, e.dst_conn))
+            new_desc.transient = False
+            nsdfg.add_datadesc(e.dst_conn, new_desc)
+            input_names.append(e.dst_conn)
 
-        # result = exp / sum
+        new_desc = copy.deepcopy(out_desc_with_name(node, state, sdfg, "sum"))
+        new_desc.transient = False
+        nsdfg.add_datadesc("sum", new_desc)
 
-        node.validate(sdfg, state)
-        inparr = in_desc_with_name(node, state, sdfg, "input")
+        nstate = nsdfg.add_state()
+        # we know all shapes are equal to the output shape
+        shape = out_desc_with_name(node, state, sdfg, "sum").shape
+        map_ranges = {f"i{i}": f"0:{s}" for i, s in enumerate(shape)}
+        index_str = f"{', '.join(map_ranges.keys())}"
+        tasklet, _, _ = nstate.add_mapped_tasklet(
+            node.name + "_tasklet",
+            map_ranges=map_ranges,
+            inputs={
+                f"__{inp}": dace.Memlet(f"{inp}[{index_str}]")
+                for inp in input_names
+            },
+            code=f"__sum = {' + '.join(f'__{inp}' for inp in input_names)}",
+            outputs={"__sum": dace.Memlet(f"sum[{index_str}]")},
+            external_edges=True)
+
+        tasklet.in_connectors = {
+            f"__{inp}": in_desc_with_name(node, state, sdfg, inp).dtype
+            for inp in input_names
+        }
+        tasklet.out_connectors = {
+            "__sum": out_desc_with_name(node, state, sdfg, "sum").dtype
+        }
+        return nsdfg
+
+
+@op_implementation(op="LogSoftmax", name="pure")
+class PureLogSoftmax(ONNXForward):
+    @staticmethod
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[nodes.Node, SDFG]:
 
         axis = node.axis
-        if type(axis) is not int or not (-len(inparr.shape) <= axis < len(
-                inparr.shape)):
-            raise ValueError("expected axis to be an integer in range"
-                             " [-{}, {}), got {}".format(
-                                 len(inparr.shape), len(inparr.shape), axis))
 
-        if axis < 0:
-            axis += len(inparr.shape)
-        out_tmp_shape = inparr.shape
-        out_tmp_dtype = inparr.dtype
+        reduced_shape = list(
+            copy.deepcopy(in_desc_with_name(node, state, sdfg, "input").shape))
+        reduced_shape[axis] = 1
 
-        tmp_max_shape = list(copy.deepcopy(inparr.shape))
-        tmp_max_shape.pop(axis)
-
-        ##################
-        # exp (X - max)
-        exp_minus_max = dace.SDFG("exp_minus_max")
-        exp_minus_max.add_array("exp_tmp_max", tmp_max_shape, inparr.dtype)
-        exp_minus_max.add_array("exp_input", inparr.shape, inparr.dtype)
-        exp_minus_max.add_array("exp_output", out_tmp_shape, out_tmp_dtype)
-        exp_minus_max.add_state().add_mapped_tasklet(
-            "_softmax_exp_",
-            map_ranges={
-                "__i" + str(i): "0:" + str(shape)
-                for i, shape in enumerate(inparr.shape)
-            },
-            inputs={
-                '__max':
-                dace.Memlet.simple(
-                    "exp_tmp_max", ','.join("__i" + str(i)
-                                            for i in range(len(inparr.shape))
-                                            if i != axis)),
-                '__x':
-                dace.Memlet.simple(
-                    "exp_input",
-                    ','.join("__i" + str(i) for i in range(len(inparr.shape))))
-            },
-            code='__out = exp(__x - __max)',
-            outputs={
-                '__out':
-                dace.Memlet.simple(
-                    "exp_output",
-                    ','.join("__i" + str(i) for i in range(len(inparr.shape))))
-            },
-            external_edges=True)
-
-        ##################
-        # out_tmp / sum
-        out_tmp_div_sum = dace.SDFG("out_tmp_div_sum")
-        out_tmp_div_sum.add_array("div_tmp", inparr.shape, inparr.dtype)
-        out_tmp_div_sum.add_array("div_sum", tmp_max_shape, inparr.dtype)
-        out_tmp_div_sum.add_array("div_X", inparr.shape, inparr.dtype)
-        out_tmp_div_sum.add_array("div_max", tmp_max_shape, inparr.dtype)
-        out_tmp_div_sum.add_array("div_output", out_tmp_shape, out_tmp_dtype)
-
-        out_tmp_div_sum.add_state().add_mapped_tasklet(
-            "_softmax_div_",
-            map_ranges={
-                "__i" + str(i): "0:" + str(shape)
-                for i, shape in enumerate(inparr.shape)
-            },
-            inputs={
-                '__sum':
-                dace.Memlet.simple(
-                    "div_sum", ','.join("__i" + str(i)
-                                        for i in range(len(inparr.shape))
-                                        if i != axis)),
-                '__max':
-                dace.Memlet.simple(
-                    "div_max", ','.join("__i" + str(i)
-                                        for i in range(len(inparr.shape))
-                                        if i != axis)),
-                '__x':
-                dace.Memlet.simple(
-                    "div_X",
-                    ','.join("__i" + str(i) for i in range(len(inparr.shape))))
-            },
-            code='__out = __x - __max - log(__sum)',
-            outputs={
-                '__out':
-                dace.Memlet.simple(
-                    "div_output",
-                    ','.join("__i" + str(i) for i in range(len(inparr.shape))))
-            },
-            external_edges=True)
-
-        ##################
-        # put everything together as a program
         def prog(input, output):
-            tmp_max = np.max(input, axis=axis)
+            max = np.max(input, axis=axis)
+            max_keepdims = np.reshape(max, reduced_shape)
+            max_sub = input - max_keepdims
+            exp_arr = np.exp(max_sub)
+            sum = np.sum(exp_arr, axis=axis)
+            sum_keepdims = np.reshape(sum, reduced_shape)
+            log_sum = np.log(sum_keepdims)
+            output[:] = max_sub - log_sum
 
-            # this holds exp (X - max)
-            out_tmp = dace.define_local(out_tmp_shape, out_tmp_dtype)
-            exp_minus_max(exp_tmp_max=tmp_max,
-                          exp_input=input,
-                          exp_output=out_tmp)
-
-            tmp_sum = np.sum(out_tmp, axis=axis)
-
-            # this holds exp (X - max)
-            out_tmp_div_sum(div_X=input,
-                            div_max=tmp_max,
-                            div_tmp=out_tmp,
-                            div_sum=tmp_sum,
-                            div_output=output)
-
-        return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node)

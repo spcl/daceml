@@ -28,8 +28,8 @@ To install, download the prebuilt release and extract it somewhere.
 
 .. code-block:: bash
 
-     wget https://github.com/orausch/onnxruntime/releases/download/build1/onnxruntime_dist_cpu.tar.gz
-     tar -xzf onnxruntime_dist_cpu.tar.gz
+    wget https://github.com/orausch/onnxruntime/releases/download/v2/onnxruntime-daceml-patched.tgz
+    tar -xzf onnxruntime-daceml-patched.tgz
 
 Afterwards, ensure that the environment variable ``ORT_RELEASE`` points to the location of the extracted folder.
 
@@ -39,7 +39,8 @@ Clone the `patched onnxruntime <https://github.com/orausch/onnxruntime>`_ reposi
 
 .. code-block:: bash
 
-     ./build.sh --build_shared_lib --parallel --config Release  
+    git checkout add-session-state
+    ./build.sh --build_shared_lib --parallel --config Release
 
 To enable CUDA, add the relevant arguments. For instance::
 

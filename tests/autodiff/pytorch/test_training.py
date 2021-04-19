@@ -9,32 +9,14 @@ from torch import nn, optim
 from transformers import BertLayer, BertConfig
 
 from daceml.pytorch import DaceModule
-
-
-def torch_tensors_close(name, torch_v, dace_v):
-    rtol = 1e-6
-    atol = 1e-4
-    if not torch.allclose(torch_v, dace_v, rtol=rtol, atol=atol):
-        print("torch value: ", torch_v)
-        print("dace value: ", dace_v)
-        print("diff: ", torch.abs(dace_v - torch_v))
-
-        failed_mask = np.abs(torch_v.numpy() - dace_v.numpy()
-                             ) > atol + rtol * np.abs(dace_v.numpy())
-        print(f"wrong elements torch: {torch_v[failed_mask]}")
-        print(f"wrong elements dace: {dace_v[failed_mask]}")
-
-        for x, y in zip(torch_v[failed_mask], dace_v[failed_mask]):
-            print(f"lhs_failed: {abs(x - y)}")
-            print(f"rhs_failed: {atol} + {rtol * abs(y)}")
-
-        assert False, f"{name} was not close)"
+from daceml.testing.utils import torch_tensors_close
 
 
 def training_step(dace_model,
                   pt_model,
                   train_batch,
                   sdfg_name,
+                  gpu,
                   train_criterion=None):
 
     # copy over the weights
@@ -43,7 +25,10 @@ def training_step(dace_model,
                                  dace_model.state_dict().values()):
         assert np.allclose(dace_value, value)
 
-    dace_model = DaceModule(dace_model, backward=True, sdfg_name=sdfg_name)
+    dace_model = DaceModule(dace_model,
+                            backward=True,
+                            sdfg_name=sdfg_name,
+                            cuda=gpu)
 
     x, y = train_batch
     train_criterion = train_criterion or nn.NLLLoss()
@@ -77,7 +62,7 @@ def training_step(dace_model,
         torch_tensors_close(name, pt_param.detach(), dace_param.detach())
 
 
-def test_mnist(sdfg_name):
+def test_mnist(sdfg_name, gpu):
     input_size = 784
     hidden_sizes = [128, 64]
     output_size = 10
@@ -105,10 +90,11 @@ def test_mnist(sdfg_name):
     images = torch.randn(64, 784)
     labels = torch.randint(0, 10, [64], dtype=torch.long)
 
-    training_step(dace_model, model, (images, labels), sdfg_name)
+    training_step(dace_model, model, (images, labels), sdfg_name, gpu)
 
 
-def test_bert(sdfg_name):
+@pytest.mark.pure
+def test_bert(sdfg_name, gpu):
     batch_size = 2
     seq_len = 512
     hidden_size = 768
@@ -128,4 +114,4 @@ def test_bert(sdfg_name):
     labels = torch.tensor([0, 123], dtype=torch.long)
 
     training_step(BertTokenSoftmaxClf(), BertTokenSoftmaxClf(),
-                  (input, labels), sdfg_name)
+                  (input, labels), sdfg_name, gpu)

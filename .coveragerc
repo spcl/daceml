@@ -8,3 +8,4 @@ ignore_errors = True
 omit =
     tests/*
     daceml/onnx/shape_inference/symbolic_shape_infer.py
+    daceml/testing/*

@@ -15,14 +15,14 @@ import sympy as sp
 from dace import Memlet, SDFG, SDFGState
 from dace import dtypes, data as dt
 from dace.frontend.operations import detect_reduction_type
-from dace.sdfg import graph as dgraph, state as dstate, utils as dutils
+from dace.sdfg import graph as dgraph, state as dstate, utils as dutils, infer_types
 
 from daceml.autodiff.base_abc import (BackwardContext, BackwardResult,
                                       AutoDiffException,
                                       find_backward_implementation)
 from daceml.autodiff.utils import cast_consts_to_type
 from daceml.onnx.forward_implementation_abc import ONNXForward
-from daceml.onnx.nodes.onnx_op import ONNXOp
+from daceml.onnx.nodes.onnx_op import ONNXOp, ONNXSum
 from daceml.util.utils import find_str_not_in_set, in_edge_with_name
 
 ReverseNodeReturnType = Tuple[nd.Node, BackwardResult]
@@ -574,6 +574,13 @@ class BackwardPassGenerator:
 
         arr = self.backward_sdfg.arrays[data]
         scalar = 0
+        if dtypes.can_access(dtypes.ScheduleType.CPU_Multicore, arr.storage):
+            cuda = False
+        elif dtypes.can_access(dtypes.ScheduleType.GPU_Default, arr.storage):
+            cuda = True
+        else:
+            raise ValueError(f"Unsupported storage {arr.storage}")
+
         if type(arr) is dt.Array:
             state.add_mapped_tasklet(
                 "_init_" + data + "_", {
@@ -586,6 +593,8 @@ class BackwardPassGenerator:
                         data, ", ".join("i{}".format(i)
                                         for i in range(len(arr.shape))))
                 },
+                schedule=dtypes.ScheduleType.GPU_Device
+                if cuda else dtypes.ScheduleType.Default,
                 external_edges=True)
         elif type(arr) is dt.Scalar:
             tasklet = state.add_tasklet("_init_" + data + "_", {}, {"__out"},
@@ -637,17 +646,66 @@ class BackwardPassGenerator:
                 self._connect_forward_inputs(node)
 
                 if isinstance(node, nd.AccessNode):
+
                     # this means we are writing out a grad to an array.
                     # initialize the gradient if it hasn't been initialized already (this can also happen in
                     # _connect_given_gradients
-                    if self.array_grad_name(
-                            node.data) not in self.backward_sdfg.arrays:
+                    array_grad_name = self.array_grad_name(node.data)
+                    if array_grad_name not in self.backward_sdfg.arrays:
                         # this grad hasn't been written before: initialize it
                         self._add_gradient_data_descriptor(node.data)
 
                     # we need to make all incoming gradients sum
-                    for edge in self.backward_state.in_edges(reversed_node):
-                        self._set_wcr_sum_if_needed(edge)
+                    if self.backward_state.in_degree(reversed_node) > 1:
+                        summation_node = ONNXSum(f"sum_{array_grad_name}")
+
+                        grad_desc = self.backward_sdfg.arrays[array_grad_name]
+                        cuda = False
+                        # connect each incoming edge to the summation node
+                        for i, edge in enumerate(
+                                self.backward_state.in_edges(reversed_node)):
+
+                            intermediate_desc = copy.deepcopy(grad_desc)
+
+                            intermediate_desc.transient = True
+                            intermediate_name = self.backward_sdfg.add_datadesc(
+                                f"{array_grad_name}_contribution_{i}",
+                                intermediate_desc,
+                                find_new_name=True)
+                            access_intermediate = self.backward_state.add_access(
+                                intermediate_name)
+                            self._init_grad(intermediate_name)
+
+                            edge.data.data = intermediate_name
+                            new_edge = self.backward_state.add_edge(
+                                edge.src, edge.src_conn, access_intermediate,
+                                None, edge.data)
+                            self._set_wcr_sum_if_needed(new_edge)
+                            summation_node.add_in_connector(f"data_0__{i}")
+                            self.backward_state.add_edge(
+                                access_intermediate, None, summation_node,
+                                f"data_0__{i}",
+                                self.backward_sdfg.make_array_memlet(
+                                    intermediate_name))
+                            self.backward_state.remove_edge(edge)
+
+                        self.backward_state.add_edge(
+                            summation_node, "sum", reversed_node, None,
+                            self.backward_sdfg.make_array_memlet(
+                                array_grad_name))
+
+                        if dtypes.can_access(dtypes.ScheduleType.CPU_Multicore,
+                                             grad_desc.storage):
+                            pass
+                        elif dtypes.can_access(dtypes.ScheduleType.GPU_Default,
+                                               grad_desc.storage):
+                            summation_node.schedule = dtypes.ScheduleType.GPU_Default
+                        else:
+                            raise ValueError(
+                                f"Unsupported storage {grad_desc.storage}")
+                    elif self.backward_state.in_degree(reversed_node) == 1:
+                        self._set_wcr_sum_if_needed(
+                            self.backward_state.in_edges(reversed_node)[0])
 
             except AutoDiffException as e:
                 raise AutoDiffException(
@@ -676,29 +734,11 @@ class BackwardPassGenerator:
                 v > 1 for v in connector_in_edges.values())
 
             if more_than_one_edge_to_connector or src_or_dest_map:
-                old_edges = []
-                for sibling_edge in self.backward_state.in_edges(
-                        path_edge.dst):
-                    # If there is a nestedSDFG or LibraryNode, or CodeNode with CPP, we insert a
-                    # transient node to sum the gradients.
-                    old_edge, new_edge = self._insert_transient_into_edge(
-                        sibling_edge, self.backward_state)
-
-                    # then wcr sum on the whole path
-
-                    if new_edge is not None:
-                        old_edges.append(old_edge)
-                    else:
-                        for path_edge in self.backward_state.memlet_tree(
-                                old_edge):
-                            path_edge.data.wcr = "lambda x, y: x + y"
-
-                for old_edge in old_edges:
-                    # recurse on the old_edge
-                    self._set_wcr_sum_if_needed(old_edge)
+                for path_edge in self.backward_state.memlet_tree(edge):
+                    path_edge.data.wcr = "lambda x, y: x + y"
 
                 # break early: we have handled all edges in the tree
-                break
+                return
 
     def _insert_transient_into_edge(
         self, sibling_edge: dgraph.MultiConnectorEdge, state: SDFGState
@@ -1023,16 +1063,27 @@ class BackwardPassGenerator:
                                             forward_state=self.forward_state,
                                             node=node)
         if impl is not None:
-            return impl.backward(forward_node=node,
-                                 context=BackwardContext(
-                                     forward_state=self.forward_state,
-                                     forward_sdfg=self.sdfg,
-                                     backward_state=self.backward_state,
-                                     backward_sdfg=self.backward_sdfg,
-                                     backward_generator=self,
-                                 ),
-                                 given_gradients=given_gradients,
-                                 required_gradients=required_gradients)
+            backward_node, backward_result = impl.backward(
+                forward_node=node,
+                context=BackwardContext(
+                    forward_state=self.forward_state,
+                    forward_sdfg=self.sdfg,
+                    backward_state=self.backward_state,
+                    backward_sdfg=self.backward_sdfg,
+                    backward_generator=self,
+                ),
+                given_gradients=given_gradients,
+                required_gradients=required_gradients)
+            if isinstance(backward_node, nd.CodeNode):
+                backward_node.schedule = node.schedule
+            if isinstance(
+                    backward_node, nd.NestedSDFG
+            ) and backward_node.schedule is not dtypes.ScheduleType.Default:
+                infer_types._set_default_schedule_types(
+                    backward_node.sdfg, backward_node.schedule, True)
+                infer_types._set_default_storage_types(backward_node.sdfg,
+                                                       backward_node.schedule)
+            return backward_node, backward_result
 
         raise AutoDiffException(
             "Unable to differentiate node type {}. Either add a pure forward implementation"

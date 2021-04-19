@@ -1,5 +1,5 @@
 import collections
-from copy import deepcopy
+import logging
 from itertools import chain, repeat
 from typing import Dict, Union, Tuple, Any, List, Optional, OrderedDict, Callable
 
@@ -11,19 +11,17 @@ from dace.codegen import compiled_sdfg
 from onnx import numpy_helper
 
 import dace
-import dace.data as dt
+from dace import data as dt, dtypes, nodes, SDFG, SDFGState
 from dace.frontend.python.parser import infer_symbols_from_shapes
-from dace.sdfg import SDFG, SDFGState
-from dace.dtypes import AccessType, StorageType, AllocationLifetime
-import dace.sdfg.nodes as nd
 from dace.symbolic import pystr_to_symbolic
-from dace.transformation import auto_optimize
 
 from daceml.onnx.shape_inference import shape_inference
 from daceml.onnx.converters import convert_attribute_proto, onnx_tensor_type_to_typeclass, clean_onnx_name
 from daceml.onnx.schema import ONNXParameterType
 from daceml.onnx.nodes.onnx_op import get_onnx_node, has_onnx_node, ONNXOp
 from daceml.util import utils
+
+log = logging.getLogger(__name__)
 
 numpy_to_torch_dtype_dict = {
     np.bool: torch.bool,
@@ -104,7 +102,9 @@ class ONNXModel:
                  cuda: bool = False,
                  apply_strict: bool = False,
                  auto_optimize: bool = True,
-                 parent_pytorch_module: Optional[torch.nn.Module] = None):
+                 fold_constants: bool = True,
+                 parent_pytorch_module: Optional[torch.nn.Module] = None,
+                 save_transients: Optional[Dict[str, torch.Tensor]] = None):
         """
         :param name: the name for the SDFG.
         :param model: the model to import.
@@ -116,18 +116,26 @@ class ONNXModel:
         :param auto_optimize: if ``True``, apply automatic optimizations before calling.
         :param parent_pytorch_module: when not None, the weight tensors are loaded from the parameters of this model
                                       rather than the ONNX graph.
+        :param save_transients: if not None, save transients to this dict (for debugging).
         """
+
+        for opset in model.opset_import:
+            if opset.domain == "" and opset.version != 12:
+                log.warning(
+                    f"Expected the onnx model to be exported with opset 12, got {opset.version}. This model may fail "
+                    f"to import as a result.")
 
         self.do_auto_optimize = auto_optimize
         if infer_shapes:
             model = shape_inference.infer_shapes(model)
 
         graph: onnx.GraphProto = model.graph
-
+        self.save_transients = save_transients
         self.sdfg: SDFG = SDFG(name)  #: the generated SDFG.
         self.sdfg._parent_onnx_model = self
         self.cuda = cuda
         self.apply_strict = apply_strict
+        self.fold_constants = fold_constants
         self.state: SDFGState = self.sdfg.add_state(
         )  #: the state containing the model computation.
 
@@ -176,11 +184,47 @@ class ONNXModel:
                     node.op_type))
 
             # extract the op attributes
-
             op_attributes = {
                 attribute_proto.name: convert_attribute_proto(attribute_proto)
                 for attribute_proto in node.attribute
             }
+
+            if node.op_type == "Constant":
+                # Add constants to weights immediately
+                possible_values = [
+                    "sparse_value", "value", "value_float", "value_floats",
+                    "value_int", "value_ints", "value_string", "value_strings"
+                ]
+
+                # do some manual validation here since the node validation will never run
+                if set(op_attributes).difference(possible_values):
+                    raise ValueError(
+                        f"Got unexpected attributes on Constant node "
+                        f"{set(op_attributes).difference(possible_values)}")
+
+                if len(op_attributes) != 1:
+                    raise ValueError(
+                        "Expected Constant node to have exactly one of its attributes set"
+                    )
+
+                if len(node.input) != 0 or len(node.output) != 1:
+                    raise ValueError(
+                        "Expected Constant node to have no inputs and exactly 1 output"
+                    )
+
+                value_name = next(iter(op_attributes))
+
+                if node.output[0] not in self.value_infos:
+                    raise ValueError(
+                        "Could not find array with name '{}'".format(
+                            node.output[0]))
+                self._add_value_info(self.value_infos[node.output[0]])
+                self.sdfg.arrays[clean_onnx_name(
+                    node.output[0])].transient = False
+
+                self.weights[node.output[0]] = torch.from_numpy(
+                    op_attributes[value_name].copy())
+                continue
 
             if node.HasField("name"):
                 node_name = clean_onnx_name(node.name)
@@ -206,9 +250,9 @@ class ONNXModel:
                     access = access_nodes[name]
                     self._update_access_type(access, is_input)
                 else:
-                    access = nd.AccessNode(
-                        clean_onnx_name(name), AccessType.ReadOnly
-                        if is_input else AccessType.WriteOnly)
+                    access = nodes.AccessNode(
+                        clean_onnx_name(name), dtypes.AccessType.ReadOnly
+                        if is_input else dtypes.AccessType.WriteOnly)
                     self.state.add_node(access)
                     access_nodes[name] = access
 
@@ -258,10 +302,10 @@ class ONNXModel:
 
     @staticmethod
     def _update_access_type(node: dace.nodes.AccessNode, is_input: bool):
-        if node.access == AccessType.ReadOnly and not is_input:
-            node.access = AccessType.ReadWrite
-        elif node.access == AccessType.WriteOnly and is_input:
-            node.access = AccessType.ReadWrite
+        if node.access == dtypes.AccessType.ReadOnly and not is_input:
+            node.access = dtypes.AccessType.ReadWrite
+        elif node.access == dtypes.AccessType.WriteOnly and is_input:
+            node.access = dtypes.AccessType.ReadWrite
 
     def _add_constant_tensor(self, tensor: onnx.TensorProto, parent_pt_model):
         if not tensor.HasField("name"):
@@ -377,15 +421,27 @@ class ONNXModel:
             :return: the output of the model (or a tuple of outputs if there are multiple).
         """
 
-        inputs, params, symbols, outputs = self._call_args(args=args,
-                                                           kwargs=kwargs)
+        transient_kwargs = {}
+        if self.save_transients is not None:
+            for node, parent in self.sdfg.all_nodes_recursive():
+                if isinstance(node, nodes.AccessNode):
+                    desc = self.sdfg.arrays[node.data]
+                    if desc.transient:
+                        desc.transient = False
+                        transient_kwargs[node.data] = create_output_array(
+                            {}, desc, use_torch=True, zeros=False)
+                        self.save_transients[node.data] = transient_kwargs[
+                            node.data]
 
         if self.do_auto_optimize:
             self.auto_optimize()
 
+        inputs, params, symbols, outputs = self._call_args(args=args,
+                                                           kwargs=kwargs)
+
         compiled = self.compile_and_init()
 
-        compiled(**inputs, **outputs, **params, **symbols)
+        compiled(**inputs, **outputs, **params, **symbols, **transient_kwargs)
 
         if len(outputs) == 1:
             return next(iter(outputs.values()))
@@ -491,7 +547,8 @@ class ONNXModel:
     def auto_optimize(self):
         utils.auto_optimize(self.sdfg,
                             self.cuda,
-                            apply_strict=self.apply_strict)
+                            apply_strict=self.apply_strict,
+                            fold_constants=self.fold_constants)
 
 
 def create_output_array(
@@ -512,16 +569,39 @@ def create_output_array(
             dim = dim.subs(sym, inferred_symbols[sym.name])
         return dim
 
-    shape = [eval_dim(d) if type(d) is dace.symbol else d for d in desc.shape]
-    if desc.dtype.veclen > 1:
-        shape.append(desc.dtype.veclen)
+    if dtypes.can_access(dtypes.ScheduleType.CPU_Multicore, desc.storage):
+        cuda = False
+    elif dtypes.can_access(dtypes.ScheduleType.GPU_Default, desc.storage):
+        cuda = True
+    else:
+        raise ValueError(f"Unsupported storage {desc.storage}")
+
+    if cuda and not use_torch:
+        raise ValueError("Got use_torch=False, but received a GPU descriptor")
+
+    if isinstance(desc, dt.Scalar):
+        shape = []
+    else:
+        shape = [
+            eval_dim(d) if type(d) is dace.symbol else d for d in desc.shape
+        ]
+        if desc.dtype.veclen > 1:
+            shape.append(desc.dtype.veclen)
 
     if use_torch:
+        # torch functions don't accept the empty shape, so create shape [1] then reshape to ()
+        if len(shape) == 0:
+            shape = [1]
+
         # as_numpy_dtype doesn't seem to work for indexing into the dict
-        return (torch.zeros if zeros else torch.empty)(
-            shape,
+        tens = (torch.zeros if zeros else torch.empty)(
+            *shape,
             dtype=numpy_to_torch_dtype_dict[getattr(np,
                                                     desc.dtype.to_string())])
+        if isinstance(desc, dt.Scalar):
+            tens = tens.reshape(())
+
+        return tens.cuda() if cuda else tens
     else:
         return (np.zeros if zeros else np.empty)(shape,
                                                  dtype=getattr(
