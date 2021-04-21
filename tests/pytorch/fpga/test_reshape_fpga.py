@@ -53,15 +53,11 @@ def run(data_shape: tuple, reshaped_shape: tuple, vec_width=1, queue=None, flatt
     x = torch.rand(data_shape)
     torch_output = ptmodel(x)
 
-    dace_model = DaceModule(ptmodel, auto_optimize=False, dummy_inputs=x)
-    if not flatten:
-        out = dace_model(x) 
+    dace_model = DaceModule(ptmodel, auto_optimize=False)
+    out = dace_model(x) 
     sdfg = dace_model.sdfg
 
     sdfg.apply_transformations([FPGATransformSDFG])
-
-    donnx.ONNXReshape.default_implementation = 'fpga'
-    donnx.ONNXFlatten.default_implementation = 'fpga'
 
     sdfg.expand_library_nodes()
     sdfg.apply_transformations_repeated([InlineSDFG])
@@ -100,7 +96,7 @@ def test():
     # each position of this lists contains a test configuration
     vec_width = [1, 1, 1, 1]
     x_shapes = [(16, 4, 4, 4), (16, 2, 32), (16, 8, 8), (8, 16, 16)]
-    y_shapes = [(16, 64), (16, 8, 8), (16, 2, 32), (2, 4, 16, 16)]  # reshpaed
+    y_shapes = [(16, 64), (16, 8, 8), (16, 2, 32), (2, 4, 16, 16)]  # reshaped
     for i in range(0, len(vec_width)):
         print("##########################################################")
         print(

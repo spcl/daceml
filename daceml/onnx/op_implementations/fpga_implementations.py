@@ -1749,61 +1749,6 @@ else:
         return new_sdfg
 
 
-@autoregister_params(op="Reshape", name="fpga")
-class FPGAReshape(ONNXForward):
-    '''
-        Reshape expansion: this relies on views
-        TODO: have a transformation to get rid of reshapes. On device they should be useless.
-    '''
-    @staticmethod
-    def forward(node: ONNXOp, state: SDFGState,
-                sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        node.validate(sdfg, state)
-
-        input_name = "data"
-        output_name = "reshaped"
-        flatten = False
-
-        # if called from Flatten
-        if "input" in node._in_connectors.keys():
-            input_name = "input"
-            output_name = "output"
-            flatten = True
-
-        if (in_desc_with_name(node, state, sdfg, input_name).dtype !=
-                out_desc_with_name(node, state, sdfg, output_name).dtype):
-            raise ValueError(
-                "Expected input and output to have the same dtype.")
-
-        new_shape = out_desc_with_name(node, state, sdfg, output_name).shape
-
-        if not flatten:
-            node.remove_in_connector("shape")
-            shape_node = in_edge_with_name(node, state, "shape").src
-            constant_folding.remove_node_and_computation(sdfg, state, shape_node)
-
-        if not flatten:
-            def prog(data, reshaped):
-                reshaped[:] = np.reshape(data, new_shape)
-        else:
-            def prog(input, output):
-                output[:] = np.reshape(input, new_shape)
-
-        return program_for_node(prog, sdfg, state, node).to_sdfg()
-
-
-@autoregister_params(op="Flatten", name="fpga")
-class FPGAFlatten(ONNXForward):
-    '''
-        Flatten Expansion, reuses Reshape implementation
-    '''
-    @staticmethod
-    def forward(node: ONNXOp, state: SDFGState,
-                sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        # Reuse Reshape implementation
-        return FPGAReshape.forward(node, state, sdfg)
-
 
 @autoregister_params(op="Softmax", name="fpga")
 class FPGASoftmax(ONNXForward):
