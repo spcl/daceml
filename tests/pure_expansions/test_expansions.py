@@ -307,6 +307,40 @@ def test_reshape(new_shape, sdfg_name):
     assert np.allclose(numpy_result, result)
 
 
+
+@pytest.mark.pure
+def test_flatten(sdfg_name):
+
+    new_shape = [2, 40]
+    X = np.random.normal(scale=10, size=(2, 4, 10)).astype(np.float32)
+
+    sdfg = dace.SDFG(sdfg_name)
+
+    numpy_result = X.reshape(*new_shape)
+
+    sdfg.add_array("X", [2, 4, 10], dace.float32)
+    sdfg.add_array("__return", new_shape, dace.float32)
+
+    state = sdfg.add_state()
+    access_X = state.add_access("X")
+    access_result = state.add_access("__return")
+
+    op_node = donnx.ONNXFlatten("flatten")
+
+    state.add_node(op_node)
+    state.add_edge(access_X, None, op_node, "input",
+                   sdfg.make_array_memlet("X"))
+
+    state.add_edge(op_node, "output", access_result, None,
+                   sdfg.make_array_memlet("__return"))
+
+    sdfg.expand_library_nodes()
+
+    result = sdfg(X=X)
+
+    assert np.allclose(numpy_result, result)
+
+
 @pytest.mark.pure
 @pytest.mark.parametrize("axis", [0, -1])
 def test_softmax(axis, sdfg_name):

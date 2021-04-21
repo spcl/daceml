@@ -508,7 +508,6 @@ class PureReshape(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        node.validate(sdfg, state)
 
         input_name = "data"
         output_name = "reshaped"
