@@ -523,12 +523,15 @@ class PureReshape(ONNXForward):
         if not flatten:
             node.remove_in_connector("shape")
             shape_node = in_edge_with_name(node, state, "shape").src
-            constant_folding.remove_node_and_computation(sdfg, state, shape_node)
+            constant_folding.remove_node_and_computation(
+                sdfg, state, shape_node)
 
         if not flatten:
+
             def prog(data, reshaped):
                 reshaped[:] = np.reshape(data, new_shape)
         else:
+
             def prog(input, output):
                 output[:] = np.reshape(input, new_shape)
 
