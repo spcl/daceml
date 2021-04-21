@@ -21,32 +21,48 @@ from daceml.util import utils
 from multiprocessing import Process, Queue
 
 
-class Model(nn.Module):
+class Model_Reshape(nn.Module):
     def __init__(self, new_shape):
-        super(Model, self).__init__()
+        super(Model_Reshape, self).__init__()
         self.new_shape = new_shape
 
     def forward(self, x):
         x = x.reshape(self.new_shape)
         return x
 
+class Model_Flatten(nn.Module):
+    def __init__(self):
+        super(Model_Flatten, self).__init__()
+        self.model = torch.nn.Sequential(
+            torch.nn.Flatten()
+        )
 
-def run(data_shape: tuple, reshaped_shape: tuple, vec_width=1, queue=None):
-    # dace_output = dace_model(x)
+    def forward(self, x):
+        return self.model(x)
+
+
+def run(data_shape: tuple, reshaped_shape: tuple, vec_width=1, queue=None, flatten=False):
 
     import daceml.onnx as donnx
     donnx.default_implementation = "pure"
-    ptmodel = Model(reshaped_shape)
-    x = torch.rand(data_shape)
+    if flatten:
+        ptmodel = Model_Flatten()
+    else:
+        ptmodel = Model_Reshape(reshaped_shape)
 
+    x = torch.rand(data_shape)
     torch_output = ptmodel(x)
 
-    dace_model = DaceModule(ptmodel, auto_optimize=False)
-    out = dace_model(x)
+    dace_model = DaceModule(ptmodel, auto_optimize=False, dummy_inputs=x)
+    if not flatten:
+        out = dace_model(x) 
     sdfg = dace_model.sdfg
+
     sdfg.apply_transformations([FPGATransformSDFG])
 
     donnx.ONNXReshape.default_implementation = 'fpga'
+    donnx.ONNXFlatten.default_implementation = 'fpga'
+
     sdfg.expand_library_nodes()
     sdfg.apply_transformations_repeated([InlineSDFG])
 
@@ -85,7 +101,6 @@ def test():
     vec_width = [1, 1, 1, 1]
     x_shapes = [(16, 4, 4, 4), (16, 2, 32), (16, 8, 8), (8, 16, 16)]
     y_shapes = [(16, 64), (16, 8, 8), (16, 2, 32), (2, 4, 16, 16)]  # reshpaed
-
     for i in range(0, len(vec_width)):
         print("##########################################################")
         print(
@@ -94,10 +109,20 @@ def test():
         print("##########################################################")
         queue = Queue()
         p = Process(target=run,
-                    args=(x_shapes[i], y_shapes[i], vec_width[i], queue))
+                    args=(x_shapes[i], y_shapes[i], vec_width[i], queue, False))
         p.start()
         p.join()
         assert (queue.get() < 1e-9)
+
+
+    print("----------- Testing Flatten ---------------")
+    queue = Queue()
+    p = Process(target=run,
+                args=(x_shapes[0], y_shapes[0], 1, queue, True))
+    p.start()
+    p.join()
+    assert (queue.get() < 1e-9)
+
 
 
 if __name__ == "__main__":
@@ -122,4 +147,4 @@ if __name__ == "__main__":
     else:
         data_shape = (16, 4, 4, 4)
         reshaped_shape = (16, 64)
-        run(data_shape, reshaped_shape)
+        run(data_shape, reshaped_shape, flatten=False)
