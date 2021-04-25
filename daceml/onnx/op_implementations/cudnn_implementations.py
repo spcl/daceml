@@ -8,7 +8,7 @@ from daceml.onnx import environments
 from daceml.onnx.converters import clean_onnx_name
 from daceml.onnx.forward_implementation_abc import ONNXForward
 from daceml.onnx.nodes import onnx_op
-from daceml.onnx.op_implementations import op_implementation
+from daceml.onnx.op_implementations import op_implementation, empty_sdfg_for_node
 from daceml.util import in_desc_with_name, out_desc_with_name
 
 
@@ -128,7 +128,6 @@ class CudnnConvolution(ONNXForward):
                  ("Y", out_desc_with_name(node, state, sdfg, "Y"))]
 
         if "B" in node.in_connectors:
-            return False
             descs.append(("B", in_desc_with_name(node, state, sdfg, "B")))
 
         for name, desc in descs:
@@ -155,11 +154,36 @@ class CudnnConvolution(ONNXForward):
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> Union[nd.Node, SDFG]:
 
+        nsdfg, nstate, inputs, outputs = empty_sdfg_for_node(sdfg, state, node)
+
+        if "B" in inputs:
+            nstate.remove_node(inputs["B"])
+            Y = out_desc_with_name(node, state, sdfg, "Y")
+            # add broadcast state
+            init_state = nsdfg.add_state_before(nstate, label="broadcast_bias")
+            # yapf: disable
+            init_state.add_mapped_tasklet("broadcast_bias",
+                                          map_ranges={
+                                              "i{}".format(i): "0:{}".format(s)
+                                              for i, s in enumerate(Y.shape)
+                                          },
+                                          inputs=dict(
+                                              b=dace.Memlet("B[i1]")
+                                          ),
+                                          code="y = b".format(),
+                                          outputs=dict(
+                                              y=dace.Memlet("Y[{}]".format(
+                                                  ", ".join("i{}".format(i)
+                                                            for i, _ in enumerate(Y.shape))))
+                                          ),
+                                          external_edges=True)
+            # yapf: enable
+
         X_desc = in_desc_with_name(node, state, sdfg, "X")
 
         T = X_desc.dtype
 
-        in_connectors = {"X": dace.pointer(T), "W": dace.pointer(T)}
+        in_connectors = {"_X": dace.pointer(T), "_W": dace.pointer(T)}
 
         unique_id = "{}_{}_{}_{}".format(clean_onnx_name(node.name),
                                          sdfg.sdfg_id, sdfg.node_id(state),
@@ -228,7 +252,7 @@ class CudnnConvolution(ONNXForward):
             {dilation_h},
             {dilation_w},
             CUDNN_CROSS_CORRELATION,
-            {_DACE_DTYPE_TO_CUDNN_DTYPE[X_desc.dtype]}));
+            {_DACE_DTYPE_TO_CUDNN_DTYPE[T]}));
         """
         Environment.finalize_code += f"""
         daceml::cudnn::CheckCudnnError(cudnnDestroyConvolutionDescriptor(*__state->{unique_id}_conv_desc));
@@ -261,26 +285,33 @@ class CudnnConvolution(ONNXForward):
         tasklet_code = f"""
         {environments.cuDNN.handle_setup_code(node)}
         float alpha = 1.f;
-        float beta = 0.f;
+        float beta = {"1.f" if "B" in inputs else "0.f"};
         daceml::cudnn::CheckCudnnError(cudnnConvolutionForward(
             __dace_cudnn_handle,
             &alpha,
             *__state->{unique_id}_X_desc,
-            X,
+            _X,
             *__state->{unique_id}_W_desc,
-            W,
+            _W,
             *__state->{unique_id}_conv_desc,
             CUDNN_CONVOLUTION_FWD_ALGO_{algo.upper()},
             __state->{unique_id}_workspace,
             *__state->{unique_id}_workspace_size,
             &beta,
             *__state->{unique_id}_Y_desc,
-            Y
+            _Y
         ));
         """
 
-        tasklet = state.add_tasklet(unique_id, in_connectors,
-                                    {"Y": dace.pointer(T)}, tasklet_code,
-                                    dtypes.Language.CPP)
+        tasklet = nstate.add_tasklet(unique_id, in_connectors,
+                                     {"_Y": dace.pointer(T)}, tasklet_code,
+                                     dtypes.Language.CPP)
+        nstate.add_edge(inputs["X"], None, tasklet, "_X",
+                        nsdfg.make_array_memlet("X"))
+        nstate.add_edge(inputs["W"], None, tasklet, "_W",
+                        nsdfg.make_array_memlet("W"))
 
-        return tasklet
+        nstate.add_edge(tasklet, "_Y", outputs["Y"], None,
+                        nsdfg.make_array_memlet("Y"))
+
+        return nsdfg
