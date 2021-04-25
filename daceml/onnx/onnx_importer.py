@@ -14,7 +14,9 @@ import dace
 from dace import data as dt, dtypes, nodes, SDFG, SDFGState
 from dace.frontend.python.parser import infer_symbols_from_shapes
 from dace.symbolic import pystr_to_symbolic
+from dace.transformation import dataflow
 
+from daceml import transformation
 from daceml.onnx.shape_inference import shape_inference
 from daceml.onnx.converters import convert_attribute_proto, onnx_tensor_type_to_typeclass, clean_onnx_name
 from daceml.onnx.schema import ONNXParameterType
@@ -305,6 +307,14 @@ class ONNXModel:
                         dace.Memlet.from_array(clean_onnx_name(name),
                                                data_desc))
 
+        if self.fold_constants:
+            log.debug("Applying constant folding")
+            self.sdfg.apply_transformations_repeated([
+                transformation.ConstantFolding, dataflow.RedundantSecondArray
+            ],
+                                                     validate_all=True,
+                                                     strict=True)
+
         if self.cuda:
             self.sdfg.apply_gpu_transformations()
 
@@ -323,6 +333,10 @@ class ONNXModel:
         if not tensor.HasField("data_type"):
             raise ValueError("Initializer tensor '{}' has no type".format(
                 tensor.name))
+
+        if tensor.name in self.inputs:
+            # do not duplicate a weight if it is already an input
+            return
 
         name = clean_onnx_name(tensor.name)
 
@@ -450,10 +464,11 @@ class ONNXModel:
 
         transient_kwargs = {}
         if self.save_transients is not None:
-            for node, parent in self.sdfg.all_nodes_recursive():
+
+            for node in self.state.nodes():
                 if isinstance(node, nodes.AccessNode):
                     desc = self.sdfg.arrays[node.data]
-                    if desc.transient:
+                    if not isinstance(desc, dt.View) and desc.transient:
                         desc.transient = False
                         transient_kwargs[node.data] = desc
 
@@ -569,10 +584,12 @@ class ONNXModel:
         utils.expand_onnx_nodes(self.sdfg)
 
     def auto_optimize(self):
-        utils.auto_optimize(self.sdfg,
-                            self.cuda,
-                            apply_strict=self.apply_strict,
-                            fold_constants=self.fold_constants)
+        utils.auto_optimize(
+            self.sdfg,
+            self.cuda,
+            apply_strict=self.apply_strict,
+            # constants have been folded before GPU transforms
+            fold_constants=False)
 
 
 def create_output_array(
