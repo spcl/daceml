@@ -441,10 +441,10 @@ class ONNXModel:
         if self.do_auto_optimize:
             self.auto_optimize()
 
+        compiled = self.compile_and_init()
+
         inputs, params, symbols, outputs = self._call_args(args=args,
                                                            kwargs=kwargs)
-
-        compiled = self.compile_and_init()
 
         compiled(**inputs, **outputs, **params, **symbols, **transient_kwargs)
 
