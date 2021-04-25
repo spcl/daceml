@@ -657,7 +657,11 @@ for schema in _get_schemas_from_version(12):
 
                     if cls.forward_impl.forward_can_be_applied(
                             node, state, sdfg):
-                        return cls.forward_impl.forward(node, state, sdfg)
+                        result = cls.forward_impl.forward(node, state, sdfg)
+                        if hasattr(cls.forward_impl, "environments"):
+                            cls.environments.extend(
+                                cls.forward_impl.environments)
+                        return result
                     else:
                         # fall back to ORT
                         log.info(
