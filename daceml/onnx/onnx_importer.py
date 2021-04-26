@@ -162,7 +162,8 @@ class ONNXModel:
                 self.outputs.append(value.name)
 
             self.value_infos[value.name] = value
-            self._add_value_info(value)
+            storage = dtypes.StorageType.GPU_Global if cuda else dtypes.StorageType.Default
+            self._add_value_info(value, storage=storage)
 
         for value in graph.value_info:
             if not value.HasField("name"):
@@ -348,7 +349,9 @@ class ONNXModel:
             # we need to copy here because the weight_arr tensor is not writable
             self.weights[tensor.name] = torch.from_numpy(weight_arr.copy())
 
-    def _add_value_info(self, value_info: onnx.ValueInfoProto):
+    def _add_value_info(self,
+                        value_info: onnx.ValueInfoProto,
+                        storage=dtypes.StorageType.Default):
         if not value_info.HasField("name"):
             raise ValueError("Got value without name")
 
@@ -391,13 +394,15 @@ class ONNXModel:
             self.sdfg.add_scalar(clean_onnx_name(name),
                                  dtype=onnx_tensor_type_to_typeclass(
                                      tensor_type.elem_type),
-                                 transient=transient)
+                                 transient=transient,
+                                 storage=storage)
         else:
             self.sdfg.add_array(clean_onnx_name(name),
                                 shape=shape,
                                 dtype=onnx_tensor_type_to_typeclass(
                                     tensor_type.elem_type),
-                                transient=transient)
+                                transient=transient,
+                                storage=storage)
 
     @property
     def clean_weights(self):
