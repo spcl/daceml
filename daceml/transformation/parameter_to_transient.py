@@ -19,6 +19,8 @@ def parameter_to_transient(dace_module: DaceModule, parameter_path: str):
         :param weight_path: the dotted path to the weight
     """
 
+    log.debug(f"Converting parameter {parameter_path} to a transient")
+
     pt_weight_name = parameter_path
     pt_tensor = operator.attrgetter(pt_weight_name)(dace_module.model)
     array_name = clean_onnx_name(pt_weight_name)
@@ -26,39 +28,49 @@ def parameter_to_transient(dace_module: DaceModule, parameter_path: str):
     if array_name not in dace_module.sdfg.arrays:
         raise ValueError(f"Could not find parameter {array_name} in sdfg.")
 
-    # find the GPU transient of this array
-    cands = [(node, parent)
-             for (node, parent) in dace_module.sdfg.all_nodes_recursive()
-             if isinstance(node, nodes.AccessNode) and node.data == array_name]
+    if dace_module.sdfg.arrays[
+            array_name].storage is dtypes.StorageType.GPU_Global:
+        dace_module.sdfg.arrays[array_name].transient = True
+        dace_module.sdfg.arrays[
+            array_name].lifetime = dtypes.AllocationLifetime.Persistent
+        gpu_array_name = array_name
+    else:
 
-    if len(cands) != 1:
-        raise ValueError(
-            "parameter_to_transient does not work when the target array has multiple AccessNodes"
-        )
+        # find the GPU transient of this array
+        cands = [
+            (node, parent)
+            for (node, parent) in dace_module.sdfg.all_nodes_recursive()
+            if isinstance(node, nodes.AccessNode) and node.data == array_name
+        ]
 
-    state: dace.SDFGState
-    cand, state = cands[0]
-    if state.out_degree(cand) != 1:
-        raise ValueError(
-            f"expected one out edge coming out of {cand}, found {state.out_degree(cand)}"
-        )
-    _, _, dst_node, _, _ = state.out_edges(cand)[0]
-    if (not isinstance(dst_node, nodes.AccessNode)
-            or dace_module.sdfg.arrays[dst_node.data].storage
-            is not dtypes.StorageType.GPU_Global):
-        raise ValueError(
-            f"parameter_to_transient only works for arrays that are copied to GPU_Global arrays,"
-            f" but array {array_name} was connected to {dst_node}")
+        if len(cands) != 1:
+            raise ValueError(
+                "parameter_to_transient does not work when the target array has multiple AccessNodes"
+            )
 
-    gpu_array_name = dst_node.data
+        state: dace.SDFGState
+        cand, state = cands[0]
+        if state.out_degree(cand) != 1:
+            raise ValueError(
+                f"expected one out edge coming out of {cand}, found {state.out_degree(cand)}"
+            )
+        _, _, dst_node, _, _ = state.out_edges(cand)[0]
+        if (not isinstance(dst_node, nodes.AccessNode)
+                or dace_module.sdfg.arrays[dst_node.data].storage
+                is not dtypes.StorageType.GPU_Global):
+            raise ValueError(
+                f"parameter_to_transient only works for arrays that are copied to GPU_Global arrays,"
+                f" but array {array_name} was connected to {dst_node}")
 
-    # since it is parsable, proceed with the transformation
-    dace_module.sdfg.arrays[gpu_array_name].transient = True
-    dace_module.sdfg.arrays[
-        gpu_array_name].lifetime = dtypes.AllocationLifetime.Persistent
+        gpu_array_name = dst_node.data
 
-    # remove the CPU node
-    state.remove_node(cand)
+        # since it is parsable, proceed with the transformation
+        dace_module.sdfg.arrays[gpu_array_name].transient = True
+        dace_module.sdfg.arrays[
+            gpu_array_name].lifetime = dtypes.AllocationLifetime.Persistent
+
+        # remove the CPU node
+        state.remove_node(cand)
 
     if "initialize_hook" not in dace_module.dace_model.post_compile_hooks:
         dace_module.dace_model.post_compile_hooks[
