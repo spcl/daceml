@@ -51,6 +51,7 @@ from dace.transformation.dataflow.clean_connectors import merge_symbols
 from dace.transformation.interstate.state_elimination import EmptyStateElimination
 from dace.libraries.standard.nodes.barrier import Barrier
 from dace.transformation.interstate.gpu_transform_sdfg import GPUTransformSDFG
+from dace.transformation.dataflow.vectorization import Vectorization
 
 
 from dace.config import Config
@@ -142,7 +143,7 @@ def test_bert_encoder_transformations():
     donnx.default_implementation = "pure"
 
     batch_size = 8
-    seq_len = 64
+    seq_len = 64 * 4
     hidden_size = 16
     num_hidden_layers = 8
     num_attention_heads = 8
@@ -195,7 +196,6 @@ def test_bert_encoder_transformations():
     pattern_graph.add_edge(softmax_nodes[13], softmax_nodes[16], None)
 
     subgraphs = list(enumerate_matches(dace_model.sdfg, pattern_graph))
-    print(len(subgraphs))
 
     assert(len(subgraphs) == 1)
     softmax_subgraph = subgraphs[0]
@@ -493,6 +493,36 @@ def test_bert_encoder_transformations():
     # GPUTransformSDFG incorrectly wraps Tasklets of NestedSDFGs deep in the nesting hierarchy with empty maps
     # it is easier to fix it here by applying TrivialMapElimination
     softmax_sdfg.apply_transformations_repeated([TrivialMapElimination], validate_all=True, print_report=True)
+
+    dace_model.sdfg.save('attn17_1.sdfg')
+    print('attn17_1.sdfg')
+
+    pattern = sdutil.node_path_graph(dace.nodes.MapEntry(dace.nodes.Map('_', [], [])))
+
+    vector_size = 4
+
+    for subgraph in enumerate_matches(softmax_sdfg, pattern):
+        map_entry: sdfg_nodes.MapEntry = subgraph.nodes()[0]
+
+        if map_entry.map.range.size() != [seq_len // 32]:
+            continue # vectorization dimension should have specific length
+
+        if map_entry.map.range.min_element() == [0]:
+            continue # min element should depend on other parametric value, it can't be zero
+
+        print("Applying StripMining tranformation ", subgraph.graph.label, ". Nodes:", subgraph.nodes())
+        StripMining.apply_to(sdfg=subgraph.graph.parent,
+                             options={'tile_size': vector_size,
+                                      'divides_evenly': True},
+                             _map_entry=map_entry)
+
+    dace_model.sdfg.save('attn17_2.sdfg')
+    print('attn17_2.sdfg')
+
+    softmax_sdfg.apply_transformations_repeated([NestMapContent], validate_all=True, print_report=True)
+
+    #softmax_sdfg.apply_transformations_repeated([Vectorization], validate_all=True, print_report=True)
+
 
     dace_model.sdfg.save('attn18.sdfg')
     print('attn18.sdfg')
