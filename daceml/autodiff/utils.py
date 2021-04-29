@@ -1,3 +1,4 @@
+import collections
 import typing
 import copy
 import inspect
@@ -208,16 +209,43 @@ def cast_consts_to_type(code: str, dtype: dace.typeclass) -> str:
         :return: a string of the converted code.
     """
     class CastConsts(ast.NodeTransformer):
+        def __init__(self):
+            self._in_div_stack = collections.deque()
+
         def visit_Num(self, node):
-            return ast.copy_location(
-                ast.parse(
-                    f"dace.{dtype.to_string()}({astunparse.unparse(node)})").
-                body[0].value, node)
+            if self._in_div_stack:
+                return ast.copy_location(
+                    ast.parse(
+                        f"dace.{dtype.to_string()}({astunparse.unparse(node)})").
+                    body[0].value, node)
+            else:
+                return self.generic_visit(node)
+
+        def visit_BinOp(self, node: ast.BinOp):
+            if node.op.__class__.__name__ == "Pow":
+                # within pow, we don't need to cast unless there is a new div
+                old_stack = self._in_div_stack
+                # reset the stack
+                self._in_div_stack = collections.deque()
+                node = self.generic_visit(node)
+                self._in_div_stack = old_stack
+                return node
+
+            elif node.op.__class__.__name__ == "Div":
+                self._in_div_stack.append(None)
+                node = self.generic_visit(node)
+                self._in_div_stack.popleft()
+                return node
+            else:
+                return self.generic_visit(node)
 
         def visit_Constant(self, node):
-            return ast.copy_location(
-                ast.parse(
-                    f"dace.{dtype.to_string()}({astunparse.unparse(node)})").
-                body[0].value, node)
+            if self._in_div_stack:
+                return ast.copy_location(
+                    ast.parse(
+                        f"dace.{dtype.to_string()}({astunparse.unparse(node)})").
+                    body[0].value, node)
+            else:
+                return self.generic_visit(node)
 
     return astunparse.unparse(CastConsts().visit(ast.parse(code)))
