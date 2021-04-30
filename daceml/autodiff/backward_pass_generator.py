@@ -14,6 +14,7 @@ import dace.transformation.transformation as xf
 import sympy as sp
 from dace import Memlet, SDFG, SDFGState
 from dace import dtypes, data as dt
+from dace.codegen.targets.cpp import is_write_conflicted_with_reason
 from dace.frontend.operations import detect_reduction_type
 from dace.sdfg import graph as dgraph, state as dstate, utils as dutils, infer_types
 
@@ -675,7 +676,6 @@ class BackwardPassGenerator:
                                 find_new_name=True)
                             access_intermediate = self.backward_state.add_access(
                                 intermediate_name)
-                            self._init_grad(intermediate_name)
 
                             for sub_edge in self.backward_state.memlet_tree(edge):
                                 sub_edge.data.data = intermediate_name
@@ -719,13 +719,14 @@ class BackwardPassGenerator:
             :param edge: the root edge to start from
         """
 
+        add_wcr = False
+        if is_write_conflicted_with_reason(self.backward_state, edge):
+            # if we have a write conflict, we need WCR
+            add_wcr = True
+
         # this method assumes that the memlet tree is iterated from the root backwards
         for path_edge in self.backward_state.memlet_tree(edge):
 
-            src_or_dest_map = (isinstance(path_edge.src,
-                                          (nd.MapExit, nd.MapEntry))
-                               or isinstance(path_edge.dst,
-                                             (nd.MapExit, nd.MapEntry)))
             # count the amount of in edges per connector
             connector_in_edges = collections.defaultdict(int)
             for _, _, _, dst_conn, _ in self.backward_state.in_edges(
@@ -735,12 +736,15 @@ class BackwardPassGenerator:
             more_than_one_edge_to_connector = any(
                 v > 1 for v in connector_in_edges.values())
 
-            if more_than_one_edge_to_connector or src_or_dest_map:
-                for path_edge in self.backward_state.memlet_tree(edge):
-                    path_edge.data.wcr = "lambda x, y: x + y"
+            if more_than_one_edge_to_connector:
+                add_wcr = True
 
-                # break early: we have handled all edges in the tree
-                return
+        if add_wcr:
+            for tree_edge in self.forward_state.memlet_tree(edge):
+                tree_edge.wcr = "lambda x, y: x + y"
+            self._init_grad(edge.data.data)
+
+
 
     def _insert_transient_into_edge(
         self, sibling_edge: dgraph.MultiConnectorEdge, state: SDFGState
@@ -765,7 +769,6 @@ class BackwardPassGenerator:
                 desc.dtype,
                 storage=desc.storage,
                 lifetime=desc.lifetime)
-            self._init_grad(transient_name)
             access_transient = state.add_access(transient_name)
             state.remove_edge(sibling_edge)
             memlet = copy.deepcopy(sibling_edge.data)
@@ -802,9 +805,6 @@ class BackwardPassGenerator:
 
         self.backward_grad_arrays[grad_name] = cloned_datadesc
         self.backward_sdfg.arrays[grad_name] = copy.deepcopy(cloned_datadesc)
-
-        if cloned_datadesc.transient:
-            self._init_grad(grad_name)
 
     def _connect_given_gradients(self, subgraph: dstate.StateSubgraphView,
                                  forward_node):
