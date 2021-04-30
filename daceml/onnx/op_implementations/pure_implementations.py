@@ -12,7 +12,8 @@ from dace.sdfg.nodes import Node
 from daceml.onnx import converters
 from daceml.onnx.forward_implementation_abc import ONNXForward
 from daceml.onnx.nodes import onnx_op
-from daceml.onnx.op_implementations.utils import op_implementation, program_for_node
+from daceml.onnx.op_implementations.utils import op_implementation, program_for_node, \
+    empty_sdfg_for_node
 from daceml.transformation import constant_folding
 from daceml.util.utils import in_desc_with_name, out_desc_with_name, in_edge_with_name, iterables_equal
 
@@ -580,6 +581,38 @@ class PureSum(ONNXForward):
         }
         return nsdfg
 
+
+@op_implementation(op="Dropout", name="pure")
+class PureDropout(ONNXForward):
+
+    @staticmethod
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[nodes.Node, SDFG]:
+
+        input = in_desc_with_name(node, state, sdfg, "data")
+        nsdfg, nstate, inputs, outputs = empty_sdfg_for_node(sdfg, state, node, no_nodes=True)
+        mask_name, mask_desc = sdfg.add_array(node.label + "_mask", input.shape, dace.bool, storage=input.storage, transient=False, find_new_name=True)
+        node.add_in_connector("input_mask")
+        state.add_edge(state.add_read(mask_name), None, node, "input_mask", sdfg.make_array_memlet(mask_name))
+
+
+        nsdfg.add_datadesc("input_mask", copy.deepcopy(mask_desc))
+
+        if "mask" in node.out_connectors:
+            copy_state = nsdfg.add_state_after(nstate)
+            copy_state.add_edge(copy_state.add_read("input_mask"), None, copy_state.add_write("mask"), None, nsdfg.make_array_memlet("input_mask"))
+
+        map_ranges = {f"i{i}": f"0:{s}" for i, s in enumerate(input.shape)}
+        index_str = f"{', '.join(map_ranges.keys())}"
+        nstate.add_mapped_tasklet("_compute_dropout_",
+                                  map_ranges, dict(mask_value=dace.Memlet(f"input_mask[{index_str}]"),
+                                                   input_value=dace.Memlet(f"data[{index_str}]")),
+                                  "output_value = input_value * mask_value",
+                                  dict(output_value=dace.Memlet(f"output[{index_str}]")),
+                                  external_edges=True)
+
+
+        return nsdfg
 
 @op_implementation(op="LogSoftmax", name="pure")
 class PureLogSoftmax(ONNXForward):
