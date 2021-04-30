@@ -128,6 +128,8 @@ def make_backward_function(model: ONNXModel,
                     inputs[inp] = create_output_array(symbols,
                                                       forward_sdfg.arrays[inp],
                                                       use_torch=True)
+                    if "Dropout" in inp:
+                        inputs[inp][:] = 1
 
             DaceFunction._forward_model.sdfg(**inputs, **symbols, **params,
                                              **outputs)

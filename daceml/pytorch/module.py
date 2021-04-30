@@ -166,8 +166,7 @@ class DaceModule(nn.Module):
                 dummy_inputs,
                 export_name,
                 verbose=logging.root.level <= logging.DEBUG,
-                training=(TrainingMode.TRAINING
-                          if self.train else TrainingMode.EVAL),
+                training=TrainingMode.TRAINING,
                 opset_version=12,
                 strip_doc_string=False,
                 export_params=not self.backward,
