@@ -1,7 +1,9 @@
 import inspect
+import copy
+from typing import Dict, Tuple
 
 import dace
-from dace import SDFGState, SDFG, dtypes
+from dace import SDFGState, SDFG, dtypes, nodes
 from dace.frontend.python.parser import DaceProgram
 from dace.registry import autoregister
 
@@ -82,3 +84,35 @@ def program_for_node(program, sdfg: SDFG, state: SDFGState,
         sdfg.apply_gpu_transformations()
 
     return sdfg
+
+
+def empty_sdfg_for_node(
+    sdfg: SDFG, state: SDFGState, node: onnx_op.ONNXOp
+) -> Tuple[SDFG, SDFGState, Dict[str, nodes.AccessNode], Dict[
+        str, nodes.AccessNode]]:
+    """ Given a node, return an SDFG that can be used as a nested SDFG expansion for that node.
+
+        The dtypes for the arguments will be extracted by matching the parameter names to edges.
+    """
+    nsdfg = SDFG(node.label + "_expansion")
+    nstate = nsdfg.add_state()
+
+    input_nodes = {}
+    output_nodes = {}
+    for edge, is_input in node.iter_edges(state):
+        if is_input:
+            conn_name = edge.dst_conn
+            nsdfg.add_datadesc(
+                conn_name,
+                copy.deepcopy(in_desc_with_name(node, state, sdfg, conn_name)))
+            input_nodes[conn_name] = nstate.add_read(conn_name)
+        else:
+            conn_name = edge.src_conn
+            nsdfg.add_datadesc(
+                conn_name,
+                copy.deepcopy(out_desc_with_name(node, state, sdfg,
+                                                 conn_name)))
+            output_nodes[conn_name] = nstate.add_write(conn_name)
+        nsdfg.arrays[conn_name].transient = False
+
+    return nsdfg, nstate, input_nodes, output_nodes
