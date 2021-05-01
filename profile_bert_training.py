@@ -12,7 +12,7 @@ seq_len = 512
 hidden_size = 768
 
 donnx.default_implementation = "pure"
-# donnx.ONNXSoftmax.default_implementation = "onnxruntime"
+donnx.ONNXSoftmax.default_implementation = "onnxruntime"
 
 # use eval when checking correctness and compiling
 pt_model = BertLayer(BertConfig(hidden_act="relu")).eval().cuda()
@@ -24,7 +24,7 @@ dace_model = DaceModule(dace_model, backward=True, cuda=True)
 def detect_ln(module: DaceModule):
     module.sdfg.view()
     module.sdfg.apply_transformations_repeated(DetectLN)
-# dace_model.append_post_onnx_hook("detect_lns", detect_ln)
+dace_model.append_post_onnx_hook("detect_lns", detect_ln)
 
 dace_model.append_post_onnx_hook("view", lambda b: b.sdfg.view())
 dace_model.append_post_autodiff_hook("view", lambda f, b: f.view())
