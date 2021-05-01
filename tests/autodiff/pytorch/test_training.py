@@ -8,7 +8,6 @@ import torch
 from torchvision import datasets, transforms
 from torch import nn, optim
 from transformers import BertLayer, BertConfig
-import efficientnet_pytorch.model
 
 from dace.transformation import dataflow
 
