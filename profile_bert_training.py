@@ -1,5 +1,7 @@
 import torch
 import time
+
+from dace.transformation.dataflow import RedundantSecondArray
 from transformers import BertLayer, BertConfig
 
 from daceml.ort_ln import DetectLN
@@ -37,14 +39,11 @@ def einsum_fusion(module: DaceModule):
         return isinstance(node, (donnx.ONNXMatMul, donnx.ONNXTranspose))
     utils.expand_onnx_nodes(module.sdfg, expand_predicate=expand_predicate)
     module.sdfg.apply_strict_transformations()
-    module.sdfg.view()
     module.sdfg.apply_transformations_repeated(HorizontalEinsumFusion)
-    module.sdfg.view()
     donnx.ONNXTranspose.default_implementation = "pure"
-dace_model.append_post_onnx_hook("einsum_fusion", einsum_fusion)
 
-dace_model.append_post_autodiff_hook("view", lambda f, b: b.view())
-dace_model.append_post_autodiff_hook("view", lambda f, b: f.view())
+dace_model.append_post_onnx_hook("einsum_fusion", einsum_fusion)
+dace_model.append_post_onnx_hook("redundant_second_array", lambda m: m.sdfg.apply_transformations_repeated(RedundantSecondArray))
 
 # check forward pass using loss
 input = torch.randn([batch_size, seq_len, hidden_size]).cuda()
