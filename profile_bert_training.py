@@ -40,7 +40,7 @@ def einsum_fusion(module: DaceModule):
     utils.expand_onnx_nodes(module.sdfg, expand_predicate=expand_predicate)
     module.sdfg.apply_strict_transformations()
     module.sdfg.apply_transformations_repeated(HorizontalEinsumFusion)
-    donnx.ONNXTranspose.default_implementation = "pure"
+    donnx.ONNXTranspose.default_implementation = "onnxruntime"
 
 dace_model.append_post_onnx_hook("einsum_fusion", einsum_fusion)
 dace_model.append_post_onnx_hook("redundant_second_array", lambda m: m.sdfg.apply_transformations_repeated(RedundantSecondArray))
