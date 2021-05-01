@@ -10,6 +10,7 @@ def torch_tensors_close(name, torch_v, dace_v):
     atol = 1e-4
     if not torch.allclose(
             torch_v, dace_v, rtol=rtol, atol=atol, equal_nan=True):
+        print(name + " was not close")
         print("torch value: ", torch_v)
         print("dace value: ", dace_v)
         print("diff: ", torch.abs(dace_v - torch_v))
