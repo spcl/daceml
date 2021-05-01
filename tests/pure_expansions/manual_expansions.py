@@ -4,9 +4,39 @@ import torch
 from torch.nn import functional as F
 from torch import nn
 
-from daceml.onnx.op_implementations.manual import add_ln_tasklet, add_ln_tasklet_bwd
+from daceml.ort_ln.manual import add_ln_tasklet, add_ln_tasklet_bwd, DetectLN
 from daceml.pytorch import DaceModule
 from daceml.testing.utils import torch_tensors_close
+
+
+def test_ln_detection():
+    inp = torch.rand(2, 512, 768).cuda()
+    dy = torch.rand(2, 512, 768).cuda()
+    dace_inp = torch.clone(inp)
+    dace_inp.requires_grad = True
+    inp.requires_grad = True
+
+
+    module = nn.LayerNorm([768]).cuda()
+    dace_module = DaceModule(module, cuda=True)
+
+    def detect_ln(module: DaceModule):
+        module.sdfg.view()
+        module.sdfg.apply_transformations_repeated(DetectLN)
+
+    dace_module.prepend_post_onnx_hook("detect_ln", detect_ln)
+    dace_module.append_post_onnx_hook("view", lambda m: m.sdfg.view())
+    # dace_module.append_post_autodiff_hook("view", lambda f, b: b.view())
+
+    dace_outp = dace_module(dace_inp)
+    pt_outp = module(inp)
+    torch_tensors_close("outputt", pt_outp, dace_outp)
+
+
+    #pt_outp.backward(dy)
+    #dace_outp.backward(dy)
+    #torch_tensors_close("grad", inp.grad, dace_inp.grad)
+
 
 
 def test_layernorm():
