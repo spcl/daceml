@@ -107,11 +107,12 @@ def find_str_not_in_set(existing: typing.Set[str],
     return base_name + "_" + str(i)
 
 
-def expand_onnx_nodes(sdfg: dace.SDFG):
+def expand_onnx_nodes(sdfg: dace.SDFG, expand_predicate=None):
     """ Recursively expand all onnx library nodes in the SDFG, resulting in an SDFG that can be optimized by
         dace transformations. Will also specialize dace matmuls.
 
         :param sdfg: the sdfg to expand nodes on.
+        :param skip: node types to expand
     """
     states = list(sdfg.states())
     while len(states) > 0:
@@ -119,15 +120,16 @@ def expand_onnx_nodes(sdfg: dace.SDFG):
         expanded_something = False
         for node in list(state.nodes()):  # Make sure we have a copy
             if isinstance(node, nd.NestedSDFG):
-                expand_onnx_nodes(node.sdfg)
-            elif isinstance(node, ONNXOp) or isinstance(node, blas.MatMul):
-                impl_name = node.expand(sdfg, state)
-                print(
-                    "Automatically expanded library node \"{}\" with implementation \"{}\"."
-                    .format(str(node), impl_name))
-                # We made a copy of the original list of nodes, so we keep
-                # iterating even though this list has now changed
-                expanded_something = True
+                expand_onnx_nodes(node.sdfg, expand_predicate=expand_predicate)
+            elif (isinstance(node, ONNXOp) or isinstance(node, blas.MatMul)):
+                if expand_predicate is None or expand_predicate(node):
+                    impl_name = node.expand(sdfg, state)
+                    print(
+                        "Automatically expanded library node \"{}\" with implementation \"{}\"."
+                        .format(str(node), impl_name))
+                    # We made a copy of the original list of nodes, so we keep
+                    # iterating even though this list has now changed
+                    expanded_something = True
         if expanded_something:
             states.append(state)  # Nodes have changed. Check state again
 

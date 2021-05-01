@@ -6,6 +6,8 @@ from daceml.ort_ln import DetectLN
 from daceml.pytorch import DaceModule
 from daceml.testing.utils import torch_tensors_close
 import daceml.onnx as donnx
+from daceml.transformation import HorizontalEinsumFusion
+from daceml.util import utils
 
 batch_size = 2
 seq_len = 512
@@ -22,13 +24,27 @@ dace_model = DaceModule(dace_model, backward=True, cuda=True)
 
 
 def detect_ln(module: DaceModule):
-    module.sdfg.view()
     module.sdfg.apply_transformations_repeated(DetectLN)
 dace_model.append_post_onnx_hook("detect_lns", detect_ln)
 
-dace_model.append_post_onnx_hook("view", lambda b: b.sdfg.view())
-dace_model.append_post_autodiff_hook("view", lambda f, b: f.view())
+def einsum_fusion(module: DaceModule):
+    donnx.ONNXTranspose.default_implementation = "einsum"
+    def expand_predicate(node):
+
+        for s in ["MatMul_61", "MatMul_54", "Transpose_37", "Transpose_52", "Transpose_53", "Transpose_62"]:
+            if s in node.label:
+                return False
+        return isinstance(node, (donnx.ONNXMatMul, donnx.ONNXTranspose))
+    utils.expand_onnx_nodes(module.sdfg, expand_predicate=expand_predicate)
+    module.sdfg.apply_strict_transformations()
+    module.sdfg.view()
+    module.sdfg.apply_transformations_repeated(HorizontalEinsumFusion)
+    module.sdfg.view()
+    donnx.ONNXTranspose.default_implementation = "pure"
+dace_model.append_post_onnx_hook("einsum_fusion", einsum_fusion)
+
 dace_model.append_post_autodiff_hook("view", lambda f, b: b.view())
+dace_model.append_post_autodiff_hook("view", lambda f, b: f.view())
 
 # check forward pass using loss
 input = torch.randn([batch_size, seq_len, hidden_size]).cuda()

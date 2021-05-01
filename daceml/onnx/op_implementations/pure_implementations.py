@@ -406,6 +406,38 @@ class PureSoftmax(ONNXForward):
 
         return program_for_node(prog, sdfg, state, node)
 
+@op_implementation(op="Transpose", name="einsum")
+class EinsumTranspose(ONNXForward):
+    @staticmethod
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+        perm = node.perm
+        input_desc = in_desc_with_name(node, state, sdfg, "data")
+        output_desc = out_desc_with_name(node, state, sdfg, "transposed")
+
+        letters = [chr(ord('z') - i) for i in range(26)]
+        input_letters = "".join(letters[i] for i, _ in enumerate(input_desc.shape))
+        output_letters = "".join(letters[i] for i in perm)
+        equation_str = f"{input_letters}->{output_letters}"
+
+        nsdfg = dace.SDFG(node.label + "_expansion")
+        nstate = nsdfg.add_state()
+        einsum_node: nodes.LibraryNode = onnx_op.ONNXEinsum(
+            node.label + "_einsum_expansion", equation=equation_str)
+
+        nstate.add_node(einsum_node)
+        einsum_node.add_in_connector("Inputs__0")
+        nsdfg.add_datadesc("data", copy.deepcopy(input_desc))
+        nsdfg.add_datadesc("transposed", copy.deepcopy(output_desc))
+        nsdfg.arrays["data"].transient = False
+        nsdfg.arrays["transposed"].transient = False
+
+        nstate.add_edge(nstate.add_read("data"), None, einsum_node, "Inputs__0",
+                        nsdfg.make_array_memlet("data"))
+        nstate.add_edge(einsum_node, "Output", nstate.add_write("transposed"), None,
+                        nsdfg.make_array_memlet("transposed"))
+
+        return nsdfg
 
 @op_implementation(op="Transpose", name="pure")
 class PureTranspose(ONNXForward):
@@ -418,6 +450,8 @@ class PureTranspose(ONNXForward):
             transposed[:] = np.transpose(data, axes=perm)
 
         return program_for_node(prog, sdfg, state, node)
+
+
 
 
 @op_implementation(op="Cast", name="pure")
