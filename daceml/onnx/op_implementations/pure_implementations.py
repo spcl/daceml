@@ -453,7 +453,6 @@ class PureTranspose(ONNXForward):
 
 
 
-
 @op_implementation(op="Cast", name="pure")
 class PureCast(ONNXForward):
     @staticmethod
@@ -633,8 +632,9 @@ class PureDropout(ONNXForward):
         nsdfg.add_datadesc("input_mask", copy.deepcopy(mask_desc))
 
         if "mask" in node.out_connectors:
-            copy_state = nsdfg.add_state_after(nstate)
-            copy_state.add_edge(copy_state.add_read("input_mask"), None, copy_state.add_write("mask"), None, nsdfg.make_array_memlet("input_mask"))
+            pass
+            # copy_state = nsdfg.add_state_after(nstate)
+            # copy_state.add_edge(copy_state.add_read("input_mask"), None, copy_state.add_write("mask"), None, nsdfg.make_array_memlet("input_mask"))
 
         map_ranges = {f"i{i}": f"0:{s}" for i, s in enumerate(input.shape)}
         index_str = f"{', '.join(map_ranges.keys())}"

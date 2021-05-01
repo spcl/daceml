@@ -1363,6 +1363,7 @@ class BackwardPassGenerator:
 
                 diff_code_str = "{input} * ({diff_expr})".format(
                     input=rev_input_grad_name, diff_expr=str(diff_expr))
+                diff_code_str = diff_code_str.replace("Heaviside", "heaviside")
 
                 # get the the final type of the gradient: this is just the type of the input connector we creating the
                 # gradient for
