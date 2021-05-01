@@ -720,12 +720,17 @@ class BackwardPassGenerator:
         """
 
         add_wcr = False
-        if is_write_conflicted_with_reason(self.backward_state, edge):
-            # if we have a write conflict, we need WCR
-            add_wcr = True
 
         # this method assumes that the memlet tree is iterated from the root backwards
         for path_edge in self.backward_state.memlet_tree(edge):
+
+            # set the wcr to sum temporarily so that the following works
+            old_wcr = path_edge.data.wcr
+            path_edge.data.wcr = "lambda x, y: x + y"
+            if is_write_conflicted_with_reason(self.backward_state, path_edge):
+                # if we have a write conflict, we need WCR
+                add_wcr = True
+            path_edge.data.wcr = old_wcr
 
             # count the amount of in edges per connector
             connector_in_edges = collections.defaultdict(int)
@@ -740,8 +745,8 @@ class BackwardPassGenerator:
                 add_wcr = True
 
         if add_wcr:
-            for tree_edge in self.forward_state.memlet_tree(edge):
-                tree_edge.wcr = "lambda x, y: x + y"
+            for tree_edge in self.backward_state.memlet_tree(edge):
+                tree_edge.data.wcr = "lambda x, y: x + y"
             self._init_grad(edge.data.data)
 
 
