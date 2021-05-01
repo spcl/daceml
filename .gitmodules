@@ -1,0 +1,3 @@
+[submodule "daceml/onnx/op_implementations/substation"]
+	path = daceml/onnx/op_implementations/substation
+	url = https://github.com/spcl/substation
