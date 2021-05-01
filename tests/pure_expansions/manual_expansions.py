@@ -12,30 +12,37 @@ from daceml.testing.utils import torch_tensors_close
 def test_ln_detection():
     inp = torch.rand(2, 512, 768).cuda()
     dy = torch.rand(2, 512, 768).cuda()
+    dace_dy = torch.clone(dy)
     dace_inp = torch.clone(inp)
     dace_inp.requires_grad = True
     inp.requires_grad = True
 
 
     module = nn.LayerNorm([768]).cuda()
-    dace_module = DaceModule(module, cuda=True)
+    dace_module = nn.LayerNorm([768]).cuda()
+    dace_module.load_state_dict(module.state_dict())
+
+    dace_module = DaceModule(dace_module, cuda=True, backward=True)
 
     def detect_ln(module: DaceModule):
         module.sdfg.view()
         module.sdfg.apply_transformations_repeated(DetectLN)
 
     dace_module.prepend_post_onnx_hook("detect_ln", detect_ln)
-    dace_module.append_post_onnx_hook("view", lambda m: m.sdfg.view())
-    # dace_module.append_post_autodiff_hook("view", lambda f, b: b.view())
+    dace_module.append_post_autodiff_hook("expand" , lambda f, b: f.expand_library_nodes())
+    dace_module.append_post_autodiff_hook("view", lambda f, b: f.view())
+    dace_module.append_post_autodiff_hook("view", lambda f, b: b.view())
 
     dace_outp = dace_module(dace_inp)
     pt_outp = module(inp)
-    torch_tensors_close("outputt", pt_outp, dace_outp)
+    torch_tensors_close("output", pt_outp, dace_outp)
 
 
-    #pt_outp.backward(dy)
-    #dace_outp.backward(dy)
-    #torch_tensors_close("grad", inp.grad, dace_inp.grad)
+    pt_outp.backward(dy)
+    dace_outp.backward(dace_dy)
+    torch_tensors_close("weightgrad", module.weight.grad, dace_module.model.weight.grad)
+    torch_tensors_close("biasgrad", module.bias.grad, dace_module.model.bias.grad)
+    torch_tensors_close("grad", inp.grad, dace_inp.grad)
 
 
 
@@ -103,6 +110,7 @@ def test_layernorm():
     dscale = torch.ones_like(weight)
 
     sdfg(inp=dace_inp, weight=dace_weight, bias=dace_bias, outp=dace_outp, mean=mean, dX=dinp, dbias=dbias, dscale=dscale, doutp=doutp)
+    sdfg.view()
 
     outp.backward(doutp)
 

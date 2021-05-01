@@ -201,8 +201,8 @@ class DetectLN(transformation.Transformation):
         state.add_edge(bias, None, ln_node, "_bias", sdfg.make_array_memlet(bias.data))
 
         state.add_edge(ln_node, "_Y", output, None, sdfg.make_array_memlet(output.data))
-        mean_name, _ = sdfg.add_array("detected_layernorm_mean", [input_shape[axis]], dace.float32, storage=dtypes.StorageType.GPU_Global, transient=True, find_new_name=True)
-        std_name, _ = sdfg.add_array("detected_layernorm_std", [input_shape[axis]], dace.float32, storage=dtypes.StorageType.GPU_Global, transient=True, find_new_name=True)
+        mean_name, _ = sdfg.add_array("detected_layernorm_mean", [*input_shape[:axis], 1], dace.float32, storage=dtypes.StorageType.GPU_Global, transient=True, find_new_name=True)
+        std_name, _ = sdfg.add_array("detected_layernorm_std", [*input_shape[:axis], 1], dace.float32, storage=dtypes.StorageType.GPU_Global, transient=True, find_new_name=True)
         state.add_edge(ln_node, "_mean", state.add_write(mean_name), None, sdfg.make_array_memlet(mean_name))
         state.add_edge(ln_node, "_inv_std_var", state.add_write(std_name), None, sdfg.make_array_memlet(std_name))
 
