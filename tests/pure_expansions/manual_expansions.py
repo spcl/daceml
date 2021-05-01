@@ -2,8 +2,10 @@ import dace
 from dace.dtypes import StorageType
 import torch
 from torch.nn import functional as F
+from torch import nn
 
 from daceml.onnx.op_implementations.manual import add_ln_tasklet, add_ln_tasklet_bwd
+from daceml.pytorch import DaceModule
 from daceml.testing.utils import torch_tensors_close
 
 
@@ -79,6 +81,31 @@ def test_layernorm():
     torch_tensors_close("ingrad", inp.grad, dinp)
     torch_tensors_close("weightgrad", weight.grad, dscale)
     torch_tensors_close("bgrad", bias.grad, dbias)
+
+
+def test_softmax():
+
+    inp = torch.rand(2, 12, 512, 512).cuda()
+    dy = torch.rand(2, 12, 512, 512).cuda()
+    dace_inp = torch.clone(inp)
+    dace_inp.requires_grad = True
+    inp.requires_grad = True
+
+
+    module = nn.Softmax(3)
+
+    dace_module = DaceModule(module, backward=True, cuda=True)
+
+    dace_module.append_post_autodiff_hook("view", lambda f, b: b.view())
+
+    dace_outp = dace_module(dace_inp)
+    pt_outp = module(inp)
+    torch_tensors_close("outputt", pt_outp, dace_outp)
+    pt_outp.backward(dy)
+    dace_outp.backward(dy)
+    torch_tensors_close("grad", inp.grad, dace_inp.grad)
+
+
 
 
 
