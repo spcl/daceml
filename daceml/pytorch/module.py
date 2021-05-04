@@ -156,7 +156,7 @@ class DaceModule(nn.Module):
                                         self.cuda,
                                         apply_strict=self.apply_strict)
 
-                self.prepend_post_onnx_hook("auto_optimize",
+                self.prepend_post_autodiff_hook("auto_optimize",
                                             auto_optimize_backward)
             else:
                 self.prepend_post_onnx_hook(
@@ -171,7 +171,7 @@ class DaceModule(nn.Module):
                     fwd_sdfg.apply_strict_transformations()
                     bwd_sdfg.apply_strict_transformations()
 
-                self.prepend_post_onnx_hook("apply_strict", apply_strict)
+                self.prepend_post_autodiff_hook("apply_strict", apply_strict)
             else:
                 self.prepend_post_onnx_hook(
                     "apply_strict", lambda dace_module: dace_module.sdfg.
