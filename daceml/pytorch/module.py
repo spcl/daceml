@@ -157,7 +157,7 @@ class DaceModule(nn.Module):
                                         apply_strict=self.apply_strict)
 
                 self.prepend_post_autodiff_hook("auto_optimize",
-                                            auto_optimize_backward)
+                                                auto_optimize_backward)
             else:
                 self.prepend_post_onnx_hook(
                     "auto_optimize", lambda dace_module: utils.auto_optimize(
