@@ -16,15 +16,20 @@ def test_pytorch_from_dlpack():
         def forward(self, x):
             return self.fc1(x)
 
-    pt_module = Module()
-    dace_module = Module()
+    pt_module = Module().cuda()
+    dace_module = Module().cuda()
     dace_module.load_state_dict(pt_module.state_dict())
 
-    input = torch.rand(2, 10)
-    assert torch.allclose(pt_module(input), dace_module(input))
+    input = torch.rand(2, 10).cuda()
 
-    dace_module = DaceModule(dace_module, cuda=True)
+    dace_module = DaceModule(dace_module)
 
     assert torch.allclose(dace_module(input), pt_module(input))
-    parameter_to_transient(dace_module, "fc1.weight")
+    dace_module.reset_sdfg()
+
+    def param_to_trans(model):
+        parameter_to_transient(model, "fc1.weight")
+
+    dace_module.append_post_onnx_hook("param_to_transient", param_to_trans)
+
     assert torch.allclose(dace_module(input), pt_module(input))

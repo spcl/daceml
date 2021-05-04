@@ -140,7 +140,7 @@ class DaceModule(nn.Module):
                 module_is_cuda = False
 
         if module_is_cuda and self.cuda is False:
-            log.warning("Recieved a CUDA module, but cuda was set to False.")
+            log.warning("Received a CUDA module, but cuda was set to False.")
         if self.cuda is None:
             self.cuda = module_is_cuda
 
@@ -156,13 +156,14 @@ class DaceModule(nn.Module):
                                         self.cuda,
                                         apply_strict=self.apply_strict)
 
-                self.post_autodiff_hooks[
-                    "auto_optimize"] = auto_optimize_backward
+                self.prepend_post_autodiff_hook("auto_optimize",
+                                                auto_optimize_backward)
             else:
-                self.post_onnx_hooks["auto_optimize"] = \
-                    lambda dace_module: utils.auto_optimize(dace_module.dace_model.sdfg,
-                                                            self.cuda,
-                                                            apply_strict=self.apply_strict)
+                self.prepend_post_onnx_hook(
+                    "auto_optimize", lambda dace_module: utils.auto_optimize(
+                        dace_module.dace_model.sdfg,
+                        self.cuda,
+                        apply_strict=self.apply_strict))
         elif self.apply_strict:
             if self.backward:
 
@@ -170,10 +171,11 @@ class DaceModule(nn.Module):
                     fwd_sdfg.apply_strict_transformations()
                     bwd_sdfg.apply_strict_transformations()
 
-                self.post_autodiff_hooks["apply_strict"] = apply_strict
+                self.prepend_post_autodiff_hook("apply_strict", apply_strict)
             else:
-                self.post_onnx_hooks["apply_strict"] = \
-                    lambda dace_module: dace_module.sdfg.apply_strict_transformations()
+                self.prepend_post_onnx_hook(
+                    "apply_strict", lambda dace_module: dace_module.sdfg.
+                    apply_strict_transformations())
 
         # TODO change to StringIO if not too big
         with tempfile.TemporaryDirectory() as dir_name:
