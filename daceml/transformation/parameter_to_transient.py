@@ -25,6 +25,22 @@ def parameter_to_transient(dace_module: DaceModule, parameter_path: str):
     pt_tensor = operator.attrgetter(pt_weight_name)(dace_module.model)
     array_name = clean_onnx_name(pt_weight_name)
 
+    # the the access node for this array of this array
+    cands = [(node, parent)
+             for (node, parent) in dace_module.sdfg.all_nodes_recursive()
+             if isinstance(node, nodes.AccessNode) and node.data == array_name]
+
+    if len(cands) == 0:
+        log.warning(
+            f"Could not find access node with name '{array_name}', skipping parameter to transient",
+        )
+        return
+
+    if len(cands) != 1:
+        raise ValueError(
+            "parameter_to_transient does not work when the target array has multiple AccessNodes"
+        )
+
     if array_name not in dace_module.sdfg.arrays:
         raise ValueError(f"Could not find parameter {array_name} in sdfg.")
 
@@ -37,17 +53,6 @@ def parameter_to_transient(dace_module: DaceModule, parameter_path: str):
     else:
 
         # find the GPU transient of this array
-        cands = [
-            (node, parent)
-            for (node, parent) in dace_module.sdfg.all_nodes_recursive()
-            if isinstance(node, nodes.AccessNode) and node.data == array_name
-        ]
-
-        if len(cands) != 1:
-            raise ValueError(
-                "parameter_to_transient does not work when the target array has multiple AccessNodes"
-            )
-
         state: dace.SDFGState
         cand, state = cands[0]
         if state.out_degree(cand) != 1:
