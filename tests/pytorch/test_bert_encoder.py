@@ -3,6 +3,7 @@ import torch
 from transformers import BertConfig, BertLayer
 
 from daceml.pytorch import DaceModule
+from daceml.testing import copy_to_gpu, torch_tensors_close
 from daceml.transformation import parameter_to_transient
 
 
@@ -11,13 +12,12 @@ def test_bert_encoder(gpu, default_implementation, sdfg_name):
     seq_len = 512
     hidden_size = 768
 
-    input = torch.randn([batch_size, seq_len, hidden_size])
+    input = copy_to_gpu(gpu, torch.randn([batch_size, seq_len, hidden_size]))
 
-    ptmodel = BertLayer(BertConfig()).eval()
+    ptmodel = copy_to_gpu(gpu, BertLayer(BertConfig()).eval())
     pt_outputs = ptmodel(input.clone())
 
     dace_model = DaceModule(ptmodel,
-                            cuda=gpu,
                             train=False,
                             sdfg_name=sdfg_name,
                             apply_strict=True)
@@ -31,11 +31,7 @@ def test_bert_encoder(gpu, default_implementation, sdfg_name):
         dace_model.append_post_onnx_hook("param_to_transient", param_to_trans)
 
     dace_outputs0 = dace_model(input.clone())
-
-    diff = np.abs(dace_outputs0.detach().numpy() -
-                  pt_outputs[0].detach().numpy())
-
-    assert np.max(diff) < 1e-5
+    torch_tensors_close("output", pt_outputs[0], dace_outputs0)
 
     if default_implementation == "pure":
         ort_nodes = [

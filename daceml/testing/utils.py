@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import typing
 
 
 def torch_tensors_close(name, torch_v, dace_v):
@@ -23,3 +24,13 @@ def torch_tensors_close(name, torch_v, dace_v):
             print(f"rhs_failed: {atol} + {rtol * abs(y)}")
 
         assert False, f"{name} was not close)"
+
+
+T = typing.TypeVar("T")
+
+
+def copy_to_gpu(gpu: bool, tensor: T) -> T:
+    if gpu:
+        return tensor.cuda()
+    else:
+        return tensor
