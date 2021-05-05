@@ -11,6 +11,7 @@ import torch
 import torch.nn as nn
 from torch.onnx import TrainingMode
 
+from daceml.pytorch.cpp_codegen import get_function_for_module
 from daceml.autodiff.pytorch import make_backward_function
 from daceml.onnx import ONNXModel
 from daceml.onnx.shape_inference import infer_shapes
@@ -227,8 +228,14 @@ class DaceModule(nn.Module):
 
                 return forward
             else:
+                module_func = get_function_for_module(self)
 
-                return dace_model
+                def forward(*args):
+                    args_and_params = list(args)
+                    args_and_params.extend(self.parameters())
+                    return module_func(*args_and_params)
+
+                return forward
 
     def forward(self, *actual_inputs):
         """ Execute the forward pass using the traced ``module``."""
