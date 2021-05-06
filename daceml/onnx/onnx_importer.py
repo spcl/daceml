@@ -19,7 +19,7 @@ from daceml.onnx.shape_inference import shape_inference
 from daceml.onnx.converters import convert_attribute_proto, onnx_tensor_type_to_typeclass, clean_onnx_name
 from daceml.onnx.schema import ONNXParameterType
 from daceml.onnx.nodes.onnx_op import get_onnx_node, has_onnx_node, ONNXOp
-from daceml.util import utils
+from daceml.util import utils, is_cuda
 
 log = logging.getLogger(__name__)
 
@@ -574,16 +574,6 @@ class ONNXModel:
                             self.cuda,
                             apply_strict=self.apply_strict,
                             fold_constants=self.fold_constants)
-
-
-def is_cuda(storage: dtypes.StorageType) -> bool:
-    """ Check if a descriptor storage type is a GPU array """
-    if dtypes.can_access(dtypes.ScheduleType.CPU_Multicore, storage):
-        return False
-    elif dtypes.can_access(dtypes.ScheduleType.GPU_Default, storage):
-        return True
-    else:
-        raise ValueError(f"Unsupported storage {storage}")
 
 
 def create_output_array(
