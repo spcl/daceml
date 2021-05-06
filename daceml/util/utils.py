@@ -8,7 +8,7 @@ from dace import nodes as nd
 from dace.libraries import blas
 from dace.sdfg.state import MultiConnectorEdge
 from dace.transformation import interstate, dataflow
-from dace import SDFG, SDFGState
+from dace import SDFG, SDFGState, dtypes
 import dace.data as dt
 from dace.transformation.auto.auto_optimize import set_fast_implementations
 
@@ -178,3 +178,24 @@ def iterables_equal(a, b) -> bool:
 
 def prod(sequence):
     return functools.reduce(lambda a, b: a * b, sequence, 1)
+
+
+def is_cuda(storage: dtypes.StorageType) -> bool:
+    """ Check if a descriptor storage type is a GPU array """
+    if dtypes.can_access(dtypes.ScheduleType.CPU_Multicore, storage):
+        return False
+    elif dtypes.can_access(dtypes.ScheduleType.GPU_Default, storage):
+        return True
+    else:
+        raise ValueError(f"Unsupported storage {storage}")
+
+
+def platform_library_name(libname: str) -> str:
+    """ Get the filename of a library.
+
+        :param libname: the name of the library.
+        :return: the filename of the library.
+    """
+    prefix = dace.Config.get('compiler', 'library_prefix')
+    suffix = dace.Config.get('compiler', 'library_extension')
+    return f"{prefix}{libname}.{suffix}"
