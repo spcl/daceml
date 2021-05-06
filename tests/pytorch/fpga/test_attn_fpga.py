@@ -7,6 +7,7 @@ from daceml.pytorch import DaceModule
 from dace.transformation.dataflow import RedundantSecondArray
 from daceml.transformation import ConstantFolding
 import daceml.onnx as donnx
+
 donnx.default_implementation = "pure"
 from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
 from dace.transformation.dataflow import PruneConnectors

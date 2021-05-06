@@ -20,6 +20,7 @@ from dace.transformation.dataflow import PruneConnectors
 from multiprocessing import Process, Queue
 
 import daceml.onnx as donnx
+
 donnx.default_implementation = "pure"
 donnx.ONNXConv.default_implementation = 'pure'
 

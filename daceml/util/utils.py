@@ -11,7 +11,7 @@ from dace.transformation import interstate, dataflow
 from dace import SDFG, SDFGState
 import dace.data as dt
 from dace import dtypes
-from dace.transformation.auto.auto_optimize import set_fast_implementations
+from dace.transformation.auto_optimize import set_fast_implementations
 
 from daceml.onnx.nodes.onnx_op import ONNXOp
 from daceml import transformation
