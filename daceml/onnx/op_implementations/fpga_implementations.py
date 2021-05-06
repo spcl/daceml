@@ -18,48 +18,12 @@ import math
 
 from daceml.util.utils import in_desc_with_name, out_desc_with_name, in_edge_with_name
 from daceml.transformation import constant_folding
+from daceml.onnx.op_implementations.utils import op_implementation, program_for_node
 
 
 def _2d_sliding_window_index_expr(x_or_y, stride, kernel_size):
     index_expression = "out_{x_or_y} * {stride} + h{x_or_y}"
     return index_expression.format(x_or_y=x_or_y, stride=stride)
-
-
-def program_for_node(program, sdfg: SDFG, state: SDFGState,
-                     node: ONNXOp) -> DaceProgram:
-    """ Expand a function to a dace program.
-
-        The dtypes for the arguments will be extracted by matching the parameter names to edges.
-    """
-    input_names = set(inp.name for inp in node.schema.inputs)
-    output_names = set(outp.name for outp in node.schema.outputs)
-
-    if input_names.intersection(output_names):
-        # this is currently the case for only one onnx op
-        raise ValueError(
-            "program_for_node cannot be applied on nodes of this type;"
-            " '{}' is both an input and an output".format(
-                next(input_names.intersection(output_names))))
-
-    params = inspect.signature(program).parameters
-
-    annotations = {}
-    for name, param in params.items():
-        if name in input_names:
-            annotations[name] = in_desc_with_name(node, state, sdfg, name)
-        elif name in output_names:
-            annotations[name] = out_desc_with_name(node, state, sdfg, name)
-        else:
-            raise ValueError(
-                "'{}' was not found as an input or output for {}".format(
-                    name, node.schema.name))
-
-    program.__annotations__ = annotations
-
-    result = DaceProgram(program, (), {}, False, 0)
-
-    return result
-
 
 @autoregister_params(op="Conv", name="naive_fpga")
 class FPGAConv2D(ONNXForward):

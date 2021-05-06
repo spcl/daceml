@@ -32,19 +32,6 @@ def is_desc_contiguous(desc: dt.Data) -> bool:
             type(desc)))
 
 
-def is_desc_contiguous(desc: dt.Data) -> bool:
-    if type(desc) is dt.Scalar:
-        return True
-    elif type(desc) is dt.Array:
-        contiguous_strides = [
-            dt._prod(desc.shape[i + 1:]) for i in range(len(desc.shape))
-        ]
-        return desc.strides == contiguous_strides
-    else:
-        raise ValueError("Unsupported data descriptor type {}".format(
-            type(desc)))
-
-
 def in_desc_with_name(node: nd.Node, state: SDFGState, sdfg: SDFG,
                       name: str) -> dt.Data:
     """ Find the descriptor of the data that connects to input connector `name`.

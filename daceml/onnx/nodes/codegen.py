@@ -327,7 +327,7 @@ def expand_node(node, state, sdfg):
     inputs_on_host = [True for _ in range(len(inputs))]
 
     actual_node_schedule = node.schedule
-    if node.schedule == dtypes.ScheduleType.CPU_Multicore or node.schedule == dtypes.ScheduleType.Default or node.schedule == dtypes.ScheduleType.Sequential:
+    if node.schedule == dtypes.ScheduleType.CPU_Multicore or node.schedule == dtypes.ScheduleType.Default:
         provider_index = 0
     elif node.schedule in dtypes.GPU_SCHEDULES + [
             dtypes.ScheduleType.GPU_Default
