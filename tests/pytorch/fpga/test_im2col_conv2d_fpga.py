@@ -21,7 +21,7 @@ from multiprocessing import Process, Queue
 
 import daceml.onnx as donnx
 donnx.default_implementation = "pure"
-donnx.ONNXConv.default_implementation = 'im2col'
+donnx.ONNXConv.default_implementation = 'pure'
 
 
 class Model(nn.Module):
@@ -67,7 +67,6 @@ def evaluate(in_channels,
 
     if execute_cpu_dace:
         dace_output = dace_model(x)
-        dace_model.sdfg.save('/tmp/out.sdfg')
 
     sdfg = dace_model.sdfg
     ##################################

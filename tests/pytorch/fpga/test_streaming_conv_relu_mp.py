@@ -57,7 +57,7 @@ if __name__ == "__main__":
 
     import daceml.onnx as donnx
     donnx.default_implementation = "pure"
-    donnx.ONNXConv.default_implementation = 'im2col'
+    donnx.ONNXConv.default_implementation = 'pure'
 
     ptmodel = Model(input_to_constant)
     #first conv
