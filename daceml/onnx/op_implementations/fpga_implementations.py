@@ -1737,7 +1737,7 @@ class FPGAReshape(ONNXForward):
         def prog(data, reshaped):
             reshaped[:] = np.reshape(data, new_shape)
 
-        return program_for_node(prog, sdfg, state, node).to_sdfg()
+        return program_for_node(prog, sdfg, state, node)
 
 
 @autoregister_params(op="Softmax", name="fpga")
