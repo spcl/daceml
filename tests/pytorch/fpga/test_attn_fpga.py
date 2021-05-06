@@ -99,11 +99,15 @@ def test_attn(batch_size, configuration_name, execute_cpu_dace=False):
     pt_outputs = ptmodel(Q, K, V)
 
     if execute_cpu_dace:
-        dace_model = DaceModule(ptmodel, dummy_inputs=(Q, K, V), auto_optimize=False)
+        dace_model = DaceModule(ptmodel,
+                                dummy_inputs=(Q, K, V),
+                                auto_optimize=False)
         # dace_outputs_0 = dace_model(Q, K, V)
 
     else:
-        dace_model = DaceModule(ptmodel, dummy_inputs=(Q, K, V), auto_optimize=False)
+        dace_model = DaceModule(ptmodel,
+                                dummy_inputs=(Q, K, V),
+                                auto_optimize=False)
     dace_model.sdfg.save('/tmp/out_pre.sdfg')
 
     ################################################
@@ -180,9 +184,11 @@ def test_attn(batch_size, configuration_name, execute_cpu_dace=False):
     dace_output_fpga = dace_model(Q, K, V)
 
     diff0 = np.linalg.norm(pt_outputs[0].detach().numpy() -
-                           dace_output_fpga[0].numpy()) / np.linalg.norm(pt_outputs[0].detach().numpy())
+                           dace_output_fpga[0].numpy()) / np.linalg.norm(
+                               pt_outputs[0].detach().numpy())
     diff1 = np.linalg.norm(pt_outputs[1].detach().numpy() -
-                           dace_output_fpga[1].numpy()) /  np.linalg.norm(pt_outputs[1].detach().numpy())
+                           dace_output_fpga[1].numpy()) / np.linalg.norm(
+                               pt_outputs[1].detach().numpy())
 
     assert np.allclose(pt_outputs[0].detach().numpy(),
                        dace_output_fpga[0],
