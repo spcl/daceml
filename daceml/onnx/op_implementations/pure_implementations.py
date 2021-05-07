@@ -13,7 +13,7 @@ from daceml.onnx import converters
 from daceml.onnx.forward_implementation_abc import ONNXForward
 from daceml.onnx.nodes import onnx_op
 from daceml.onnx.op_implementations.utils import op_implementation, program_for_node, \
-    empty_sdfg_for_node
+    empty_sdfg_for_node, python_pure_op_implementation
 from daceml.transformation import constant_folding
 from daceml.util.utils import in_desc_with_name, out_desc_with_name, in_edge_with_name, iterables_equal
 
@@ -671,3 +671,7 @@ class PureLogSoftmax(ONNXForward):
             output[:] = max_sub - log_sum
 
         return program_for_node(prog, sdfg, state, node)
+
+@python_pure_op_implementation
+def Softplus(X, Y):
+    Y[:] = np.log(1 + np.exp(X))

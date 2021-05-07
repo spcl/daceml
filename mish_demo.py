@@ -11,11 +11,6 @@ from daceml.onnx.op_implementations.utils import python_pure_op_implementation
 
 daceml.onnx.default_implementation = "pure"
 
-@python_pure_op_implementation
-def Softplus(X, Y):
-    Y[:] = np.log(1 + np.exp(X))
-
-
 # to check correctness later
 class PyTorchMish(torch.nn.Module):
     def __init__(self):
