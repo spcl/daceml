@@ -1,0 +1,38 @@
+name: GPU CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  test-gpu:
+    runs-on: [self-hosted, linux, intel-fpga]
+    env:
+      ORT_ROOT: '/opt/onnxruntime'
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+          submodules: 'recursive'
+
+      - name: Install dependencies
+        env:
+          UPDATE_PIP: 'true'
+        run: |
+          rm -rf .dacecache tests/.dacecache
+          . /opt/setupenv
+          make clean install
+
+      - name: Run Intel FPGA tests
+        run: |
+          export NOSTATUSBAR=1
+          export COVERAGE_RCFILE=`pwd`/.coveragerc
+          export PYTHON_BINARY="coverage run --source=dace --parallel-mode"
+          . /opt/setupenv
+          $PYTHON_BINARY tests/pytorch/fpga/intel_fpga_test.py
+          
+      - name: Upload coverage
+        run: make codecov
