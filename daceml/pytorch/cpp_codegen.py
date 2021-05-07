@@ -1,11 +1,12 @@
 """ Code generation for PyTorch C++ dispatched operators. """
 import copy
+import os
 import operator
 import itertools
 from typing import List, Tuple, Callable
 
 import torch
-from dace import dtypes as dt, os
+from dace import dtypes as dt, data
 import dace.library
 from dace.codegen import targets, compiler
 from dace.codegen.codeobject import CodeObject
@@ -41,6 +42,19 @@ _TYPECLASS_TO_TORCH_DTYPE_STR = {
 }
 
 
+def tensor_init_for_desc(name: str, desc: data.Data) -> str:
+    """ Emit the initialization code for a descriptor.
+    """
+    return f"""\
+    Tensor {name}_ = torch::empty(
+        {{{', '.join(str(s) for s in desc.shape)}}},
+        torch::TensorOptions()
+            .dtype(torch::{_TYPECLASS_TO_TORCH_DTYPE_STR[desc.dtype]})
+            .device(torch::{'kCUDA' if is_cuda(desc.storage) else 'kCPU'})
+            .layout(torch::kStrided));
+    """
+
+
 def initialize_outputs_code(module: 'daceml.pytorch.DaceModule',
                             output_names: List[str]) -> str:
     """ Generate the code that initializes the output tensors
@@ -51,35 +65,53 @@ def initialize_outputs_code(module: 'daceml.pytorch.DaceModule',
     arglist = module.sdfg.arglist()
     code = ""
     for name in output_names:
+        code += tensor_init_for_desc(name, arglist[name])
 
-        desc = arglist[name]
-        code += f"""\
-        Tensor {name}_ = torch::empty(
-            {{{', '.join(str(s) for s in desc.shape)}}},
-            torch::TensorOptions()
-                .dtype(torch::{_TYPECLASS_TO_TORCH_DTYPE_STR[desc.dtype]})
-                .device(torch::{'kCUDA' if is_cuda(desc.storage) else 'kCPU'})
-                .layout(torch::kStrided));
-        """
     return code
 
 
 def argument_codegen(module: 'daceml.pytorch.DaceModule',
                      input_names: List[str],
-                     output_names: List[str]) -> Tuple[str, str]:
+                     output_names: List[str]) -> Tuple[str, str, str]:
     """ Generate the code that grabs the pointers of inputs and outputs.
 
         :param module: the module
-        :return: the code for initializing the argument, and the sdfg arguments in order
+        :return: the code for initializing the argument, the sdfg arguments in order, and the init call arguments
     """
     arglist = module.sdfg.arglist()
-    ptr_init_code = '\n    '.join(
+
+    # initialize the inputs and outputs
+    ptr_init_code = "\n    // setup input and output pointers\n    "
+    ptr_init_code += '\n    '.join(
         f"{arglist[name].dtype.ctype} *{name}_ptr = {name}_.data_ptr<{arglist[name].dtype.ctype}>();"
         for name in itertools.chain(input_names, output_names))
+    ptr_init_code += "\n    // setup constant arguments\n"
+
+    # initialize all remaining parameters
+    remaining = set(arglist).difference(
+        itertools.chain(input_names, output_names))
+    for name in remaining:
+
+        # these must all be scalar constants
+        if arglist[name].total_size != 1:
+            raise ValueError(
+                f"Cannot generate PyTorch module C++ code: SDFG argument {name} is not an input or output"
+                f" of the PyTorch Module, and not a scalar.")
+        if name not in module.dace_model.clean_weights:
+            raise ValueError(
+                f"Cannot generate PyTorch module C++ code: SDFG argument {name} is not an input or output"
+                f" of the PyTorch Module, and not a constant.")
+
+        value = module.dace_model.clean_weights[name]
+        if arglist[name].dtype is dt.float32:
+            value = f"{value}f"
+        ptr_init_code += f"    {arglist[name].dtype.ctype} {name}_ptr = {value};\n"
 
     arguments = ", ".join(f"{n}_ptr" for n in arglist)
+    init_arguments = ", ".join(f"{n}_ptr" for n, desc in arglist.items()
+                               if isinstance(desc, data.Scalar))
 
-    return ptr_init_code, arguments
+    return ptr_init_code, arguments, init_arguments
 
 
 def code_for_module(module: 'daceml.pytorch.DaceModule') -> str:
@@ -94,7 +126,7 @@ def code_for_module(module: 'daceml.pytorch.DaceModule') -> str:
     if module.backward:
         raise NotImplemented("todo")
     else:
-        ptr_init_code, sdfg_call_arguments = argument_codegen(
+        ptr_init_code, sdfg_call_arguments, init_arguments = argument_codegen(
             module, inputs, outputs)
         return f"""
 #include <torch/torch.h>
@@ -107,8 +139,8 @@ using torch::autograd::tensor_list;
 using torch::autograd::AutogradContext;
 
 TORCH_LIBRARY(daceml_{sdfg_name}, m) {{
-    m.def("{sdfg_name}({", ".join('Tensor ' + arg for arg in inputs)}) -> ({'Tensor' if len(outputs) == 1
-        else ", ".join(['Tensor'] * len(outputs))})");
+    m.def("{sdfg_name}({", ".join('Tensor ' + arg for arg in inputs)}) -> {'Tensor' if len(outputs) == 1
+        else "(" + ", ".join(['Tensor'] * len(outputs)) + ")"}");
 }}
 
 // function definition
@@ -120,12 +152,11 @@ TORCH_LIBRARY(daceml_{sdfg_name}, m) {{
     // initialize outputs
     {initialize_outputs_code(module, outputs)}
     
+    {ptr_init_code}
+
     // initialize SDFG
     // TODO move this outside
-    {sdfg_name}Handle_t handle = __dace_init_{sdfg_name}();
-
-
-    {ptr_init_code}
+    {sdfg_name}Handle_t handle = __dace_init_{sdfg_name}({init_arguments});
 
     // call SDFG
     __program_{sdfg_name}(handle, {sdfg_call_arguments});
@@ -138,7 +169,7 @@ TORCH_LIBRARY(daceml_{sdfg_name}, m) {{
         else f"{{{', '.join(o for o in outputs)}}}"};
 }}
 
-TORCH_LIBRARY_IMPL(daceml_{sdfg_name}, CPU, m) {{
+TORCH_LIBRARY_IMPL(daceml_{sdfg_name}, {'CUDA' if module.cuda else 'CPU'}, m) {{
     m.impl("{sdfg_name}", {sdfg_name});
 }}
         """
