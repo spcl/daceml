@@ -3,11 +3,13 @@ import copy
 from typing import Dict, Tuple
 
 import dace
+import typing
 from dace import SDFGState, SDFG, dtypes, nodes
 from dace.frontend.python.parser import DaceProgram
 from dace.registry import autoregister
 
 from daceml.onnx.nodes import onnx_op
+from daceml.onnx.forward_implementation_abc import ONNXForward
 from daceml.onnx.nodes.node_utils import parse_variadic_param
 from daceml.util.utils import in_desc_with_name, out_desc_with_name
 
@@ -121,3 +123,15 @@ def empty_sdfg_for_node(
         nsdfg.arrays[conn_name].transient = False
 
     return nsdfg, nstate, input_nodes, output_nodes
+
+def python_pure_op_implementation(func):
+    """ A decorator that registers an python op implementation. The name of the function will be the name of the op
+        that is being replaced.
+    """
+    @op_implementation(op=func.__name__, name="pure")
+    class PureImpl(ONNXForward):
+        @staticmethod
+        def forward(node: onnx_op.ONNXOp, state: SDFGState,
+                    sdfg: SDFG) -> typing.Union[nodes.Node, SDFG]:
+            return program_for_node(func, sdfg, state, node)
+    return PureImpl
