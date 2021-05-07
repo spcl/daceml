@@ -5,6 +5,7 @@ import operator
 import itertools
 from typing import List, Tuple, Callable
 
+import numpy as np
 import torch
 from dace import dtypes as dt, data
 import dace.library
@@ -24,7 +25,8 @@ def get_arglist(
     """
     arglist = [clean_onnx_name(i) for i in module.dace_model.inputs]
     arglist.extend(
-        clean_onnx_name(n) for n, _ in module.model.named_parameters())
+        clean_onnx_name(n) for n, _ in module.model.named_parameters()
+        if clean_onnx_name(n) not in arglist)
 
     outputs = [clean_onnx_name(o) for o in module.dace_model.outputs]
     return arglist, outputs
@@ -46,12 +48,12 @@ def tensor_init_for_desc(name: str, desc: data.Data) -> str:
     """ Emit the initialization code for a descriptor.
     """
     return f"""\
-    Tensor {name}_ = torch::empty(
-        {{{', '.join(str(s) for s in desc.shape)}}},
-        torch::TensorOptions()
-            .dtype(torch::{_TYPECLASS_TO_TORCH_DTYPE_STR[desc.dtype]})
-            .device(torch::{'kCUDA' if is_cuda(desc.storage) else 'kCPU'})
-            .layout(torch::kStrided));
+Tensor {name}_ = torch::empty(
+    {{{', '.join(str(s) for s in desc.shape)}}},
+    torch::TensorOptions()
+        .dtype(torch::{_TYPECLASS_TO_TORCH_DTYPE_STR[desc.dtype]})
+        .device(torch::{'kCUDA' if is_cuda(desc.storage) else 'kCPU'})
+        .layout(torch::kStrided));
     """
 
 
@@ -92,26 +94,32 @@ def argument_codegen(module: 'daceml.pytorch.DaceModule',
         itertools.chain(input_names, output_names))
     for name in remaining:
 
-        # these must all be scalar constants
-        if arglist[name].total_size != 1:
-            raise ValueError(
-                f"Cannot generate PyTorch module C++ code: SDFG argument {name} is not an input or output"
-                f" of the PyTorch Module, and not a scalar.")
+        # remaining args must be constants
         if name not in module.dace_model.clean_weights:
             raise ValueError(
                 f"Cannot generate PyTorch module C++ code: SDFG argument {name} is not an input or output"
                 f" of the PyTorch Module, and not a constant.")
+        if arglist[name].total_size > 1000:
+            raise ValueError(
+                f"Cannot generate PyTorch module C++ code: SDFG argument {name} is not an input or output"
+                f" of the PyTorch Module, and is too large.")
 
         value = module.dace_model.clean_weights[name]
-        if arglist[name].dtype is dt.float32:
-            value = f"{value}f"
-        ptr_init_code += f"    {arglist[name].dtype.ctype} {name}_ptr = {value};\n"
+        ptr_init_code += f"    {constant_initializer_code(name + '_ptr', arglist[name], value)}\n"
 
     arguments = ", ".join(f"{n}_ptr" for n in arglist)
     init_arguments = ", ".join(f"{n}_ptr" for n, desc in arglist.items()
                                if isinstance(desc, data.Scalar))
 
     return ptr_init_code, arguments, init_arguments
+
+
+def constant_initializer_code(name: str, desc: data.Data, value) -> str:
+    if isinstance(desc, data.Array):
+        iterator = np.nditer(value.cpu().numpy(), order="C")
+        return f"{desc.dtype.ctype} {name}[{desc.total_size}] = {{{', '.join(str(e) for e in iterator)}}};"
+    else:
+        return f"{desc.dtype.ctype} {name} = {str(value.item())};"
 
 
 def code_for_module(module: 'daceml.pytorch.DaceModule') -> str:
@@ -166,7 +174,7 @@ TORCH_LIBRARY(daceml_{sdfg_name}, m) {{
 
     // return to torch
     return {f"{outputs[0]}_" if len(outputs) == 1
-        else f"{{{', '.join(o for o in outputs)}}}"};
+        else f"{{{', '.join(o + '_' for o in outputs)}}}"};
 }}
 
 TORCH_LIBRARY_IMPL(daceml_{sdfg_name}, {'CUDA' if module.cuda else 'CPU'}, m) {{
