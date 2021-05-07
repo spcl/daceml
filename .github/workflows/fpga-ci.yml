@@ -1,4 +1,4 @@
-name: GPU CI
+name: FPGA CI
 
 on:
   push:
@@ -33,6 +33,6 @@ jobs:
           export PYTHON_BINARY="coverage run --source=dace --parallel-mode"
           . /opt/setupenv
           $PYTHON_BINARY tests/pytorch/fpga/intel_fpga_test.py
-          
+
       - name: Upload coverage
         run: make codecov
