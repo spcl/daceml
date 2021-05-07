@@ -1,0 +1,39 @@
+name: FPGA CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  test-fpga:
+    runs-on: [self-hosted, linux, intel-fpga]
+    env:
+      ORT_ROOT: '/opt/onnxruntime'
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+          submodules: 'recursive'
+
+      - name: Install dependencies
+        env:
+          UPDATE_PIP: 'true'
+        run: |
+          rm -rf .dacecache tests/.dacecache
+          . /opt/setupenv
+          make clean install
+
+      - name: Run Intel FPGA tests
+        env:
+          NOSTATUSBAR: 1
+          COVERAGE_RCFILE: .coveragerc
+          PYTHON_BINARY: "coverage run --source=daceml --parallel-mode"
+        run: |
+          . /opt/setupenv
+          make test-intel_fpga
+
+      - name: Upload coverage
+        run: make codecov
