@@ -5,6 +5,10 @@ import torch.utils.cpp_extension
 from dace.codegen import targets, compiler
 from dace.codegen.codeobject import CodeObject
 import dace.library
+from torch import nn
+
+from daceml.pytorch import dace_module
+from daceml.testing import copy_to_gpu, torch_tensors_close
 
 op_source = """
 #include <torch/torch.h>
@@ -86,3 +90,15 @@ def test_extension():
     torch.ops.load_library(
         os.path.join(BUILD_PATH, "build", "libpt_extension.so"))
     print(torch.ops.myops.myadd(torch.randn(32, 32), torch.rand(32, 32)))
+
+
+def test_module_with_constant(gpu, sdfg_name):
+    @dace_module(cuda=gpu, sdfg_name=sdfg_name)
+    class Module(nn.Module):
+        def forward(self, x):
+            return x + 1
+
+    inp = torch.ones((5, 5))
+    output = Module()(copy_to_gpu(gpu, inp))
+
+    torch_tensors_close("output", inp + 1, output.cpu())
