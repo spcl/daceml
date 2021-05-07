@@ -1,6 +1,6 @@
-# Simple test for relu for FPGA
+# Reshape Expansion tests
 
-# TODO: conform to pytest syntax if needed
+# TODO: add more testings (e.g., vectorization)
 
 from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
 

@@ -2,7 +2,7 @@
 
 # NOTE: for the moment being it supports only the last axis
 
-# TODO: conform to pytest syntax if needed
+# TODO: add more tests
 
 from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
 
@@ -12,9 +12,7 @@ import torch.nn.functional as F
 
 import numpy as np
 
-import daceml.onnx as donnx
 from daceml.pytorch import DaceModule, dace_module
-import copy
 import argparse
 from multiprocessing import Process, Queue
 

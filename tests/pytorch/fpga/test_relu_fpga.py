@@ -1,4 +1,4 @@
-# Simple test for relu for FPGA
+# Tests Relu Expansion
 
 from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
 

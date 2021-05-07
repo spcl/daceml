@@ -1,6 +1,6 @@
-# Simple test for relu for FPGA
+# MaxPool expansion, simple testing
 
-# TODO: conform to pytest syntax if needed
+# TODO: add more testing
 
 import torch
 import torch.nn as nn

@@ -1,4 +1,4 @@
-# Simple test for evaluating Conv-Relu-Maxpool
+# Simple test for evaluating Conv-Relu-Maxpool in streaming composition
 
 from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
 from daceml.transformation import InputToConstant
@@ -9,14 +9,11 @@ import torch.nn.functional as F
 
 import numpy as np
 
-import daceml.onnx as donnx
 import dace
 from daceml.pytorch import DaceModule, dace_module
-import copy
 
 from daceml.util import utils
 from dace.transformation.dataflow import streaming_memory as sm
-from dace.transformation.dataflow import PruneConnectors
 from dace.transformation.interstate import InlineSDFG
 import argparse
 

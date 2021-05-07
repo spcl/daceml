@@ -1,5 +1,6 @@
-# Simple test for reduce_sum for FPGA
+# Simple test for ReduceSum for FPGA
 
+# TODO: add more tests
 # NOTE: for the moment being it supports only the last axis
 
 from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG

@@ -1,4 +1,4 @@
-# Tests for evaluating 2D convolutions for FPGA
+# Tests for Im2Col 2D convolutions for FPGA
 
 from dace.transformation.interstate import FPGATransformSDFG
 
@@ -93,7 +93,6 @@ def evaluate(in_channels,
 
     #################################
     # Execute
-    sdfg.save("/tmp/out_fpga.sdfg")
     dace_output_fpga = dace_model(torch.clone(x))
     dace_output_fpga = dace_output_fpga.detach().numpy().reshape(
         torch_output.shape)
@@ -116,8 +115,7 @@ def run(input_to_constant):
     Execute the program, in hardware if required, with a fixed input size
     :return:
     '''
-    #evaluate(6, 16, 5, 4, (1000, 6, 12, 12), input_to_constant, False)
-    #second conv
+    # Example: second convolutional layer in Lenet
     evaluate(1, 6, 5, 1, (100, 1, 28, 28), input_to_constant, False)
 
 

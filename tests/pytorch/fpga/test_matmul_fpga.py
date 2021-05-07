@@ -1,4 +1,4 @@
-# Tests for matmul: many of these can be implemented by using einsum
+# Tests for Matmul Node Expansion: many of these can be implemented by using einsum
 
 # TODO:
 # - some deadlock for small matrices, such as (2, 16, 8) (2, 8, 8), not clear why. I suspect some problem with draining conditions
@@ -161,8 +161,6 @@ if __name__ == "__main__":
     vec_width = args["W"]
     t = args["test"]
 
-    #
-    # vec_width = args["W"]
     if t:
         test()
     else:

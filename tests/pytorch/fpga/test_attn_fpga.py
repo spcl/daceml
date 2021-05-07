@@ -109,7 +109,6 @@ def test_attn(batch_size, configuration_name, execute_cpu_dace=False):
         dace_model = DaceModule(ptmodel,
                                 dummy_inputs=(Q, K, V),
                                 auto_optimize=False)
-    dace_model.sdfg.save('/tmp/out_pre.sdfg')
 
     ################################################
     # Apply transformations
@@ -117,7 +116,6 @@ def test_attn(batch_size, configuration_name, execute_cpu_dace=False):
         [ConstantFolding, RedundantSecondArray],
         validate_all=True,
         print_report=True)
-    dace_model.sdfg.save('/tmp/out.sdfg')
     if execute_cpu_dace:
         dace_outputs_1 = dace_model(Q, K, V)
         assert np.allclose(pt_outputs[0].detach().numpy(),
@@ -150,7 +148,6 @@ def test_attn(batch_size, configuration_name, execute_cpu_dace=False):
     # vectorize input B matmul, output not vectorized
     input_data_name = "ONNX___tmp47"
     utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
-    sdfg.save('/tmp/out_vectorized.sdfg')
     # ##################################
 
     ###################################################
@@ -162,12 +159,10 @@ def test_attn(batch_size, configuration_name, execute_cpu_dace=False):
     donnx.ONNXReduceSum.default_implementation = "fpga"
 
     sdfg.apply_transformations([FPGATransformSDFG], validate=False)
-    sdfg.save('/tmp/out_fpga_pre_inlined.sdfg')
     sdfg.expand_library_nodes()
 
     sdfg.apply_transformations_repeated([InlineSDFG])
     sdfg.apply_transformations_repeated(PruneConnectors)
-    sdfg.save('/tmp/out_fpga.sdfg')
 
     # Streaming composition (Prov. disabled)
     # sdfg.apply_transformations_repeated([InlineSDFG, sm.StreamingMemory],
@@ -180,7 +175,6 @@ def test_attn(batch_size, configuration_name, execute_cpu_dace=False):
     #                                         "storage": StorageType.FPGA_Local
     #                                     }],
     #                                     print_report=True)
-    sdfg.save('/tmp/out_fpga.sdfg')
 
     dace_output_fpga = dace_model(Q, K, V)
 
