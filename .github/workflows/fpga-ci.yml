@@ -27,12 +27,13 @@ jobs:
           make clean install
 
       - name: Run Intel FPGA tests
+        env:
+          NOSTATUSBAR: 1
+          COVERAGE_RCFILE: `pwd`/.coveragerc
+          PYTHON_BINARY: "coverage run --source=daceml --parallel-mode"
         run: |
-          export NOSTATUSBAR=1
-          export COVERAGE_RCFILE=`pwd`/.coveragerc
-          export PYTHON_BINARY="coverage run --source=daceml --parallel-mode"
           . /opt/setupenv
-          . venv/bin/activate && $PYTHON_BINARY tests/pytorch/fpga/intel_fpga_test.py --no-parallel
+          make test-intel_fpga
 
       - name: Upload coverage
         run: make codecov

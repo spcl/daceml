@@ -18,13 +18,13 @@ from fpga_testing import (Colors, DACE_DIR, TEST_DIR, cli, dump_logs,
 # (relative path, sdfg name(s), run synthesis, args to executable)
 # Whenever is supported, the "-test" flag enable more extensive tests
 TESTS = [
-    ("pytorch/fpga/test_gemm_fpga.py", "dace_model", ["-test"]),
-    ("pytorch/fpga/test_im2col_conv2d_fpga.py", "dace_model", ["-test"]),
-    ("pytorch/fpga/test_matmul_fpga.py", "dace_model", ["-test"]),
-    ("pytorch/fpga/test_maxpool2d_fpga.py", "dace_model", []),
-    ("pytorch/fpga/test_relu_fpga.py", "dace_model", []),
-    ("pytorch/fpga/test_reshape_fpga.py", "dace_model", ["-test"]),
-    ("pytorch/fpga/test_softmax_fpga.py", "dace_model", []),
+    ("pytorch/fpga/test_gemm_fpga.py", "dace_model_1", ["-test"]),
+    ("pytorch/fpga/test_im2col_conv2d_fpga.py", "dace_model_1", ["-test"]),
+    ("pytorch/fpga/test_matmul_fpga.py", "dace_model_1", ["-test"]),
+    ("pytorch/fpga/test_maxpool2d_fpga.py", "dace_model_1", []),
+    ("pytorch/fpga/test_relu_fpga.py", "dace_model_1", []),
+    ("pytorch/fpga/test_reshape_fpga.py", "dace_model_1", ["-test"]),
+    ("pytorch/fpga/test_softmax_fpga.py", "dace_model_1", []),
 
     # Multi Head Attention
     ("pytorch/fpga/test_attn_fpga.py", "dace_model", []),
