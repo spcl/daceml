@@ -204,5 +204,8 @@ def onnx_type_str_to_typeclass(onnx_str) -> Union[typeclass, None]:
 def clean_onnx_name(name: str) -> str:
     """Modifies a onnx name that is potentially invalid in dace
        to make it valid"""
-    return "ONNX_" + name.replace(".", "DOT").replace(":", "COLON").replace(
+    # if the first character is a digit, add the ONNX_ prefix
+    if re.match("^[0-9]", name):
+        name = f"ONNX_{name}"
+    return name.replace(".", "DOT").replace(":", "COLON").replace(
         "/", "SLASH").replace("-", "DASH")
