@@ -10,6 +10,7 @@ import dace.library
 import dace.sdfg.nodes as nd
 import numpy as np
 from dace import dtypes, SDFGState, SDFG
+from dace.codegen import cppunparse
 from dace.libraries.standard.nodes.code import _get_inputs_and_outputs
 
 from daceml.onnx.binary_utilities.op_checker import check_op
@@ -18,6 +19,7 @@ from daceml.onnx.environments import ONNXRuntime, ONNXRuntimeCUDA
 from daceml.onnx.nodes.node_utils import get_position
 from daceml.onnx.schema import ONNXAttributeType, _ATTR_TYPE_TO_PYTHON_TYPE, ONNXAttribute
 from daceml.ort_api import ORTAPIError
+from daceml.util import utils
 
 log = logging.getLogger(__name__)
 
@@ -259,7 +261,8 @@ def emit_setup_code_for_ortvalue(node: nd.CodeNode, parameter_name: str,
         ));
         """.format(mem_info=mem_info,
                    edge_connector_name=edge_connector_name,
-                   data_size=reduce(lambda x, y: x * y, desc.shape),
+                   data_size=cppunparse.pyexpr2cpp(str(utils.prod(
+                       desc.shape))),
                    ctype=desc.dtype.ctype,
                    type_str=typeclass_to_onnx_str(desc.dtype).upper(),
                    ort_value_name=ort_value_name,
@@ -299,7 +302,8 @@ def emit_setup_code_for_ortvalue(node: nd.CodeNode, parameter_name: str,
                    data=data,
                    mem_info=mem_info,
                    parameter_name=parameter_name,
-                   data_size=reduce(lambda x, y: x * y, desc.shape),
+                   data_size=cppunparse.pyexpr2cpp(str(utils.prod(
+                       desc.shape))),
                    ctype=desc.dtype.ctype,
                    dims_size=len(desc.shape),
                    type_str=typeclass_to_onnx_str(desc.dtype).upper(),

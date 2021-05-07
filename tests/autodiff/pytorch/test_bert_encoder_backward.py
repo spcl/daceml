@@ -4,20 +4,19 @@ import torch
 from transformers import BertConfig, BertLayer
 
 from daceml.pytorch import DaceModule
+from daceml.testing import copy_to_gpu, torch_tensors_close
 
 
-@pytest.mark.slow
 @pytest.mark.pure
 def test_bert_encoder_backward(gpu, sdfg_name):
     batch_size = 2
     seq_len = 512
     hidden_size = 768
 
-    input = torch.randn([batch_size, seq_len, hidden_size])
-    ptmodel = BertLayer(BertConfig(hidden_act="relu")).eval()
+    input = copy_to_gpu(gpu, torch.randn([batch_size, seq_len, hidden_size]))
+    ptmodel = copy_to_gpu(gpu, BertLayer(BertConfig(hidden_act="relu")).eval())
 
     dace_model = DaceModule(ptmodel,
-                            cuda=gpu,
                             train=False,
                             backward=True,
                             sdfg_name=sdfg_name,
@@ -31,7 +30,4 @@ def test_bert_encoder_backward(gpu, sdfg_name):
     dace_input.requires_grad = True
     dace_model(dace_input).sum().backward()
 
-    diff = np.abs(dace_input.grad.detach().numpy() -
-                  ptinput.grad.detach().numpy())
-
-    assert np.max(diff) < 1e-4
+    torch_tensors_close("input_grad", ptinput.grad, dace_input.grad)
