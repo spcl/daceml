@@ -253,7 +253,6 @@ class ONNXModel:
                         raise ValueError(
                             "Could not find array with name '{}'".format(name))
                     self._add_value_info(self.value_infos[name])
-
                 # get the access node
                 if name in access_nodes:
                     access = access_nodes[name]

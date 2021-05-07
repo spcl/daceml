@@ -218,3 +218,10 @@ def remove_node_and_computation(sdfg: dace.SDFG, state: dace.SDFGState,
             if len(state.out_edges(
                     next_node)) == 0 and not data_used_in_other_states:
                 queue.append(next_node)
+
+    # remove all now useless data descriptors
+    all_read_or_written_data = set(e.data.data for s in sdfg.nodes()
+                                   for e in s.edges())
+    to_delete = set(sdfg.arrays).difference(all_read_or_written_data)
+    for name in to_delete:
+        del sdfg.arrays[name]
