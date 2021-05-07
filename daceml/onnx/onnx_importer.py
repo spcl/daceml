@@ -105,7 +105,8 @@ class ONNXModel:
                  fold_constants: bool = True,
                  parent_pytorch_module: Optional[torch.nn.Module] = None,
                  storage: Optional[dtypes.StorageType] = None,
-                 save_transients: Optional[Dict[str, torch.Tensor]] = None):
+                 save_transients: Optional[Dict[str, torch.Tensor]] = None,
+                 auto_merge: bool = False):
         """
         :param name: the name for the SDFG.
         :param model: the model to import.
@@ -120,6 +121,7 @@ class ONNXModel:
         :param storage: the storage type of the parameters, inputs and outputs. If None, will be set according to
                         ``cuda``.
         :param save_transients: if not None, save transients to this dict (for debugging).
+        :param auto_merge: whether to automatically merge symbolic shapes in symbolic shape inference.
         """
 
         for opset in model.opset_import:
@@ -130,7 +132,7 @@ class ONNXModel:
 
         self.do_auto_optimize = auto_optimize
         if infer_shapes:
-            model = shape_inference.infer_shapes(model)
+            model = shape_inference.infer_shapes(model, auto_merge=auto_merge)
 
         graph: onnx.GraphProto = model.graph
         self.save_transients = save_transients
@@ -454,10 +456,7 @@ class ONNXModel:
                     desc = self.sdfg.arrays[node.data]
                     if desc.transient:
                         desc.transient = False
-                        transient_kwargs[node.data] = create_output_array(
-                            {}, desc, use_torch=True, zeros=False)
-                        self.save_transients[node.data] = transient_kwargs[
-                            node.data]
+                        transient_kwargs[node.data] = desc
 
         if self.do_auto_optimize:
             self.auto_optimize()
@@ -465,6 +464,13 @@ class ONNXModel:
         compiled = self.compile_and_init()
 
         inputs, symbols, outputs = self._call_args(args=args, kwargs=kwargs)
+
+        for name, desc in transient_kwargs.items():
+            transient_kwargs[name] = create_output_array(symbols,
+                                                         desc,
+                                                         use_torch=True,
+                                                         zeros=False)
+            self.save_transients[name] = transient_kwargs[name]
 
         compiled(**inputs, **outputs, **self.initialized_parameters, **symbols,
                  **transient_kwargs)
