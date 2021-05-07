@@ -32,7 +32,7 @@ jobs:
           export COVERAGE_RCFILE=`pwd`/.coveragerc
           export PYTHON_BINARY="coverage run --source=daceml --parallel-mode"
           . /opt/setupenv
-          $PYTHON_BINARY tests/pytorch/fpga/intel_fpga_test.py
+          $PYTHON_BINARY tests/pytorch/fpga/intel_fpga_test.py --no-parallel
 
       - name: Upload coverage
         run: make codecov
