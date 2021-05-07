@@ -40,12 +40,13 @@ class ONNXForward(abc.ABC):
         ...
 
     @classmethod
-    def registered_implementations(cls, op_name: str) -> typing.List[typing.Tuple[str, "ONNXForward"]]:
+    def registered_implementations(
+            cls,
+            op_name: str) -> typing.List[typing.Tuple[str, "ONNXForward"]]:
         impls = []
         for impl, args in cls.extensions().items():
             if "op" in args and args["op"] == op_name:
                 impls.append((args["name"], impl))
-
 
         return impls
 

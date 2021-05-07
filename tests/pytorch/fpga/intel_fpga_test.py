@@ -31,11 +31,11 @@ TESTS = [
 
     # Streaming composition test
     ("pytorch/fpga/test_streaming_conv_relu_mp.py", "dace_model", []),
-
 ]
 
 
-def run(path: Path, sdfg_names: Union[str, Iterable[str]], args: Iterable[Any]):
+def run(path: Path, sdfg_names: Union[str, Iterable[str]],
+        args: Iterable[Any]):
 
     # Set environment variables
     os.environ["DACE_compiler_fpga_vendor"] = "intel_fpga"
