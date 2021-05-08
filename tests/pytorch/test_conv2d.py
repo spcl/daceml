@@ -22,7 +22,7 @@ def test_conv2d(default_implementation, sdfg_name):
     ptmodel = Model()
     x = torch.rand(1, 1, 8, 8)
 
-    @dace_module
+    @dace_module(sdfg_name=sdfg_name)
     class TestDecorator(Model):
         pass
 
