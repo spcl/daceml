@@ -11,6 +11,7 @@ import torch
 import torch.nn as nn
 from torch.onnx import TrainingMode
 
+from daceml.pytorch.cpp_codegen import get_function_for_module
 from daceml.autodiff.pytorch import make_backward_function
 from daceml.onnx import ONNXModel
 from daceml.onnx.shape_inference import infer_shapes
@@ -194,7 +195,8 @@ class DaceModule(nn.Module):
                 # pytorch constant folding will add new unnamed inputs to the graph and remove some of the
                 # named parameters of the model: this means that we can't match with the state dict
                 # anymore, so we disable this. Our CF is more flexible.
-                do_constant_folding=False)
+                do_constant_folding=False,
+                keep_initializers_as_inputs=True)
 
             onnx_model = infer_shapes(onnx.load(export_name))
             self.onnx_model = onnx_model
@@ -219,16 +221,23 @@ class DaceModule(nn.Module):
                     hook(function._forward_model.sdfg, function._backward_sdfg)
 
                 function._forward_model.compile_and_init()
+                module_func = get_function_for_module(self)
 
                 def forward(*args):
                     args_and_params = list(args)
                     args_and_params.extend(self.parameters())
-                    return function.apply(*args_and_params)
+                    return module_func(*args_and_params)
 
                 return forward
             else:
+                module_func = get_function_for_module(self)
 
-                return dace_model
+                def forward(*args):
+                    args_and_params = list(args)
+                    args_and_params.extend(self.parameters())
+                    return module_func(*args_and_params)
+
+                return forward
 
     def forward(self, *actual_inputs):
         """ Execute the forward pass using the traced ``module``."""
