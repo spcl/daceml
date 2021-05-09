@@ -1,5 +1,6 @@
 """ Code generation for PyTorch C++ dispatched operators. """
 import copy
+import dataclasses
 import os
 import operator
 import itertools
@@ -7,13 +8,22 @@ from typing import List, Tuple, Callable
 
 import numpy as np
 import torch
-from dace import dtypes as dt, data
+from dace import dtypes as dt, data, ctypes
 import dace.library
 from dace.codegen import targets, compiler
 from dace.codegen.codeobject import CodeObject
+from dace.codegen.compiled_sdfg import CompiledSDFG
 
 from daceml.onnx.converters import clean_onnx_name
 from daceml.util import is_cuda, platform_library_name
+
+
+@dataclasses.dataclass
+class CompiledTorchFunction:
+    """ A tuple holding the context for an executable function """
+    function: Callable  #: the torch callable function
+    compiled_sdfg: CompiledSDFG  #: the compiled SDFG holding the state
+    ptr: torch.Tensor  #: the state ptr argument to use when calling the function
 
 
 def get_arglist(
@@ -24,9 +34,14 @@ def get_arglist(
         :return: the list of strings that are the argnames to the module, and the list of names of the outputs
     """
     arglist = [clean_onnx_name(i) for i in module.dace_model.inputs]
-    arglist.extend(
+
+    # add any parameters that are required
+    named_params = [
         clean_onnx_name(n) for n, _ in module.model.named_parameters()
-        if clean_onnx_name(n) not in arglist)
+    ]
+    arglist.extend(n for n in named_params
+                   if n not in arglist and n in module.sdfg.arrays
+                   and not module.sdfg.arrays[n].transient)
 
     outputs = [clean_onnx_name(o) for o in module.dace_model.outputs]
     return arglist, outputs
@@ -122,6 +137,12 @@ def constant_initializer_code(name: str, desc: data.Data, value) -> str:
         return f"{desc.dtype.ctype} {name} = {str(value.item())};"
 
 
+def code_for_backward_function(module: 'daceml.pytorch.DaceModule',
+                               forward_sdfg: dace.SDFG,
+                               backward_sdfg: dace.SDFG) -> str:
+    pass
+
+
 def code_for_module(module: 'daceml.pytorch.DaceModule') -> str:
     """ Generate the code for an operator that calls the sdfgs in the module.
 
@@ -147,13 +168,13 @@ using torch::autograd::tensor_list;
 using torch::autograd::AutogradContext;
 
 TORCH_LIBRARY(daceml_{sdfg_name}, m) {{
-    m.def("{sdfg_name}({", ".join('Tensor ' + arg for arg in inputs)}) -> {'Tensor' if len(outputs) == 1
+    m.def("{sdfg_name}(int handle_ptr, {", ".join('Tensor ' + arg for arg in inputs)}) -> {'Tensor' if len(outputs) == 1
         else "(" + ", ".join(['Tensor'] * len(outputs)) + ")"}");
 }}
 
 // function definition
 {"Tensor" if len(outputs) == 1 else f"std::tuple<{', '.join(['Tensor'] * len(outputs))}>"}
-{sdfg_name}({",".join(f"const Tensor& {name}_" for name in inputs)}) {{
+{sdfg_name}(int64_t handle_ptr, {",".join(f"const Tensor& {name}_" for name in inputs)}) {{
 
     // TODO check contiguous
 
@@ -162,15 +183,11 @@ TORCH_LIBRARY(daceml_{sdfg_name}, m) {{
     
     {ptr_init_code}
 
-    // initialize SDFG
-    // TODO move this outside
-    {sdfg_name}Handle_t handle = __dace_init_{sdfg_name}({init_arguments});
+    // get SDFG state handle
+    {sdfg_name}Handle_t handle = reinterpret_cast<{sdfg_name}Handle_t>(handle_ptr);
 
     // call SDFG
     __program_{sdfg_name}(handle, {sdfg_call_arguments});
-
-    // exit SDFG
-    __dace_exit_{sdfg_name}(handle);
 
     // return to torch
     return {f"{outputs[0]}_" if len(outputs) == 1
@@ -183,20 +200,31 @@ TORCH_LIBRARY_IMPL(daceml_{sdfg_name}, {'CUDA' if module.cuda else 'CPU'}, m) {{
         """
 
 
-def get_function_for_module(module: 'daceml.pytorch.DaceModule') -> Callable:
+def get_function_for_module(module: 'daceml.pytorch.DaceModule',
+                            dummy_inputs) -> CompiledTorchFunction:
     """ Get a torch callable for the module. This will compile the sdfg, compile a PyTorch C++ operator, register it
         with PyTorch and return the function that calls it.
 
         :param module: the module.
+        :param dummy_inputs: dummy inputs to initialize the model with.
         :return: the callable function for the SDFG.
     """
 
     # build the SDFG
     sdfg_build_path = os.path.abspath(module.sdfg.build_folder)
-    module.sdfg.compile()
+    compiled: CompiledSDFG = module.dace_model.compile_and_init()
+
+    # construct the arguments and initialize the SDFG
+    inputs, symbols, outputs = module.dace_model._call_args(
+        args=tuple(dummy_inputs) + tuple(module.parameters()), kwargs={})
+    _, initargtuple = compiled._construct_args(
+        **inputs, **outputs, **symbols,
+        **module.dace_model.initialized_parameters)
+    compiled.initialize(*initargtuple)
+    handle_ptr = torch.tensor([compiled._libhandle.value]).squeeze(0)
 
     class SDFGEnvironment:
-        """ Environment used to build PyTorch C++ Operators
+        """ Environment for the SDFG
         """
 
         cmake_minimum_version = None
@@ -238,5 +266,8 @@ def get_function_for_module(module: 'daceml.pytorch.DaceModule') -> Callable:
         os.path.join(torch_module_build_path, "build",
                      platform_library_name(libname)))
 
-    return operator.attrgetter(
-        f"daceml_{module.sdfg.name}.{module.sdfg.name}")(torch.ops)
+    result = CompiledTorchFunction(function=operator.attrgetter(
+        f"daceml_{module.sdfg.name}.{module.sdfg.name}")(torch.ops),
+                                   compiled_sdfg=compiled,
+                                   ptr=handle_ptr)
+    return result

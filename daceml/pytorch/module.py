@@ -229,12 +229,11 @@ class DaceModule(nn.Module):
 
                 return forward
             else:
-                module_func = get_function_for_module(self)
+                self.fwd_func = get_function_for_module(self, dummy_inputs)
 
                 def forward(*args):
-                    args_and_params = list(args)
-                    args_and_params.extend(self.parameters())
-                    return module_func(*args_and_params)
+                    return self.fwd_func.function(self.fwd_func.ptr, *args,
+                                                  *self.parameters())
 
                 return forward
 
