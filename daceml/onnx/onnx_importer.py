@@ -436,14 +436,15 @@ class ONNXModel:
         # copy all parameters to the device
         self.initialized_parameters = {}
         for name, arr in self.weights.items():
-            desc = self.sdfg.arrays[clean_onnx_name(name)]
-            if type(desc) is dt.Scalar:
-                self.initialized_parameters[clean_onnx_name(
-                    name)] = arr.cpu().numpy()[()]
-            else:
-                cuda = is_cuda(desc.storage)
-                self.initialized_parameters[clean_onnx_name(
-                    name)] = arr.cuda() if cuda else arr
+            if clean_onnx_name(name) in self.sdfg.arrays:
+                desc = self.sdfg.arrays[clean_onnx_name(name)]
+                if type(desc) is dt.Scalar:
+                    self.initialized_parameters[clean_onnx_name(
+                        name)] = arr.cpu().numpy()[()]
+                else:
+                    cuda = is_cuda(desc.storage)
+                    self.initialized_parameters[clean_onnx_name(
+                        name)] = arr.cuda() if cuda else arr
 
         compiled_sdfg = self.sdfg.compile()
         for _, hook in self.post_compile_hooks.items():
