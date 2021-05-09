@@ -72,7 +72,7 @@ class LayerNorm(nodes.LibraryNode):
 
     axis = Property(dtype=int)
 
-    def __init__(self, name, axis, location=None):
+    def __init__(self, name, axis=0, location=None):
         in_connectors = {"_X", "_scale", "_bias"}
         out_connectors = {"_Y", "_mean", "_inv_std_var"}
         super().__init__(name,

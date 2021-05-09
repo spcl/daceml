@@ -4,7 +4,7 @@ import typing
 from functools import wraps
 
 import dace
-from dace import nodes as nd
+from dace import config, nodes as nd
 from dace.libraries import blas
 from dace.sdfg.state import MultiConnectorEdge
 from dace.transformation import interstate, dataflow
@@ -124,9 +124,10 @@ def expand_onnx_nodes(sdfg: dace.SDFG, expand_predicate=None):
             elif (isinstance(node, ONNXOp) or isinstance(node, blas.MatMul)):
                 if expand_predicate is None or expand_predicate(node):
                     impl_name = node.expand(sdfg, state)
-                    print(
-                        "Automatically expanded library node \"{}\" with implementation \"{}\"."
-                        .format(str(node), impl_name))
+                    if config.Config.get_bool('debugprint'):
+                        print(
+                            "Automatically expanded library node \"{}\" with implementation \"{}\"."
+                            .format(str(node), impl_name))
                     # We made a copy of the original list of nodes, so we keep
                     # iterating even though this list has now changed
                     expanded_something = True
