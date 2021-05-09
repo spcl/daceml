@@ -8,6 +8,7 @@ import dace
 from dace import config, nodes as nd
 from dace.libraries import blas
 from dace.sdfg.state import MultiConnectorEdge
+from daceml.onnx.converters import clean_onnx_name
 from dace.transformation import interstate, dataflow
 from dace import SDFG, SDFGState
 import dace.data as dt
@@ -203,3 +204,12 @@ def remove_output_connector(sdfg: dace.SDFG, state: dace.SDFGState,
                 )
 
             queue.append(e.dst)
+
+
+def find_unclean_onnx_name(model: 'daceml.onnx.onnx_importer.ONNXModel',
+                           name: str) -> str:
+    unclean_name = [n for n in model.weights if clean_onnx_name(n) == name]
+    if len(unclean_name) != 1:
+        raise ValueError(f"Could not find unclean name for name {name}")
+    return unclean_name[0]
+
