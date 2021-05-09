@@ -3,7 +3,7 @@ from dace.transformation.dataflow import RedundantSecondArray
 
 import daceml.onnx as donnx
 from daceml.onnx.op_implementations.cudnn_implementations import CudnnConvolution
-from daceml.transformation import ConstantFolding
+from daceml.transformation import ConstantFolding, PadConvFusion, ConstantDeviceCopyElimination
 
 import urllib.request
 urllib.request.urlretrieve('http://spclstorage.inf.ethz.ch/~talbn/efficientnet-b0-block.onnx', 'efficientnet-b0-block.onnx')
@@ -18,13 +18,10 @@ import onnx
 onnx_model = onnx.load('efficientnet-b0-block.onnx')
 dace_model = donnx.ONNXModel("mbconv", onnx_model, cuda=True)
 
+dace_model.sdfg.apply_transformations_repeated({ConstantDeviceCopyElimination}, validate_all=True, strict=True)
+
 dace_model.sdfg.view()
-dace_model.sdfg.apply_transformations_repeated(
-        {
-            ConstantFolding, RedundantSecondArray,
-        },
-        validate_all=True,
-        strict=True)
+dace_model.sdfg.apply_transformations_repeated({PadConvFusion}, validate_all=True, strict=True)
 dace_model.sdfg.view()
 
 CudnnConvolution.default_algorithm = "gemm"
