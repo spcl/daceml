@@ -1,6 +1,7 @@
 import functools
 import logging
 import typing
+import collections
 from functools import wraps
 
 import dace
@@ -178,3 +179,27 @@ def iterables_equal(a, b) -> bool:
 
 def prod(sequence):
     return functools.reduce(lambda a, b: a * b, sequence, 1)
+
+
+def remove_output_connector(sdfg: dace.SDFG, state: dace.SDFGState,
+                            node: nd.Node, conn_name: str):
+    """ Remove an output connector (only possible if the connector doesn't write to a non-transient).
+        :param sdfg: the sdfg containing the node.
+        :param state: the state containing the node.
+        :param node: the node
+        :param conn_name: the name of the connector to remove
+    """
+    queue = collections.deque(
+        e.dst for e in state.out_edges_by_connector(node, conn_name))
+    while len(queue) > 0:
+        current_node = queue.popleft()
+
+        edges = state.out_edges(current_node)
+        state.remove_node(current_node)
+        for e in edges:
+            if not sdfg.arrays[e.data.data].transient:
+                raise ValueError(
+                    "Tried to remove a connector that wrote to a non-transient"
+                )
+
+            queue.append(e.dst)

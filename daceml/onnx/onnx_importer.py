@@ -20,6 +20,8 @@ from daceml.onnx.converters import convert_attribute_proto, onnx_tensor_type_to_
 from daceml.onnx.schema import ONNXParameterType
 from daceml.onnx.nodes.onnx_op import get_onnx_node, has_onnx_node, ONNXOp
 from daceml.util import utils
+from dace.transformation import dataflow
+from daceml import transformation
 
 log = logging.getLogger(__name__)
 
@@ -297,7 +299,13 @@ class ONNXModel:
                         op_node, conn_name, access, None,
                         dace.Memlet.from_array(clean_onnx_name(name),
                                                data_desc))
-
+        if self.fold_constants:
+            log.debug("Applying constant folding")
+            self.sdfg.apply_transformations_repeated([
+                transformation.ConstantFolding, dataflow.RedundantSecondArray
+            ],
+                                                     validate_all=True,
+                                                     strict=True)
         if self.cuda:
             self.sdfg.apply_gpu_transformations()
 
