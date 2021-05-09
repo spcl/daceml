@@ -195,7 +195,7 @@ class DaceModule(nn.Module):
                 function = make_backward_function(dace_model)
 
                 for _, hook in self.post_autodiff_hooks.items():
-                    hook(function._forward_model.sdfg, function._backward_sdfg)
+                    hook(function._model.sdfg, function._model.backward_sdfg)
 
                 def forward(*args):
                     args_and_params = list(args)

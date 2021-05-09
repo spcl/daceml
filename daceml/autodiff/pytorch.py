@@ -97,10 +97,10 @@ def make_backward_function(model: ONNXModel,
             forward_sdfg.arrays[name].transient = False
 
     backward_sdfg.validate()
+    model.backward_sdfg = backward_sdfg
 
     class DaceFunction(torch.autograd.Function):
-        _backward_sdfg = backward_sdfg
-        _forward_model = model
+        _model = model
         _backward_result = backward_result
 
         @staticmethod
@@ -132,8 +132,7 @@ def make_backward_function(model: ONNXModel,
                     if "Dropout" in inp:
                         inputs[inp][:] = 1
 
-            DaceFunction._forward_model.sdfg(**inputs, **symbols, **params,
-                                             **outputs)
+            DaceFunction._model.sdfg(**inputs, **symbols, **params, **outputs)
 
             def _get_arr(name, desc):
                 if isinstance(desc, dt.Scalar):
@@ -204,8 +203,8 @@ def make_backward_function(model: ONNXModel,
                     use_torch=True,
                     zeros=True)
 
-            DaceFunction._backward_sdfg(**grad_values, **backward_inputs,
-                                        **given_grads)
+            DaceFunction._model.backward_sdfg(**grad_values, **backward_inputs,
+                                              **given_grads)
 
             return tuple(grad_values.values())
 
