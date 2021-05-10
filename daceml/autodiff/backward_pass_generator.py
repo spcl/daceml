@@ -262,6 +262,8 @@ class BackwardPassGenerator:
                               outputs must be a list containing a single scalar.
         :param backward_state: the state which the backward pass should be added to (must be added to `backward_sdfg`
                                before calling this method).
+        :param zero_non_transients: Whether non-transient gradient buffers should be zero initialized in the backward
+                                    SDFG.
         :param apply_strict: whether to apply strict transformations before creating the backward pass.
     """
     def __init__(
@@ -273,6 +275,7 @@ class BackwardPassGenerator:
             required_gradients: List[Union[nd.AccessNode, str]],
             backward_sdfg: SDFG,  # this can be the same as SDFG
             backward_state: SDFGState,
+            zero_non_transients: bool,
             apply_strict=False):
 
         if backward_state not in backward_sdfg.nodes():
@@ -329,6 +332,7 @@ class BackwardPassGenerator:
         # checks if backward has already been applied
         self._applied = False
         self.apply_strict = apply_strict
+        self.zero_non_transients = zero_non_transients
 
         for outp in self.given_gradients:
             if outp not in self.forward_state:
@@ -570,10 +574,15 @@ class BackwardPassGenerator:
         """ Add a state where `data` is initialized with zero.
             self.sdfg.arrays[data] should have type Union[dt.Array, dt.Scalar, dt.View]
         """
+        arr = self.backward_sdfg.arrays[data]
+
+        # No need to initialize if gradients point to outputs
+        if not self.zero_non_transients and not arr.transient:
+            return
+
         state = self.backward_sdfg.add_state_before(self.backward_state,
                                                     label="init_" + data)
 
-        arr = self.backward_sdfg.arrays[data]
         scalar = 0
         if dtypes.can_access(dtypes.ScheduleType.CPU_Multicore, arr.storage):
             cuda = False
@@ -1122,7 +1131,8 @@ class BackwardPassGenerator:
                                     given_gradients=given_gradients,
                                     required_gradients=required_gradients,
                                     backward_sdfg=reverse_sdfg,
-                                    backward_state=backward_state)
+                                    backward_state=backward_state,
+                                    zero_non_transients=True)
         backward_result, _, backward_input_arrays = gen.backward()
 
         # we need to defer add edges until after the arrays have been added because creation of the nested
