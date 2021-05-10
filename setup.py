@@ -1,5 +1,5 @@
 import os
-from setuptools import setup
+from setuptools import setup, find_packages
 
 with open("README.md", "r") as fp:
     long_description = fp.read()
@@ -20,7 +20,8 @@ setup(
         "Operating System :: OS Independent",
     ],
     python_requires='>=3.6',
-    packages=['daceml'],
+    packages=find_packages(
+        exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
     package_data={'': ['*.cpp']},
     install_requires=[
         'dace@git+https://github.com/spcl/dace.git@dml_misc_fixes2',
