@@ -14,8 +14,10 @@ from dace.transformation.dataflow import PruneConnectors
 from dace.transformation.dataflow import streaming_memory as sm
 from dace import StorageType
 from dace import SDFG
+from multiprocessing import Process, Queue
 import argparse
 import dace
+import pytest
 from daceml.util import utils
 ###################################################################
 # Transformer configurations to be used for MHA
@@ -71,7 +73,10 @@ configurations = {
 }
 
 
-def test_attn(batch_size, configuration_name, execute_cpu_dace=False):
+def evaluate(batch_size=1,
+             configuration_name="tiny",
+             execute_cpu_dace=False,
+             queue=None):
 
     B = batch_size
     conf = configurations[configuration_name]
@@ -178,19 +183,34 @@ def test_attn(batch_size, configuration_name, execute_cpu_dace=False):
 
     dace_output_fpga = dace_model(Q, K, V)
 
-    diff0 = np.linalg.norm(pt_outputs[0].detach().numpy() -
-                           dace_output_fpga[0].numpy()) / np.linalg.norm(
-                               pt_outputs[0].detach().numpy())
-    diff1 = np.linalg.norm(pt_outputs[1].detach().numpy() -
-                           dace_output_fpga[1].numpy()) / np.linalg.norm(
-                               pt_outputs[1].detach().numpy())
+    if queue is not None:
+        diff0 = np.linalg.norm(pt_outputs[0].detach().numpy() -
+                               dace_output_fpga[0].numpy()) / np.linalg.norm(
+                                   pt_outputs[0].detach().numpy())
+        diff1 = np.linalg.norm(pt_outputs[1].detach().numpy() -
+                               dace_output_fpga[1].numpy()) / np.linalg.norm(
+                                   pt_outputs[1].detach().numpy())
+        queue.put(diff0)
+        queue.put(diff1)
+    else:
+        assert np.allclose(pt_outputs[0].detach().numpy(),
+                           dace_output_fpga[0],
+                           atol=1e-06)
+        assert np.allclose(pt_outputs[1].detach().numpy(),
+                           dace_output_fpga[1],
+                           atol=1e-06)
+    del dace_model, ptmodel, Q, K, V
 
-    assert np.allclose(pt_outputs[0].detach().numpy(),
-                       dace_output_fpga[0],
-                       atol=1e-06)
-    assert np.allclose(pt_outputs[1].detach().numpy(),
-                       dace_output_fpga[1],
-                       atol=1e-06)
+
+@pytest.mark.fpga
+def test():
+    # Multiprocess is needed for testing otherwise Intel Compiler mess up with threads
+    queue = Queue()
+    p = Process(target=evaluate, args=(1, "tiny", False, queue))
+    p.start()
+    p.join()
+    assert (queue.get() < 1e-6)
+    assert (queue.get() < 1e-6)
 
 
 if __name__ == "__main__":
@@ -205,4 +225,4 @@ if __name__ == "__main__":
     args = vars(parser.parse_args())
     B = args["B"]
     conf = args["conf"]
-    test_attn(B, conf, False)
+    evaluate(B, conf, False)

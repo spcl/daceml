@@ -4,13 +4,11 @@ from dace.transformation.interstate import FPGATransformSDFG
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import argparse
 import numpy as np
 
-import daceml.onnx as donnx
 from daceml.pytorch import DaceModule, dace_module
-import copy
+import pytest
 import dace
 from daceml.util import utils
 from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
@@ -119,7 +117,8 @@ def run(input_to_constant):
     evaluate(1, 6, 5, 1, (100, 1, 28, 28), input_to_constant, False)
 
 
-def test(input_to_constant):
+@pytest.mark.fpga
+def test(input_to_constant=False):
     '''
     Evaluates multiple combination of Convolution/input size
     :return:

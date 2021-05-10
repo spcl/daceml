@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import numpy as np
-
+import pytest
 import daceml.onnx as donnx
 from daceml.pytorch import DaceModule, dace_module
 from daceml.util import utils
@@ -120,7 +120,8 @@ def run(vec_width,
     del dace_model, ptmodel, x
 
 
-def test(input_to_constant):
+@pytest.mark.fpga
+def test(input_to_constant=False):
     '''
     Evaluates multiple combination of Convolution/input size
     :return:

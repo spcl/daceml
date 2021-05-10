@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import onnx
 import numpy as np
-
+import pytest
 import daceml.onnx as donnx
 from daceml.pytorch import DaceModule, dace_module
 from daceml.onnx import ONNXModel
@@ -71,6 +71,7 @@ def run(data_shape: tuple, reshaped_shape: tuple, vec_width=1, queue=None):
     del dace_model, ptmodel, x
 
 
+@pytest.mark.fpga
 def test():
     '''
     Evaluates multiple combination of Reshape

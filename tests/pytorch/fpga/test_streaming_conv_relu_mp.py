@@ -16,6 +16,8 @@ from daceml.util import utils
 from dace.transformation.dataflow import streaming_memory as sm
 from dace.transformation.interstate import InlineSDFG
 import argparse
+import pytest
+from multiprocessing import Process, Queue
 
 
 class Model(nn.Module):
@@ -35,32 +37,13 @@ class Model(nn.Module):
         return x
 
 
-if __name__ == "__main__":
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("W",
-                        type=int,
-                        nargs="?",
-                        default=1,
-                        help="Vectorization width")
-    parser.add_argument("-input_to_constant",
-                        action="store_true",
-                        default=False,
-                        help="Apply InputToConstant")
-
-    args = vars(parser.parse_args())
-    vec_width = args["W"]
-    input_to_constant = args["input_to_constant"]
-
+def run(data_shape, vec_width=1, input_to_constant=False, queue=None):
     import daceml.onnx as donnx
     donnx.default_implementation = "pure"
     donnx.ONNXConv.default_implementation = 'pure'
 
     ptmodel = Model(input_to_constant)
-    #first conv
-    data_shape = (100, 1, 28, 28)
-    #second conv
-    # data_shape = (100, 6, 12, 12)
+
     x = torch.rand(data_shape)
     dace_model = DaceModule(ptmodel, auto_optimize=False)
     dace_output = dace_model(x)
@@ -116,4 +99,44 @@ if __name__ == "__main__":
                           ) / np.linalg.norm(torch_output_numpy)
 
     print("Difference: ", diff)
-    assert (diff < 1e-6)
+    if queue is not None:
+        queue.put(diff)
+    else:
+        assert (diff < 1e-6)
+    del ptmodel, dace_model, x
+
+
+@pytest.mark.fpga
+def test(vec_width=1, input_to_constant=False):
+    data_shape = (100, 1, 28, 28)
+    # Multiprocess is needed for testing otherwise Intel Compiler mess up with threads
+    queue = Queue()
+    p = Process(target=run, args=(data_shape, 1, False, queue))
+    p.start()
+    p.join()
+    assert (queue.get() < 1e-6)
+
+    print("Success!")
+
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("W",
+                        type=int,
+                        nargs="?",
+                        default=1,
+                        help="Vectorization width")
+    parser.add_argument("-input_to_constant",
+                        action="store_true",
+                        default=False,
+                        help="Apply InputToConstant")
+
+    args = vars(parser.parse_args())
+    vec_width = args["W"]
+    input_to_constant = args["input_to_constant"]
+    # first conv
+    data_shape = (100, 1, 28, 28)
+    # second conv
+    # data_shape = (100, 6, 12, 12)
+    run(data_shape, vec_width, input_to_constant)

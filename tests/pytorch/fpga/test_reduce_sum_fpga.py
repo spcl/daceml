@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import numpy as np
-
+import pytest
 import daceml.onnx as donnx
 from daceml.pytorch import DaceModule, dace_module
 import copy
@@ -70,8 +70,16 @@ def run(data_shape: tuple, axis, queue=None):
     del dace_model, ptmodel, x
 
 
+@pytest.mark.fpga
 def test():
-    pass  #NYI
+    data_shape = (2, 4, 16, 16)
+    # Multiprocess is needed for testing otherwise Intel Compiler mess up with threads
+    queue = Queue()
+    p = Process(target=run, args=(data_shape, 1, queue))
+    p.start()
+    p.join()
+    assert (queue.get() < 1e-6)
+    # TODO: add more tests
 
 
 if __name__ == "__main__":

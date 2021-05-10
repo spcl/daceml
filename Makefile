@@ -52,8 +52,8 @@ test-parallel:
 test-gpu: 
 	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests --gpu
 
-test-intel_fpga:
-	$(ACTIVATE) $(PYTHON_BINARY) tests/pytorch/fpga/intel_fpga_test.py --no-parallel
+test-intel-fpga:
+	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests/pytorch/fpga/
 
 codecov:
 	curl -s https://codecov.io/bash | bash

@@ -13,7 +13,7 @@ import numpy as np
 
 import daceml.onnx as donnx
 from daceml.pytorch import DaceModule, dace_module
-import copy
+import pytest
 import dace
 import argparse
 from daceml.util import utils
@@ -94,6 +94,7 @@ def run(x_shape: tuple, y_shape: tuple, vec_width=1, queue=None):
     del dace_model, ptmodel, x
 
 
+@pytest.mark.fpga
 def test():
     '''
     Evaluates multiple combination of Matmul/input size

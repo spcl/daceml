@@ -14,6 +14,7 @@ import dace
 import argparse
 from daceml.util import utils
 from multiprocessing import Process, Queue
+import pytest
 
 
 class Model(nn.Module):
@@ -76,6 +77,7 @@ def run(data_shape: tuple, vec_width=1, queue=None):
     del dace_model, ptmodel, x
 
 
+@pytest.mark.fpga
 def test():
     '''
     Evaluates multiple combination of input size/vecwidth

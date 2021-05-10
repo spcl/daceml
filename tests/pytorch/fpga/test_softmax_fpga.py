@@ -14,6 +14,7 @@ import numpy as np
 
 from daceml.pytorch import DaceModule, dace_module
 import argparse
+import pytest
 from multiprocessing import Process, Queue
 
 
@@ -69,8 +70,16 @@ def run(data_shape: tuple, axis, queue=None):
     del dace_model, ptmodel, x
 
 
+@pytest.mark.fpga
 def test():
-    pass  #NYI
+    data_shape = (1000, 10, 10)
+    # Multiprocess is needed for testing otherwise Intel Compiler mess up with threads
+    queue = Queue()
+    p = Process(target=run, args=(data_shape, 2, queue))
+    p.start()
+    p.join()
+    assert (queue.get() < 1e-6)
+    #TODO: add more tests
 
 
 if __name__ == "__main__":
