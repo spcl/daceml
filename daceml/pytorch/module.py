@@ -230,10 +230,10 @@ class DaceModule(nn.Module):
                 return forward
             else:
                 self.fwd_func = get_function_for_module(self, dummy_inputs)
-
+                parameters_to_pass = tuple(p.data for n, p in self.model.named_parameters() if n in self.dace_model.inputs)
                 def forward(*args):
                     return self.fwd_func.function(self.fwd_func.ptr, *args,
-                                                  *self.parameters())
+                                                  *parameters_to_pass)
 
                 return forward
 

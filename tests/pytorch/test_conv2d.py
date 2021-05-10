@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import faulthandler
 import torch.nn.functional as F
 
 import numpy as np
@@ -26,7 +27,8 @@ def test_conv2d(default_implementation, sdfg_name):
     class TestDecorator(Model):
         pass
 
-    dace_model = DaceModule(ptmodel, sdfg_name=sdfg_name)
+    dace_model = DaceModule(ptmodel, sdfg_name=sdfg_name + "_wrapped")
+    dace_model.append_post_onnx_hook("view", lambda m: m.sdfg.view())
     dace_output = dace_model(x)
 
     dace_model_decorated = TestDecorator()
@@ -35,3 +37,6 @@ def test_conv2d(default_implementation, sdfg_name):
     torch_output = ptmodel(x)
 
     assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
+
+if __name__ == '__main__':
+    test_conv2d("onnxruntime", "debugging")
