@@ -573,10 +573,16 @@ class BackwardPassGenerator:
         """ Add a state where `data` is initialized with zero.
             self.sdfg.arrays[data] should have type Union[dt.Array, dt.Scalar, dt.View]
         """
+        arr = self.backward_sdfg.arrays[data]
+
+        # No need to initialize if gradients point to outputs (correct
+        # behavior is to accumulate).
+        if not arr.transient:
+            return
+
         state = self.backward_sdfg.add_state_before(self.backward_state,
                                                     label="init_" + data)
 
-        arr = self.backward_sdfg.arrays[data]
         scalar = 0
         if dtypes.can_access(dtypes.ScheduleType.CPU_Multicore, arr.storage):
             cuda = False
