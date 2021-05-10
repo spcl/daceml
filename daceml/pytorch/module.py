@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 from torch.onnx import TrainingMode
 
-from daceml.pytorch.cpp_codegen import get_function_for_module
+from daceml.pytorch.module_codegen import get_function_for_module
 from daceml.autodiff.pytorch import make_backward_function
 from daceml.onnx import ONNXModel
 from daceml.onnx.shape_inference import infer_shapes
