@@ -214,9 +214,10 @@ def get_function_for_module(module: 'daceml.pytorch.DaceModule',
     sdfg_build_path = os.path.abspath(module.sdfg.build_folder)
     compiled: CompiledSDFG = module.dace_model.compile_and_init()
 
+    args = tuple(dummy_inputs) + tuple(p.data for n, p in module.model.named_parameters() if n in module.dace_model.inputs)
     # construct the arguments and initialize the SDFG
     inputs, symbols, outputs = module.dace_model._call_args(
-        args=tuple(dummy_inputs) + tuple(module.parameters()), kwargs={})
+        args=args, kwargs={})
     _, initargtuple = compiled._construct_args(
         **inputs, **outputs, **symbols,
         **module.dace_model.initialized_parameters)
