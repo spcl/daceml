@@ -89,9 +89,8 @@ class ReverseReduce(BackwardImplementation):
                 },
                 "__out = __in", {
                     "__out":
-                    Memlet.simple(rev_output_conn_name,
-                                  ",".join("i" + str(i) for i in all_axes),
-                                  wcr_str="lambda x, y: x + y")
+                    Memlet.simple(rev_output_conn_name, ",".join(
+                        "i" + str(i) for i in all_axes))
                 },
                 external_edges=True)
 

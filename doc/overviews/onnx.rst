@@ -62,10 +62,6 @@ This can be done using the python frontend:
 
     result = conv_program(X_arr=X, W_arr=W)
 
-.. testoutput::
-
-    Automatically expanded library node "ONNXConv" with implementation "onnxruntime".
-
 or the SDFG API:
 
 .. testcode::
@@ -96,10 +92,6 @@ or the SDFG API:
     Z = np.zeros((5, 16, 8, 8)).astype(np.float32)
 
     sdfg(X_arr=X, W_arr=W, Z_arr=Z)
-
-.. testoutput::
-
-    Automatically expanded library node "MyConvNode" with implementation "onnxruntime".
 
 .. _node_implementations:
 

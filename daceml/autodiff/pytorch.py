@@ -46,7 +46,8 @@ def make_backward_function(model: ONNXModel,
         required_gradients=[clean_onnx_name(name) for name in model.inputs],
         backward_sdfg=backward_sdfg,
         backward_state=backward_state,
-        apply_strict=apply_strict)
+        apply_strict=apply_strict,
+        zero_non_transients=False)
 
     backward_result, backward_grad_arrays, backward_input_arrays = gen.backward(
     )

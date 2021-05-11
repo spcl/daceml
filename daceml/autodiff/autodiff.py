@@ -45,5 +45,6 @@ def add_backward_pass(
                                 given_gradients=outputs,
                                 required_gradients=inputs,
                                 backward_sdfg=sdfg,
-                                backward_state=backward_state)
+                                backward_state=backward_state,
+                                zero_non_transients=False)
     gen.backward()
