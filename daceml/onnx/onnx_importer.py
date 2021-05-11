@@ -104,7 +104,9 @@ class ONNXModel:
                  auto_optimize: bool = True,
                  fold_constants: bool = True,
                  parent_pytorch_module: Optional[torch.nn.Module] = None,
-                 save_transients: Optional[Dict[str, torch.Tensor]] = None):
+                 storage: Optional[dtypes.StorageType] = None,
+                 save_transients: Optional[Dict[str, torch.Tensor]] = None,
+                 auto_merge: bool = False):
         """
         :param name: the name for the SDFG.
         :param model: the model to import.
@@ -116,7 +118,10 @@ class ONNXModel:
         :param auto_optimize: if ``True``, apply automatic optimizations before calling.
         :param parent_pytorch_module: when not None, the weight tensors are loaded from the parameters of this model
                                       rather than the ONNX graph.
+        :param storage: the storage type of the parameters, inputs and outputs. If None, will be set according to
+                        ``cuda``.
         :param save_transients: if not None, save transients to this dict (for debugging).
+        :param auto_merge: whether to automatically merge symbolic shapes in symbolic shape inference.
         """
 
         for opset in model.opset_import:
@@ -127,7 +132,7 @@ class ONNXModel:
 
         self.do_auto_optimize = auto_optimize
         if infer_shapes:
-            model = shape_inference.infer_shapes(model)
+            model = shape_inference.infer_shapes(model, auto_merge=auto_merge)
 
         graph: onnx.GraphProto = model.graph
         self.save_transients = save_transients
@@ -152,6 +157,9 @@ class ONNXModel:
                                       Callable[[compiled_sdfg.CompiledSDFG],
                                                None]] = {}
 
+        if storage is None:
+            storage = dtypes.StorageType.GPU_Global if self.cuda else dtypes.StorageType.Default
+
         for value, is_input in chain(zip(graph.input, repeat(True)),
                                      zip(graph.output, repeat(False))):
             if not value.HasField("name"):
@@ -162,7 +170,8 @@ class ONNXModel:
                 self.outputs.append(value.name)
 
             self.value_infos[value.name] = value
-            self._add_value_info(value)
+            storage = storage
+            self._add_value_info(value, storage=storage)
 
         for value in graph.value_info:
             if not value.HasField("name"):
@@ -174,7 +183,7 @@ class ONNXModel:
         self.weights: Dict[str, torch.Tensor] = {
         }  #: mapping from weight name to array
         for init in graph.initializer:
-            self._add_constant_tensor(init, parent_pytorch_module)
+            self._add_constant_tensor(init, parent_pytorch_module, storage)
 
         access_nodes = {}
         self._idx_to_node = []
@@ -307,7 +316,8 @@ class ONNXModel:
         elif node.access == dtypes.AccessType.WriteOnly and is_input:
             node.access = dtypes.AccessType.ReadWrite
 
-    def _add_constant_tensor(self, tensor: onnx.TensorProto, parent_pt_model):
+    def _add_constant_tensor(self, tensor: onnx.TensorProto, parent_pt_model,
+                             storage: dtypes.StorageType):
         if not tensor.HasField("name"):
             raise ValueError("Got tensor without name")
 
@@ -321,11 +331,11 @@ class ONNXModel:
 
         if len(tensor.dims) == 0:
             # this is a scalar
-            self.sdfg.add_scalar(name, dtype)
+            self.sdfg.add_scalar(name, dtype, storage=storage)
         else:
             dims = [d for d in tensor.dims]
             if name not in self.sdfg.arrays:
-                self.sdfg.add_array(name, dims, dtype)
+                self.sdfg.add_array(name, dims, dtype, storage=storage)
             else:
                 existing_arr = self.sdfg.arrays[name]
                 if existing_arr.dtype != dtype:
@@ -348,7 +358,9 @@ class ONNXModel:
             # we need to copy here because the weight_arr tensor is not writable
             self.weights[tensor.name] = torch.from_numpy(weight_arr.copy())
 
-    def _add_value_info(self, value_info: onnx.ValueInfoProto):
+    def _add_value_info(self,
+                        value_info: onnx.ValueInfoProto,
+                        storage=dtypes.StorageType.Default):
         if not value_info.HasField("name"):
             raise ValueError("Got value without name")
 
@@ -391,13 +403,15 @@ class ONNXModel:
             self.sdfg.add_scalar(clean_onnx_name(name),
                                  dtype=onnx_tensor_type_to_typeclass(
                                      tensor_type.elem_type),
-                                 transient=transient)
+                                 transient=transient,
+                                 storage=storage)
         else:
             self.sdfg.add_array(clean_onnx_name(name),
                                 shape=shape,
                                 dtype=onnx_tensor_type_to_typeclass(
                                     tensor_type.elem_type),
-                                transient=transient)
+                                transient=transient,
+                                storage=storage)
 
     @property
     def clean_weights(self):
@@ -406,13 +420,30 @@ class ONNXModel:
     def compile_and_init(self) -> compiled_sdfg.CompiledSDFG:
         """ Compile the SDFG and load parameters into GPU memory. """
 
+        # copy all parameters to the device
+        self.initialized_parameters = {}
+
+        for name, arr in self.weights.items():
+
+            if clean_onnx_name(name) in self.sdfg.arrays:
+                desc = self.sdfg.arrays[clean_onnx_name(name)]
+                if type(desc) is dt.Scalar:
+                    self.initialized_parameters[clean_onnx_name(
+                        name)] = arr.cpu().numpy()[()]
+                else:
+                    cuda = is_cuda(desc.storage)
+                    self.initialized_parameters[clean_onnx_name(
+                        name)] = arr.cuda() if cuda else arr
+
         compiled_sdfg = self.sdfg.compile()
         for _, hook in self.post_compile_hooks.items():
             hook(compiled_sdfg)
         return compiled_sdfg
 
-    def __call__(self, *args,
-                 **kwargs) -> Union[np.ndarray, Tuple[np.ndarray]]:
+    def __call__(
+        self, *args, **kwargs
+    ) -> Union[Union[torch.Tensor, np.ndarray], Tuple[Union[torch.Tensor,
+                                                            np.ndarray]]]:
         """ Execute the model.
 
             :param args: positional arguments to the model. The i-th argument will be passed as the i-th input of the
@@ -420,7 +451,6 @@ class ONNXModel:
             :param kwargs: named arguments to the model. The passed names should match the names in the ONNX model.
             :return: the output of the model (or a tuple of outputs if there are multiple).
         """
-
         transient_kwargs = {}
         if self.save_transients is not None:
             for node, parent in self.sdfg.all_nodes_recursive():
@@ -428,20 +458,24 @@ class ONNXModel:
                     desc = self.sdfg.arrays[node.data]
                     if desc.transient:
                         desc.transient = False
-                        transient_kwargs[node.data] = create_output_array(
-                            {}, desc, use_torch=True, zeros=False)
-                        self.save_transients[node.data] = transient_kwargs[
-                            node.data]
+                        transient_kwargs[node.data] = desc
 
         if self.do_auto_optimize:
             self.auto_optimize()
 
-        inputs, params, symbols, outputs = self._call_args(args=args,
-                                                           kwargs=kwargs)
-
         compiled = self.compile_and_init()
 
-        compiled(**inputs, **outputs, **params, **symbols, **transient_kwargs)
+        inputs, symbols, outputs = self._call_args(args=args, kwargs=kwargs)
+
+        for name, desc in transient_kwargs.items():
+            transient_kwargs[name] = create_output_array(symbols,
+                                                         desc,
+                                                         use_torch=True,
+                                                         zeros=False)
+            self.save_transients[name] = transient_kwargs[name]
+
+        compiled(**inputs, **outputs, **self.initialized_parameters, **symbols,
+                 **transient_kwargs)
 
         if len(outputs) == 1:
             return next(iter(outputs.values()))
@@ -454,13 +488,11 @@ class ONNXModel:
         args,
         kwargs,
         torch_outputs: bool = None
-    ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any], OrderedDict[
-            str, Any]]:
+    ) -> Tuple[Dict[str, Any], Dict[str, Any], OrderedDict[str, Any]]:
         """ Prepare the arguments for a call.
 
             This returns 4 dicts; one for each of the following:
             1. the inputs
-            2. the weights
             3. inferred values for symbols for dynamic dimensions
             4. outputs
 
@@ -502,26 +534,18 @@ class ONNXModel:
             else:
                 clean_inputs[clean_onnx_name(input)] = arr
 
-        # add the weights
-        params = {}
-        for name, arr in self.weights.items():
-            if clean_onnx_name(name) in self.sdfg.arrays:
-                desc = self.sdfg.arrays[clean_onnx_name(name)]
-                if type(desc) is dt.Scalar:
-                    params[clean_onnx_name(name)] = arr.cpu().numpy()[()]
-                else:
-                    params[clean_onnx_name(name)] = arr.clone()
-
         inferred_symbols = infer_symbols_from_shapes(self.sdfg, {
             **clean_inputs,
-            **params
+            **self.initialized_parameters
         })
         inferred_symbols = {k: int(v) for k, v in inferred_symbols.items()}
 
         if torch_outputs is None:
             torch_outputs = any(
-                isinstance(inp, torch.Tensor)
-                for _, inp in clean_inputs.items())
+                is_cuda(self.sdfg.arrays[clean_onnx_name(o)].storage)
+                for o in self.outputs) or any(
+                    isinstance(inp, torch.Tensor)
+                    for _, inp in clean_inputs.items())
 
         outputs = collections.OrderedDict()
         # create numpy arrays for the outputs
@@ -534,12 +558,15 @@ class ONNXModel:
 
         # check that there's no overlap
         seen = set()
-        for parameters in [clean_inputs, params, outputs, inferred_symbols]:
+        for parameters in [
+                clean_inputs, self.initialized_parameters, outputs,
+                inferred_symbols
+        ]:
             new_parameters = set(parameters)
             assert not seen.intersection(new_parameters)
             seen |= new_parameters
 
-        return clean_inputs, params, inferred_symbols, outputs
+        return clean_inputs, inferred_symbols, outputs
 
     def expand_onnx_nodes(self):
         utils.expand_onnx_nodes(self.sdfg)
@@ -549,6 +576,16 @@ class ONNXModel:
                             self.cuda,
                             apply_strict=self.apply_strict,
                             fold_constants=self.fold_constants)
+
+
+def is_cuda(storage: dtypes.StorageType) -> bool:
+    """ Check if a descriptor storage type is a GPU array """
+    if dtypes.can_access(dtypes.ScheduleType.CPU_Multicore, storage):
+        return False
+    elif dtypes.can_access(dtypes.ScheduleType.GPU_Default, storage):
+        return True
+    else:
+        raise ValueError(f"Unsupported storage {storage}")
 
 
 def create_output_array(
@@ -569,13 +606,7 @@ def create_output_array(
             dim = dim.subs(sym, inferred_symbols[sym.name])
         return dim
 
-    if dtypes.can_access(dtypes.ScheduleType.CPU_Multicore, desc.storage):
-        cuda = False
-    elif dtypes.can_access(dtypes.ScheduleType.GPU_Default, desc.storage):
-        cuda = True
-    else:
-        raise ValueError(f"Unsupported storage {desc.storage}")
-
+    cuda = is_cuda(desc.storage)
     if cuda and not use_torch:
         raise ValueError("Got use_torch=False, but received a GPU descriptor")
 

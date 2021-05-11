@@ -115,15 +115,15 @@ def make_backward_function(model: ONNXModel,
                 for inp in inputs)
 
             # prepare the arguments
-            inputs, params, symbols, outputs = model._call_args(
-                args=copied_inputs, kwargs={})
+            inputs, symbols, outputs = model._call_args(args=copied_inputs,
+                                                        kwargs={})
 
+            params = DaceFunction._forward_model.initialized_parameters
             # create the empty tensors we need for the intermediate values
             for inp, val in backward_input_arrays.items():
                 if isinstance(val, dt.Scalar):
                     # the value we need is actually in an array
                     inp = replaced_scalars[inp]
-
                 if inp not in inputs and inp not in outputs and inp not in params:
                     inputs[inp] = create_output_array(symbols,
                                                       forward_sdfg.arrays[inp],

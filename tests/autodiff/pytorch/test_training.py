@@ -9,7 +9,7 @@ from torch import nn, optim
 from transformers import BertLayer, BertConfig
 
 from daceml.pytorch import DaceModule
-from daceml.testing.utils import torch_tensors_close
+from daceml.testing.utils import torch_tensors_close, copy_to_gpu
 
 
 def training_step(dace_model,
@@ -19,18 +19,21 @@ def training_step(dace_model,
                   gpu,
                   train_criterion=None):
 
+    pt_model = copy_to_gpu(gpu, pt_model)
+    dace_model = copy_to_gpu(gpu, dace_model)
+
     # copy over the weights
     dace_model.load_state_dict(pt_model.state_dict())
     for dace_value, value in zip(pt_model.state_dict().values(),
                                  dace_model.state_dict().values()):
-        assert np.allclose(dace_value, value)
+        assert torch.allclose(dace_value, value)
 
-    dace_model = DaceModule(dace_model,
-                            backward=True,
-                            sdfg_name=sdfg_name,
-                            cuda=gpu)
+    dace_model = DaceModule(dace_model, backward=True, sdfg_name=sdfg_name)
 
     x, y = train_batch
+    x = copy_to_gpu(gpu, x)
+    y = copy_to_gpu(gpu, y)
+
     train_criterion = train_criterion or nn.NLLLoss()
 
     pt_loss = train_criterion(pt_model(x), y)

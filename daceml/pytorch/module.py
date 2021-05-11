@@ -24,7 +24,8 @@ class DaceModule(nn.Module):
 
         :param module: the model to wrap.
         :param dummy_inputs: a tuple of tensors to use as input when tracing ``model``.
-        :param cuda: if ``True``, the module will execute using CUDA.
+        :param cuda: if ``True``, the module will execute using CUDA. If ``None``, it will be detected from the
+                     ``module``.
         :param train: whether to use train mode when tracing ``model``.
         :param backward: whether to enable the backward pass.
         :param apply_strict: whether to apply strict transforms after conversion (this generally improves performance,
@@ -52,7 +53,7 @@ class DaceModule(nn.Module):
     def __init__(self,
                  module: nn.Module,
                  dummy_inputs: Optional[Tuple[torch.Tensor]] = None,
-                 cuda: bool = False,
+                 cuda: Optional[bool] = None,
                  train: bool = False,
                  backward=False,
                  apply_strict: bool = True,
@@ -68,6 +69,8 @@ class DaceModule(nn.Module):
         self.cuda = cuda
         self.sdfg_name = sdfg_name or "dace_model"
         self.auto_optimize = auto_optimize
+        self.apply_strict = apply_strict
+
         self.function = None
 
         #: hooks that are executed after onnx graph is imported to an SDFG
@@ -77,37 +80,6 @@ class DaceModule(nn.Module):
         #: hooks that are executed after the backpropagation sdfg has been created
         self.post_autodiff_hooks: OrderedDict[str, Callable[
             [dace.SDFG, dace.SDFG], None]] = collections.OrderedDict()
-
-        # setup optimization hooks
-        if auto_optimize:
-            if self.backward:
-
-                def auto_optimize_backward(fwd_sdfg, bwd_sdfg):
-                    utils.auto_optimize(fwd_sdfg,
-                                        self.cuda,
-                                        apply_strict=apply_strict)
-                    utils.auto_optimize(bwd_sdfg,
-                                        self.cuda,
-                                        apply_strict=apply_strict)
-
-                self.post_autodiff_hooks[
-                    "auto_optimize"] = auto_optimize_backward
-            else:
-                self.post_onnx_hooks["auto_optimize"] = \
-                    lambda dace_module: utils.auto_optimize(dace_module.dace_model.sdfg,
-                                                            self.cuda,
-                                                            apply_strict=apply_strict)
-        elif apply_strict:
-            if self.backward:
-
-                def apply_strict(fwd_sdfg, bwd_sdfg):
-                    fwd_sdfg.apply_strict_transformations()
-                    bwd_sdfg.apply_strict_transformations()
-
-                self.post_autodiff_hooks["apply_strict"] = apply_strict
-            else:
-                self.post_onnx_hooks["apply_strict"] = \
-                    lambda dace_module: dace_module.sdfg.apply_strict_transformations()
 
         if dummy_inputs is not None:
             self.function = self._initialize_sdfg(dummy_inputs)
@@ -157,6 +129,54 @@ class DaceModule(nn.Module):
         self.post_autodiff_hooks[name] = func
 
     def _initialize_sdfg(self, dummy_inputs):
+
+        # determine whether we are using CUDA
+        module_is_cuda = next(iter(dummy_inputs)).is_cuda
+        if not module_is_cuda:
+            # check the parameters
+            try:
+                module_is_cuda = next(self.model.parameters()).is_cuda
+            except StopIteration:
+                module_is_cuda = False
+
+        if module_is_cuda and self.cuda is False:
+            log.warning("Received a CUDA module, but cuda was set to False.")
+        if self.cuda is None:
+            self.cuda = module_is_cuda
+
+        # setup optimization hooks
+        if self.auto_optimize:
+            if self.backward:
+
+                def auto_optimize_backward(fwd_sdfg, bwd_sdfg):
+                    utils.auto_optimize(fwd_sdfg,
+                                        self.cuda,
+                                        apply_strict=self.apply_strict)
+                    utils.auto_optimize(bwd_sdfg,
+                                        self.cuda,
+                                        apply_strict=self.apply_strict)
+
+                self.prepend_post_autodiff_hook("auto_optimize",
+                                                auto_optimize_backward)
+            else:
+                self.prepend_post_onnx_hook(
+                    "auto_optimize", lambda dace_module: utils.auto_optimize(
+                        dace_module.dace_model.sdfg,
+                        self.cuda,
+                        apply_strict=self.apply_strict))
+        elif self.apply_strict:
+            if self.backward:
+
+                def apply_strict(fwd_sdfg, bwd_sdfg):
+                    fwd_sdfg.apply_strict_transformations()
+                    bwd_sdfg.apply_strict_transformations()
+
+                self.prepend_post_autodiff_hook("apply_strict", apply_strict)
+            else:
+                self.prepend_post_onnx_hook(
+                    "apply_strict", lambda dace_module: dace_module.sdfg.
+                    apply_strict_transformations())
+
         # TODO change to StringIO if not too big
         with tempfile.TemporaryDirectory() as dir_name:
             export_name = os.path.join(dir_name, "export.onnx")
@@ -199,6 +219,8 @@ class DaceModule(nn.Module):
                 for _, hook in self.post_autodiff_hooks.items():
                     hook(function._forward_model.sdfg, function._backward_sdfg)
 
+                function._forward_model.compile_and_init()
+
                 def forward(*args):
                     args_and_params = list(args)
                     args_and_params.extend(self.parameters())
@@ -220,7 +242,7 @@ class DaceModule(nn.Module):
 @dace.dtypes.paramdec
 def dace_module(moduleclass,
                 dummy_inputs: Optional[Tuple[torch.Tensor]] = None,
-                cuda: bool = False,
+                cuda: Optional[bool] = None,
                 train: bool = False,
                 backward=False,
                 apply_strict: bool = True,
@@ -246,7 +268,8 @@ def dace_module(moduleclass,
 
         :param moduleclass: the model to wrap.
         :param dummy_inputs: a tuple of tensors to use as input when tracing ``model``.
-        :param cuda: if ``True``, the module will execute using CUDA.
+        :param cuda: if ``True``, the module will execute using CUDA. If ``None``, it will be detected from the
+                     ``module``.
         :param train: whether to use train mode when tracing ``model``.
         :param backward: whether to enable the backward pass.
         :param apply_strict: whether to apply strict transforms after conversion (this generally improves performance,
