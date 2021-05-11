@@ -41,6 +41,7 @@ def run_correctness(func):
             print(v)
             print("SDFG results:", "-" * 10)
             print(sdfg_results[k])
+            print("Difference:")
             print(v - sdfg_results[k])
 
             assert diff < 1e-5

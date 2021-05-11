@@ -12,7 +12,7 @@ from dace.sdfg.nodes import Node
 from daceml.onnx import converters
 from daceml.onnx.forward_implementation_abc import ONNXForward
 from daceml.onnx.nodes import onnx_op
-from daceml.onnx.op_implementations.utils import op_implementation, program_for_node
+from daceml.onnx.op_implementations.utils import op_implementation, program_for_node, empty_sdfg_for_node
 from daceml.transformation import constant_folding
 from daceml.util.utils import in_desc_with_name, out_desc_with_name, in_edge_with_name, iterables_equal
 
@@ -447,12 +447,27 @@ class PureCast(ONNXForward):
 
             def prog(input, output):
                 output[:] = input
+
+            return program_for_node(prog, sdfg, state, node)
         else:
 
-            def prog(input, output):
-                output[:] = dace.elementwise(lambda x: x, input)
+            nsdfg, nstate, _, _ = empty_sdfg_for_node(sdfg,
+                                                      state,
+                                                      node,
+                                                      add_access_nodes=False)
 
-        return program_for_node(prog, sdfg, state, node)
+            shape = out_desc_with_name(node, state, sdfg, "output").shape
+            map_ranges = {f"i{i}": f"0:{s}" for i, s in enumerate(shape)}
+            index_str = f"{', '.join(map_ranges.keys())}"
+            tasklet, _, _ = nstate.add_mapped_tasklet(
+                node.label + "_tasklet",
+                map_ranges=map_ranges,
+                inputs={f"__input": dace.Memlet(f"input[{index_str}]")},
+                code=f"__output = __input",
+                outputs={"__output": dace.Memlet(f"output[{index_str}]")},
+                external_edges=True)
+
+            return nsdfg
 
 
 @op_implementation(op="Gemm", name="pure")

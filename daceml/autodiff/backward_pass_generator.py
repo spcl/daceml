@@ -14,6 +14,7 @@ import dace.transformation.transformation as xf
 import sympy as sp
 from dace import Memlet, SDFG, SDFGState
 from dace import dtypes, data as dt
+from dace.codegen.targets.cpp import is_write_conflicted_with_reason
 from dace.frontend.operations import detect_reduction_type
 from dace.sdfg import graph as dgraph, state as dstate, utils as dutils, infer_types
 
@@ -261,6 +262,8 @@ class BackwardPassGenerator:
                               outputs must be a list containing a single scalar.
         :param backward_state: the state which the backward pass should be added to (must be added to `backward_sdfg`
                                before calling this method).
+        :param zero_non_transients: Whether non-transient gradient buffers should be zero initialized in the backward
+                                    SDFG.
         :param apply_strict: whether to apply strict transformations before creating the backward pass.
     """
     def __init__(
@@ -272,6 +275,7 @@ class BackwardPassGenerator:
             required_gradients: List[Union[nd.AccessNode, str]],
             backward_sdfg: SDFG,  # this can be the same as SDFG
             backward_state: SDFGState,
+            zero_non_transients: bool,
             apply_strict=False):
 
         if backward_state not in backward_sdfg.nodes():
@@ -328,6 +332,7 @@ class BackwardPassGenerator:
         # checks if backward has already been applied
         self._applied = False
         self.apply_strict = apply_strict
+        self.zero_non_transients = zero_non_transients
 
         for outp in self.given_gradients:
             if outp not in self.forward_state:
@@ -569,10 +574,15 @@ class BackwardPassGenerator:
         """ Add a state where `data` is initialized with zero.
             self.sdfg.arrays[data] should have type Union[dt.Array, dt.Scalar, dt.View]
         """
+        arr = self.backward_sdfg.arrays[data]
+
+        # No need to initialize if gradients point to outputs
+        if not self.zero_non_transients and not arr.transient:
+            return
+
         state = self.backward_sdfg.add_state_before(self.backward_state,
                                                     label="init_" + data)
 
-        arr = self.backward_sdfg.arrays[data]
         scalar = 0
         if dtypes.can_access(dtypes.ScheduleType.CPU_Multicore, arr.storage):
             cuda = False
@@ -674,7 +684,6 @@ class BackwardPassGenerator:
                                 find_new_name=True)
                             access_intermediate = self.backward_state.add_access(
                                 intermediate_name)
-                            self._init_grad(intermediate_name)
 
                             edge.data.data = intermediate_name
                             new_edge = self.backward_state.add_edge(
@@ -717,13 +726,19 @@ class BackwardPassGenerator:
             :param edge: the root edge to start from
         """
 
+        add_wcr = False
+
         # this method assumes that the memlet tree is iterated from the root backwards
         for path_edge in self.backward_state.memlet_tree(edge):
 
-            src_or_dest_map = (isinstance(path_edge.src,
-                                          (nd.MapExit, nd.MapEntry))
-                               or isinstance(path_edge.dst,
-                                             (nd.MapExit, nd.MapEntry)))
+            # set the wcr to sum temporarily so that the following works
+            old_wcr = path_edge.data.wcr
+            path_edge.data.wcr = "lambda x, y: x + y"
+            if is_write_conflicted_with_reason(self.backward_state, path_edge):
+                # if we have a write conflict, we need WCR
+                add_wcr = True
+            path_edge.data.wcr = old_wcr
+
             # count the amount of in edges per connector
             connector_in_edges = collections.defaultdict(int)
             for _, _, _, dst_conn, _ in self.backward_state.in_edges(
@@ -733,12 +748,13 @@ class BackwardPassGenerator:
             more_than_one_edge_to_connector = any(
                 v > 1 for v in connector_in_edges.values())
 
-            if more_than_one_edge_to_connector or src_or_dest_map:
-                for path_edge in self.backward_state.memlet_tree(edge):
-                    path_edge.data.wcr = "lambda x, y: x + y"
+            if more_than_one_edge_to_connector:
+                add_wcr = True
 
-                # break early: we have handled all edges in the tree
-                return
+        if add_wcr:
+            for tree_edge in self.backward_state.memlet_tree(edge):
+                tree_edge.data.wcr = "lambda x, y: x + y"
+            self._init_grad(edge.data.data)
 
     def _insert_transient_into_edge(
         self, sibling_edge: dgraph.MultiConnectorEdge, state: SDFGState
@@ -763,7 +779,6 @@ class BackwardPassGenerator:
                 desc.dtype,
                 storage=desc.storage,
                 lifetime=desc.lifetime)
-            self._init_grad(transient_name)
             access_transient = state.add_access(transient_name)
             state.remove_edge(sibling_edge)
             memlet = copy.deepcopy(sibling_edge.data)
@@ -800,9 +815,6 @@ class BackwardPassGenerator:
 
         self.backward_grad_arrays[grad_name] = cloned_datadesc
         self.backward_sdfg.arrays[grad_name] = copy.deepcopy(cloned_datadesc)
-
-        if cloned_datadesc.transient:
-            self._init_grad(grad_name)
 
     def _connect_given_gradients(self, subgraph: dstate.StateSubgraphView,
                                  forward_node):
@@ -1119,7 +1131,8 @@ class BackwardPassGenerator:
                                     given_gradients=given_gradients,
                                     required_gradients=required_gradients,
                                     backward_sdfg=reverse_sdfg,
-                                    backward_state=backward_state)
+                                    backward_state=backward_state,
+                                    zero_non_transients=True)
         backward_result, _, backward_input_arrays = gen.backward()
 
         # we need to defer add edges until after the arrays have been added because creation of the nested
@@ -1315,6 +1328,11 @@ class BackwardPassGenerator:
 
         result = BackwardResult(required_grad_names={}, given_grad_names={})
 
+        # symbol generator to use for CSE
+        symbol_generator = sp.numbered_symbols()
+
+        code = ""
+
         for output_conn in given_gradients:
 
             # for each output_conn...
@@ -1335,6 +1353,12 @@ class BackwardPassGenerator:
                 # symbolically differentiate the output w.r.t inp
                 diff_expr = output_expr.diff(sp.symbols(inp))
 
+                # do common subexpression elimination
+                sub_expressions, diff_expr = sp.cse(diff_expr,
+                                                    symbols=symbol_generator)
+
+                diff_expr = diff_expr[0]
+
                 if diff_expr.atoms(sp.Derivative):
                     # the final result contains a call to sp.Derivative
                     raise AutoDiffException(
@@ -1349,15 +1373,25 @@ class BackwardPassGenerator:
                 else:
                     rev_input_grad_name = result.given_grad_names[output_conn]
 
-                rev_inputs |= _symbols_to_strings(
-                    diff_expr.free_symbols) | {rev_input_grad_name}
+                input_symbols = diff_expr.free_symbols\
+                    .union(s for _, e in sub_expressions for s in e.free_symbols)\
+                    .difference(e for e, _ in sub_expressions)
+
+                rev_inputs |= _symbols_to_strings(input_symbols) | {
+                    rev_input_grad_name
+                }
 
                 diff_code_str = "{input} * ({diff_expr})".format(
                     input=rev_input_grad_name, diff_expr=str(diff_expr))
+                # small hack: our heaviside is lowercase
+                diff_code_str = diff_code_str.replace("Heaviside", "heaviside")
+
+                sub_expression_code_strs = "\n".join(
+                    f"{target} = {expression}"
+                    for target, expression in sub_expressions)
 
                 # get the the final type of the gradient: this is just the type of the input connector we creating the
                 # gradient for
-
                 cands = list(
                     self.forward_state.in_edges_by_connector(tasklet, inp))
                 if len(cands) != 1:
@@ -1368,17 +1402,20 @@ class BackwardPassGenerator:
                 converted_code = cast_consts_to_type(
                     diff_code_str, self.sdfg.arrays[cands[0].data.data].dtype)
                 converted_code = converted_code.replace("\n", " ")
+
+                converted_sub_expressions = cast_consts_to_type(
+                    sub_expression_code_strs,
+                    self.sdfg.arrays[cands[0].data.data].dtype)
+
+                code += converted_sub_expressions + "\n"
                 rev_code[rev_output_grad_name].append(converted_code)
 
-        code = ""
         for output, exprs in rev_code.items():
             code += "\n" + output + " = " + " + ".join(exprs)
-
-        rev = nd.Tasklet(
-            "_" + tasklet.label + "_reverse_",
-            inputs=rev_inputs,
-            outputs=rev_outputs,
-            code=code,
-        )
+        rev = nd.Tasklet("_" + tasklet.label + "_reverse_",
+                         inputs=rev_inputs,
+                         outputs=rev_outputs,
+                         code=code,
+                         debuginfo=tasklet.debuginfo)
         self.backward_state.add_node(rev)
         return rev, result
