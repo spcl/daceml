@@ -154,3 +154,23 @@ def test_layernorm():
     torch_tensors_close("ingrad", inp.grad, dinp)
     torch_tensors_close("weightgrad", weight.grad, dscale)
     torch_tensors_close("bgrad", bias.grad, dbias)
+
+
+def test_softmax():
+
+    inp = torch.rand(2, 12, 512, 512).cuda()
+    dy = torch.rand(2, 12, 512, 512).cuda()
+    dace_inp = torch.clone(inp)
+    dace_inp.requires_grad = True
+    inp.requires_grad = True
+
+    module = nn.Softmax(3)
+
+    dace_module = DaceModule(module, backward=True, cuda=True)
+
+    dace_outp = dace_module(dace_inp)
+    pt_outp = module(inp)
+    torch_tensors_close("outputt", pt_outp, dace_outp)
+    pt_outp.backward(dy)
+    dace_outp.backward(dy)
+    torch_tensors_close("grad", inp.grad, dace_inp.grad)
