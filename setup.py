@@ -1,5 +1,6 @@
 import os
 from setuptools import setup, find_packages
+import itertools
 import glob
 import os
 
@@ -8,9 +9,9 @@ import os
 daceml_path = os.path.dirname(os.path.abspath(__file__)) + '/daceml/'
 runtime_files = [
     f[len(daceml_path):]
-    for f in [glob.glob(daceml_path + '**/*.h', recursive=True) +
-              glob.glob(daceml_path + '**/*.cuh', recursive=True) +
-              glob.glob(daceml_path + '**/*.cu', recursive=True)]
+    for f in itertools.chain(glob.glob(daceml_path + '**/*.h', recursive=True),
+                             glob.glob(daceml_path + '**/*.cuh', recursive=True),
+                             glob.glob(daceml_path + '**/*.cu', recursive=True))
 ]
 
 with open("README.md", "r") as fp:
@@ -34,7 +35,7 @@ setup(
     python_requires='>=3.6, <3.9',
     packages=find_packages(
         exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
-    package_data={'': ['*.cpp'] + runtime_files},
+    package_data={'': (['*.cpp'] + runtime_files)},
     install_requires=[
         'dace@git+https://github.com/spcl/dace.git@dml_misc_fixes2',
         'onnx == 1.7.0', 'torch', 'dataclasses; python_version < "3.7"'
