@@ -20,16 +20,6 @@ from daceml.util import utils
 from daceml import transformation
 
 
-def get_access_node_by_name(sdfg, name):
-
-    for node, state in sdfg.all_nodes_recursive():
-        if isinstance(node, dace.sdfg.nodes.AccessNode):
-            if node.label == name:
-                return node, state
-
-    raise Exception("DataNode {} not found".format(name))
-
-
 def print_mnist_mean_and_std():
     train_dataset = datasets.MNIST('./data',
                                    train=True,
