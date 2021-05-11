@@ -133,11 +133,12 @@ class ONNXRuntimeCUDA:
             # add one provider per compute stream
             providers_setup_code = "\n".join(f"""
             {{
-            OrtCUDAProviderOptions options = {{
-                .device_id = 0,
-                .do_copy_in_default_stream = 0,
-                .user_compute_stream = __state->gpu_context->streams[{i}],
-            }};
+            OrtCUDAProviderOptions options = {{0}};
+            options.device_id = 0;
+            options.do_copy_in_default_stream = 0;
+            options.has_user_compute_stream = 1;
+            options.user_compute_stream = __state->gpu_context->streams[{i}];
+
             __ort_check_status(__state->ort_api,
     __state->ort_api->SessionOptionsAppendExecutionProvider_CUDA(__state->ort_session_options, &options));
             }}
@@ -146,11 +147,11 @@ class ONNXRuntimeCUDA:
             assert ONNXRuntimeCUDA.max_concurrent_streams == -1
             providers_setup_code = """
                     {
-                    OrtCUDAProviderOptions options = {
-                        .device_id = 0,
-                        .has_user_compute_stream = 1,
-                        .user_compute_stream = nullptr,
-                    };
+                    OrtCUDAProviderOptions options = {0};
+                    options.device_id = 0;
+                    options.do_copy_in_default_stream = 0;
+                    options.has_user_compute_stream = 1;
+                    options.user_compute_stream = nullptr;
                     __ort_check_status(__state->ort_api,
             __state->ort_api->SessionOptionsAppendExecutionProvider_CUDA(__state->ort_session_options, &options));
                     }
