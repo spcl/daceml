@@ -507,7 +507,7 @@ def expand_node(node, state, sdfg):
                          out_connectors,
                          tasklet_code,
                          language=dace.dtypes.Language.CPP)
-    tasklet.environments = {Environment.__name__}
+    tasklet.environments = {Environment.full_class_path()}
 
     nsdfg = dace.SDFG("nested_{}".format(unique_id))
     nstate = nsdfg.add_state()
