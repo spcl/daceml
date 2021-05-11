@@ -1373,6 +1373,8 @@ class BackwardPassGenerator:
 
                 diff_code_str = "{input} * ({diff_expr})".format(
                     input=rev_input_grad_name, diff_expr=str(diff_expr))
+                # small hack: our heaviside is lowercase
+                diff_code_str = diff_code_str.replace("Heaviside", "heaviside")
 
                 sub_expression_code_strs = "\n".join(
                     f"{target} = {expression}"
@@ -1400,11 +1402,10 @@ class BackwardPassGenerator:
 
         for output, exprs in rev_code.items():
             code += "\n" + output + " = " + " + ".join(exprs)
-        rev = nd.Tasklet(
-            "_" + tasklet.label + "_reverse_",
-            inputs=rev_inputs,
-            outputs=rev_outputs,
-            code=code,
-        )
+        rev = nd.Tasklet("_" + tasklet.label + "_reverse_",
+                         inputs=rev_inputs,
+                         outputs=rev_outputs,
+                         code=code,
+                         debuginfo=tasklet.debuginfo)
         self.backward_state.add_node(rev)
         return rev, result
