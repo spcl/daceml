@@ -217,7 +217,7 @@ class DaceModule(nn.Module):
                 for _, hook in self.post_autodiff_hooks.items():
                     hook(function._model.sdfg, function._model.backward_sdfg)
 
-                function._forward_model.compile_and_init()
+                function._model.compile_and_init()
 
                 def forward(*args):
                     args_and_params = list(args)
