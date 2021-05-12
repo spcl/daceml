@@ -198,11 +198,13 @@ def cast_consts_to_type(code: str, dtype: dace.typeclass) -> str:
 
         For example:
 
-            x * ( 3 / 2)
+            x * (3 / 2)
 
         becomes:
 
             x * (dace.float32(3) / dace.float32(2))
+
+        This is only done when it is required due to a Div operator.
 
         :param code: the code string to convert.
         :param dtype: the dace typeclass to wrap cast to
@@ -216,8 +218,8 @@ def cast_consts_to_type(code: str, dtype: dace.typeclass) -> str:
             if self._in_div_stack:
                 return ast.copy_location(
                     ast.parse(
-                        f"dace.{dtype.to_string()}({astunparse.unparse(node)})").
-                    body[0].value, node)
+                        f"dace.{dtype.to_string()}({astunparse.unparse(node)})"
+                    ).body[0].value, node)
             else:
                 return self.generic_visit(node)
 
@@ -243,8 +245,8 @@ def cast_consts_to_type(code: str, dtype: dace.typeclass) -> str:
             if self._in_div_stack:
                 return ast.copy_location(
                     ast.parse(
-                        f"dace.{dtype.to_string()}({astunparse.unparse(node)})").
-                    body[0].value, node)
+                        f"dace.{dtype.to_string()}({astunparse.unparse(node)})"
+                    ).body[0].value, node)
             else:
                 return self.generic_visit(node)
 

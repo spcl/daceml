@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from daceml.pytorch import DaceModule
+from daceml.testing import torch_tensors_close, copy_to_gpu
 
 
 def run_pytorch_module(module,
@@ -16,16 +17,24 @@ def run_pytorch_module(module,
                        auto_optimize=True):
     shape = shape or (3, 5)
 
+    module = copy_to_gpu(gpu, module)
+
     input_value = torch.rand(*shape, dtype=torch.float32)
 
-    pytorch_input = torch.empty(*shape,
-                                dtype=torch.float32,
-                                requires_grad=False)
+    pytorch_input = torch.empty(
+        *shape,
+        dtype=torch.float32,
+        requires_grad=False,
+    )
     pytorch_input.copy_(input_value)
-    pytorch_input.requires_grad = True
 
     dace_input = torch.empty(*shape, dtype=torch.float32, requires_grad=False)
     dace_input.copy_(input_value)
+
+    dace_input = copy_to_gpu(gpu, dace_input)
+    pytorch_input = copy_to_gpu(gpu, pytorch_input)
+
+    pytorch_input.requires_grad = True
     dace_input.requires_grad = True
 
     if use_max:
@@ -34,12 +43,8 @@ def run_pytorch_module(module,
         pytorch_s = module(pytorch_input).sum()
     pytorch_s.backward()
 
-    print("Pytorch output:")
-    print(pytorch_input.grad)
-
     dace_module = DaceModule(module,
                              backward=True,
-                             cuda=gpu,
                              sdfg_name=sdfg_name,
                              auto_optimize=auto_optimize)
 
@@ -48,12 +53,7 @@ def run_pytorch_module(module,
     else:
         dace_s = dace_module(dace_input).sum()
     dace_s.backward()
-    print("Dace output:")
-    print(dace_input.grad)
-    assert torch.allclose(pytorch_input.grad,
-                          dace_input.grad,
-                          rtol=1e-6,
-                          atol=1e-4)
+    torch_tensors_close("output", pytorch_input.grad, dace_input.grad)
 
 
 def test_simple(sdfg_name, gpu):
@@ -92,7 +92,7 @@ def test_reshape_on_memlet_path(sdfg_name, gpu):
         def forward(self, x):
             reshaped = torch.reshape(x + 1, [3, 3])
             return torch.log(reshaped) + torch.reshape(
-                torch.tensor([[3, 2, 1]]), [3])
+                torch.tensor([[3, 2, 1]], device=reshaped.device), [3])
 
     run_pytorch_module(Module(), sdfg_name, gpu, shape=(9, ))
 

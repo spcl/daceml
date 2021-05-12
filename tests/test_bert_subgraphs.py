@@ -9,6 +9,7 @@ import onnx
 import torch
 
 from daceml.onnx import ONNXModel
+from daceml.testing import copy_to_gpu
 
 data_directory = os.path.join(os.path.dirname(__file__), "onnx_files")
 
@@ -18,7 +19,9 @@ def test_slice(gpu, sdfg_name):
     model = onnx.load(os.path.join(data_directory, "slice.onnx"))
     dace_model = ONNXModel(sdfg_name, model, cuda=gpu, fold_constants=False)
 
-    out = dace_model(data=np.ones((2, ), dtype=np.float32))
+    data = copy_to_gpu(gpu, torch.ones(2))
+
+    out = dace_model(data=data)
     assert out.shape == (1, )
     assert out[0] == 1.0
 

@@ -12,10 +12,7 @@ from daceml.onnx.converters import clean_onnx_name
 from dace.transformation import interstate, dataflow
 from dace import SDFG, SDFGState
 import dace.data as dt
-from dace.transformation.auto_optimize import set_fast_implementations
-
-from daceml.onnx.nodes.onnx_op import ONNXOp
-from daceml import transformation
+from dace.transformation.auto.auto_optimize import set_fast_implementations
 
 log = logging.getLogger(__name__)
 
@@ -116,6 +113,9 @@ def expand_onnx_nodes(sdfg: dace.SDFG, expand_predicate=None):
         :param sdfg: the sdfg to expand nodes on.
         :param skip: node types to expand
     """
+    # avoid import loop
+    from daceml.onnx.nodes.onnx_op import ONNXOp
+
     states = list(sdfg.states())
     while len(states) > 0:
         state = states.pop()
@@ -148,6 +148,9 @@ def auto_optimize(sdfg: dace.SDFG,
         :param apply_strict: whether to apply strict transformations to the sdfg after optimization.
         :param fold_constants: whether to apply constant folding.
     """
+    # avoid import loop
+    from daceml import transformation
+
     log.debug("Applying automatic optimizations")
     if fold_constants:
         log.debug("Applying constant folding")

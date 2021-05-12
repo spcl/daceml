@@ -481,12 +481,27 @@ class PureCast(ONNXForward):
 
             def prog(input, output):
                 output[:] = input
+
+            return program_for_node(prog, sdfg, state, node)
         else:
 
-            def prog(input, output):
-                output[:] = dace.elementwise(lambda x: x, input)
+            nsdfg, nstate, _, _ = empty_sdfg_for_node(sdfg,
+                                                      state,
+                                                      node,
+                                                      add_access_nodes=False)
 
-        return program_for_node(prog, sdfg, state, node)
+            shape = out_desc_with_name(node, state, sdfg, "output").shape
+            map_ranges = {f"i{i}": f"0:{s}" for i, s in enumerate(shape)}
+            index_str = f"{', '.join(map_ranges.keys())}"
+            tasklet, _, _ = nstate.add_mapped_tasklet(
+                node.label + "_tasklet",
+                map_ranges=map_ranges,
+                inputs={f"__input": dace.Memlet(f"input[{index_str}]")},
+                code=f"__output = __input",
+                outputs={"__output": dace.Memlet(f"output[{index_str}]")},
+                external_edges=True)
+
+            return nsdfg
 
 
 @op_implementation(op="Gemm", name="pure")
@@ -535,19 +550,54 @@ class PureRelu(ONNXForward):
 
 @op_implementation(op="Reshape", name="pure")
 class PureReshape(ONNXForward):
+    '''
+        Reshape expansion: this relies on views
+    '''
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        new_shape = out_desc_with_name(node, state, sdfg, "reshaped").shape
-        node.remove_in_connector("shape")
 
-        shape_node = in_edge_with_name(node, state, "shape").src
-        constant_folding.remove_node_and_computation(sdfg, state, shape_node)
+        input_name = "data"
+        output_name = "reshaped"
+        flatten = False
 
-        def prog(data, reshaped):
-            reshaped[:] = np.reshape(data, new_shape)
+        # if called from Flatten
+        if "input" in node._in_connectors.keys():
+            input_name = "input"
+            output_name = "output"
+            flatten = True
+
+        new_shape = out_desc_with_name(node, state, sdfg, output_name).shape
+
+        if not flatten:
+            node.remove_in_connector("shape")
+            shape_node = in_edge_with_name(node, state, "shape").src
+            constant_folding.remove_node_and_computation(
+                sdfg, state, shape_node)
+
+        if not flatten:
+
+            def prog(data, reshaped):
+                reshaped[:] = np.reshape(data, new_shape)
+        else:
+
+            def prog(input, output):
+                output[:] = np.reshape(input, new_shape)
 
         return program_for_node(prog, sdfg, state, node)
+
+
+@op_implementation(op="Flatten", name="pure")
+class PureFlatten(ONNXForward):
+    '''
+        Flatten Expansion, reuses Reshape implementation
+    '''
+    @staticmethod
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+
+        # Reuse Reshape implementation
+        return PureReshape.forward(node, state, sdfg)
 
 
 @op_implementation(op="Sum", name="pure")

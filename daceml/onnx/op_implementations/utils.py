@@ -89,8 +89,10 @@ def program_for_node(program, sdfg: SDFG, state: SDFGState,
 
 
 def empty_sdfg_for_node(
-    sdfg: SDFG, state: SDFGState, node: onnx_op.ONNXOp,
-        no_nodes:bool=False
+    sdfg: SDFG,
+    state: SDFGState,
+    node: onnx_op.ONNXOp,
+    add_access_nodes=True
 ) -> Tuple[SDFG, SDFGState, Dict[str, nodes.AccessNode], Dict[
         str, nodes.AccessNode]]:
     """ Given a node, return an SDFG that can be used as a nested SDFG expansion for that node.
@@ -108,7 +110,7 @@ def empty_sdfg_for_node(
             nsdfg.add_datadesc(
                 conn_name,
                 copy.deepcopy(in_desc_with_name(node, state, sdfg, conn_name)))
-            if not no_nodes:
+            if add_access_nodes:
                 input_nodes[conn_name] = nstate.add_read(conn_name)
         else:
             conn_name = edge.src_conn
@@ -116,12 +118,13 @@ def empty_sdfg_for_node(
                 conn_name,
                 copy.deepcopy(out_desc_with_name(node, state, sdfg,
                                                  conn_name)))
-            if not no_nodes:
+            if add_access_nodes:
                 output_nodes[conn_name] = nstate.add_write(conn_name)
         nsdfg.arrays[conn_name].transient = False
 
     return nsdfg, nstate, input_nodes, output_nodes
-
+    
+    
 def python_pure_op_implementation(func):
     """ A decorator that registers an python op implementation. The name of the function will be the name of the op
         that is being replaced.
