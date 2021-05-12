@@ -1,15 +1,19 @@
 import dace
+import pytest
 from dace.dtypes import StorageType
+from dace import nodes as nd
+import dace.library
 import torch
 from torch import nn
 from torch.nn import functional as F
 
+import daceml.onnx as donnx
 from daceml.onnx.op_implementations.cpp_implementations import add_ln_tasklet, add_ln_tasklet_bwd, DetectLN
 from daceml.pytorch import DaceModule
 from daceml.testing.utils import torch_tensors_close
 
 
-def test_ln_detection():
+def test_ln_detection(sdfg_name):
     inp = torch.rand(2, 512, 768).cuda()
     dy = torch.rand(2, 512, 768).cuda()
     dace_dy = torch.clone(dy)
@@ -21,7 +25,10 @@ def test_ln_detection():
     dace_module = nn.LayerNorm([768]).cuda()
     dace_module.load_state_dict(module.state_dict())
 
-    dace_module = DaceModule(dace_module, cuda=True, backward=True)
+    dace_module = DaceModule(dace_module,
+                             cuda=True,
+                             backward=True,
+                             sdfg_name=sdfg_name)
 
     def detect_ln(module: DaceModule):
         module.sdfg.apply_transformations_repeated(DetectLN)
@@ -43,7 +50,7 @@ def test_ln_detection():
     torch_tensors_close("grad", inp.grad, dace_inp.grad)
 
 
-def test_layernorm():
+def test_layernorm(sdfg_name):
     inp = torch.rand(2, 512, 768).cuda()
     dace_inp = torch.clone(inp)
     inp.requires_grad = True
@@ -58,7 +65,7 @@ def test_layernorm():
     outp = F.layer_norm(inp, [768], weight=weight, bias=bias)
     doutp = torch.rand_like(outp)
 
-    sdfg = dace.SDFG("test")
+    sdfg = dace.SDFG(sdfg_name)
     sdfg.add_array("inp", [2, 512, 768],
                    dace.float32,
                    storage=StorageType.GPU_Global)
@@ -156,7 +163,9 @@ def test_layernorm():
     torch_tensors_close("bgrad", bias.grad, dbias)
 
 
-def test_softmax():
+@pytest.mark.parametrize("use_default", [True, False])
+def test_softmax(use_default, sdfg_name):
+    old_default = donnx.ONNXSoftmax.default_backward_implementation
 
     inp = torch.rand(2, 12, 512, 512).cuda()
     dy = torch.rand(2, 12, 512, 512).cuda()
@@ -166,11 +175,35 @@ def test_softmax():
 
     module = nn.Softmax(3)
 
-    dace_module = DaceModule(module, backward=True, cuda=True)
+    dace_module = DaceModule(module,
+                             backward=True,
+                             cuda=True,
+                             sdfg_name=sdfg_name)
+
+    # test both code paths -- the default and the node-specific setting
+    if use_default:
+        donnx.ONNXSoftmax.default_backward_implementation = "onnxruntime"
+    else:
+
+        def set_bwd_impl(module: DaceModule):
+            for n in module.sdfg.node(0).nodes():
+                if isinstance(n, donnx.ONNXSoftmax):
+                    n.backward_implementation = "onnxruntime"
+
+        dace_module.append_post_onnx_hook("set_bwd_impl", set_bwd_impl)
+
+    # check that we are using the fused expansion, not the default one
+    def check_nodes(_, bwd):
+        assert len(
+            [n for n in bwd.node(0).nodes() if isinstance(n, nd.Tasklet)]) == 1
+
+    dace_module.append_post_autodiff_hook("check_num_nodes", check_nodes)
 
     dace_outp = dace_module(dace_inp)
     pt_outp = module(inp)
-    torch_tensors_close("outputt", pt_outp, dace_outp)
+    torch_tensors_close("output", pt_outp, dace_outp)
     pt_outp.backward(dy)
     dace_outp.backward(dy)
+
     torch_tensors_close("grad", inp.grad, dace_inp.grad)
+    donnx.ONNXSoftmax.default_backward_implementation = old_default
