@@ -171,7 +171,7 @@ def auto_optimize(sdfg: dace.SDFG,
         # there is a nondeterministic bug in redundant array that appears if
         # we don't apply inline first
         sdfg.apply_transformations_repeated(interstate.InlineSDFG)
-        # sdfg.apply_strict_transformations()
+        sdfg.apply_strict_transformations()
 
 
 def iterables_equal(a, b) -> bool:
