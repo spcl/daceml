@@ -83,7 +83,7 @@ class ORTSoftmaxGrad(BackwardImplementation):
                                                      code,
                                                      language=dtypes.Language.CPP)
 
-        tasklet.environments = {"ORTSoftMaxEnv"}
+        tasklet.environments = {ORTSoftMaxEnv.full_class_path()}
 
         result = BackwardResult.empty()
         result.given_grad_names["output"] = "_dY"
@@ -107,7 +107,7 @@ class ORTSoftmaxGrad(BackwardImplementation):
 
         tasklet = add_ln_tasklet_bwd(context.backward_state, shape, axis)
 
-        tasklet.environments = {"LayerNormEnvironment"}
+        tasklet.environments = {LayerNormEnvironment.full_class_path()}
 
         result = BackwardResult.empty()
         result.given_grad_names["_Y"] = "_dY"

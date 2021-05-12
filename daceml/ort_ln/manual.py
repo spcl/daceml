@@ -254,7 +254,7 @@ def add_ln_tasklet_bwd(state: dace.SDFGState, input_shape, axis):
                                  for i in in_connectors},
                                 {o: dace.pointer(dace.float32)
                                  for o in out_connectors}, code, dtypes.Language.CPP)
-    tasklet.environments = {"LayerNormEnvironment"}
+    tasklet.environments = {LayerNormEnvironment.full_class_path()}
     return tasklet
 
 
@@ -285,6 +285,6 @@ def add_ln_tasklet(state: dace.SDFGState, input_shape, axis):
                                   for i in in_connectors},
                                  {o: dace.pointer(dace.float32)
                                   for o in out_connectors}, code, dtypes.Language.CPP)
-    tasklet.environments = {"LayerNormEnvironment"}
+    tasklet.environments = {LayerNormEnvironment.full_class_path()}
     return tasklet
 
