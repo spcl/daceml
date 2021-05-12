@@ -544,13 +544,7 @@ def test_bert_encoder_transformations():
     dace_model.sdfg.save('attn17_3.sdfg')
     print('attn17_3.sdfg')
 
-    softmax_sdfg.apply_transformations([VectorizeSDFG], validate_all=True, validate=True, print_report=True)
-    softmax_sdfg.apply_transformations([VectorizeSDFG], validate_all=True, validate=True, print_report=True)
-
-    dace_model.sdfg.save('attn17_4.sdfg')
-    print('attn17_4.sdfg')
-
-    # softmax_sdfg.apply_transformations([VectorizeSDFG], validate_all=True, validate=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([VectorizeSDFG], validate_all=True, validate=True, print_report=True)
 
     dace_model.sdfg.save('attn18.sdfg')
     print('attn18.sdfg')
