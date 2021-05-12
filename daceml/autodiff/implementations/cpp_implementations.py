@@ -48,7 +48,7 @@ def _prod(sequence):
     return functools.reduce(lambda a, b: a * b, sequence, 1)
 
 
-@autoregister_params(node_type=LayerNorm)
+@autoregister_params(node_type=LayerNorm, name="onnxruntime")
 class ORTLNGrad(BackwardImplementation):
     @staticmethod
     def backward(
@@ -78,7 +78,7 @@ class ORTLNGrad(BackwardImplementation):
         return tasklet, result
 
 
-@autoregister_params(op="Softmax", name="ort")
+@autoregister_params(op="Softmax", name="onnxruntime")
 class ORTSoftmaxGrad(BackwardImplementation):
     @staticmethod
     def backward(
