@@ -28,11 +28,11 @@ class OrtCUDAProviderOptions(ctypes.Structure):
         ("device_id", ctypes.c_int),
         ("cudnn_conv_algo_search", ctypes.c_int),
         ("cuda_mem_limit", ctypes.c_size_t),
+        ("arena_extend_strategy", ctypes.c_int),
         ("do_copy_in_default_stream", ctypes.c_int),
         ("has_user_compute_stream", ctypes.c_int),
         ("user_compute_stream", ctypes.c_void_p),
     ]
-
 
 class ORTCAPIInterface:
     dll = None
