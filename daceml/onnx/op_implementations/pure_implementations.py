@@ -673,7 +673,7 @@ class PureDropout(ONNXForward):
                 sdfg: SDFG) -> typing.Union[nodes.Node, SDFG]:
 
         input = in_desc_with_name(node, state, sdfg, "data")
-        nsdfg, nstate, inputs, outputs = empty_sdfg_for_node(sdfg, state, node, no_nodes=True)
+        nsdfg, nstate, inputs, outputs = empty_sdfg_for_node(sdfg, state, node, add_access_nodes=False)
         mask_name, mask_desc = sdfg.add_array(node.label + "_mask", input.shape, dace.bool, storage=input.storage, transient=False, find_new_name=True)
         node.add_in_connector("input_mask")
         state.add_edge(state.add_read(mask_name), None, node, "input_mask", sdfg.make_array_memlet(mask_name))
