@@ -13,6 +13,7 @@ from daceml.pytorch import DaceModule
 import daceml.onnx as donnx
 from dace.sdfg import state as dace_state
 from daceml.pytorch import DaceModule
+from daceml.testing.utils import torch_tensors_close
 from daceml.transformation import ConstantFolding
 from dace import dtypes
 from dace.sdfg import utils as sdutil
@@ -146,12 +147,10 @@ def test_mnist(sdfg_name, gpu):
 
 
 def apply_softmax_transformations(fwd_sdfg, bwd_sdfg):
-    fwd_sdfg.save('encoder1.sdfg')
     print('encoder1.sdfg')
 
     fwd_sdfg.expand_library_nodes()
 
-    fwd_sdfg.save('encoder2.sdfg')
     print('encoder2.sdfg')
 
     # find softmax sdfg and state
@@ -183,14 +182,15 @@ def apply_softmax_transformations(fwd_sdfg, bwd_sdfg):
 
     subgraphs = list(enumerate_matches(fwd_sdfg, pattern_graph))
 
-    assert(len(subgraphs) == 1)
+    assert (len(subgraphs) == 1)
     softmax_subgraph = subgraphs[0]
-    softmax_nsdfg: sdfg_nodes.NestedSDFG = nest_state_subgraph(softmax_subgraph.graph.parent, softmax_subgraph.graph, softmax_subgraph, 'softmax_nsdfg')
+    softmax_nsdfg: sdfg_nodes.NestedSDFG = nest_state_subgraph(
+        softmax_subgraph.graph.parent, softmax_subgraph.graph,
+        softmax_subgraph, 'softmax_nsdfg')
 
     softmax_sdfg: dace_sdfg.SDFG = softmax_nsdfg.sdfg
     softmax_state: dace_state.SDFGState = softmax_sdfg.nodes()[0]
 
-    fwd_sdfg.save('encoder2_0_1.sdfg')
     print('encoder2_0_1.sdfg')
 
     # enable temporary array reuse
@@ -199,252 +199,273 @@ def apply_softmax_transformations(fwd_sdfg, bwd_sdfg):
 
     merge_symbols(softmax_sdfg, 'output', 'exp_arr')
 
-    fwd_sdfg.save('encoder2_1.sdfg')
     print('encoder2_1.sdfg')
 
     # remove view nodes
 
+    softmax_sdfg.apply_transformations_repeated([SqueezeViewRemove],
+                                                validate_all=True,
+                                                print_report=True)
 
-    softmax_sdfg.apply_transformations_repeated([SqueezeViewRemove], validate_all=True, print_report=True)
-
-    fwd_sdfg.save('encoder2_2.sdfg')
     print('encoder2_2.sdfg')
 
     # eliminate trivial map dimensions
 
-    softmax_state.parent.apply_transformations_repeated([TrivialMapElimination, TrivialMapRangeElimination],
-                                                        validate_all=True, print_report=True)
+    softmax_state.parent.apply_transformations_repeated(
+        [TrivialMapElimination, TrivialMapRangeElimination],
+        validate_all=True,
+        print_report=True)
 
-    fwd_sdfg.save('encoder3.sdfg')
     print('encoder3.sdfg')
 
     # split last dimension out of 4 dimensional maps
 
-
-    pattern = sdutil.node_path_graph(dace.nodes.MapEntry(dace.nodes.Map('_', [], [])))
-    occurences = [(subgraph.nodes()[0], subgraph.graph) for subgraph in enumerate_matches(softmax_sdfg, pattern)]
+    pattern = sdutil.node_path_graph(
+        dace.nodes.MapEntry(dace.nodes.Map('_', [], [])))
+    occurences = [(subgraph.nodes()[0], subgraph.graph)
+                  for subgraph in enumerate_matches(softmax_sdfg, pattern)]
     for map_entry, state in occurences:
         if map_entry.map.range.dims() == 4:
-            print("Applying MapExpansion tranformation ", state.label, ". Nodes:", map_entry)
-            entries = MapExpansion.apply_to(sdfg=state.parent, map_entry=map_entry)
+            print("Applying MapExpansion tranformation ", state.label,
+                  ". Nodes:", map_entry)
+            entries = MapExpansion.apply_to(sdfg=state.parent,
+                                            map_entry=map_entry)
             assert len(entries) == 4
-            print("Applying MapCollapse tranformation ", state.label, ". Nodes:", map_entry)
-            new_entry, new_exit = MapCollapse.apply_to(sdfg=state.parent,
-                                                       _outer_map_entry=entries[0],
-                                                       _inner_map_entry=entries[1])
-            print("Applying MapCollapse tranformation again ", state.label, ". Nodes:", map_entry)
+            print("Applying MapCollapse tranformation ", state.label,
+                  ". Nodes:", map_entry)
+            new_entry, new_exit = MapCollapse.apply_to(
+                sdfg=state.parent,
+                _outer_map_entry=entries[0],
+                _inner_map_entry=entries[1])
+            print("Applying MapCollapse tranformation again ", state.label,
+                  ". Nodes:", map_entry)
             MapCollapse.apply_to(sdfg=state.parent,
                                  _outer_map_entry=new_entry,
                                  _inner_map_entry=entries[2])
 
-    fwd_sdfg.save('encoder3_1.sdfg')
     print('encoder3_1.sdfg')
 
     # apply strip mining for future use as warps
 
-
-    pattern = sdutil.node_path_graph(dace.nodes.MapEntry(dace.nodes.Map('_', [], [])))
+    pattern = sdutil.node_path_graph(
+        dace.nodes.MapEntry(dace.nodes.Map('_', [], [])))
 
     for subgraph in enumerate_matches(softmax_sdfg, pattern):
         map_entry: sdfg_nodes.MapEntry = subgraph.nodes()[0]
         if map_entry.map.range.dims() == 1:
-            print("Applying StripMining tranformation ", subgraph.graph.label, ". Nodes:", subgraph.nodes())
+            print("Applying StripMining tranformation ", subgraph.graph.label,
+                  ". Nodes:", subgraph.nodes())
             rb, re, rs = map_entry.map.range[0]
             seq_len = re + 1
             assert rb == 0
             assert rs == 1
             assert seq_len % 32 == 0
             StripMining.apply_to(sdfg=subgraph.graph.parent,
-                                 options={'tile_size': seq_len // 32,
-                                          'tiling_type': dace.TilingType.CeilRange,
-                                          'divides_evenly': True},
+                                 options={
+                                     'tile_size': seq_len // 32,
+                                     'tiling_type': dace.TilingType.CeilRange,
+                                     'divides_evenly': True
+                                 },
                                  _map_entry=map_entry)
 
     fwd_sdfg.validate()
 
-    fwd_sdfg.save('encoder3_2.sdfg')
     print('encoder3_2.sdfg')
 
     # add temp transient
 
-    pattern = sdutil.node_path_graph(dace.nodes.MapExit(dace.nodes.Map('_', [], [])),
-                                     dace.nodes.MapExit(dace.nodes.Map('_', [], [])),
-                                     dace.nodes.MapExit(dace.nodes.Map('_', [], [])))
-    occurences = [(subgraph.nodes(), subgraph.graph) for subgraph in enumerate_matches(softmax_sdfg, pattern)]
+    pattern = sdutil.node_path_graph(
+        dace.nodes.MapExit(dace.nodes.Map('_', [], [])),
+        dace.nodes.MapExit(dace.nodes.Map('_', [], [])),
+        dace.nodes.MapExit(dace.nodes.Map('_', [], [])))
+    occurences = [(subgraph.nodes(), subgraph.graph)
+                  for subgraph in enumerate_matches(softmax_sdfg, pattern)]
     for nodes, state in occurences:
         if state.edges_between(nodes[0], nodes[1])[0].data.wcr:
-            print("Applying AccumulateTransient tranformation ", state.label, ". Nodes:", nodes)
-            AccumulateTransient.apply_to(sdfg=state.parent, map_exit=nodes[0], outer_map_exit=nodes[1])
+            print("Applying AccumulateTransient tranformation ", state.label,
+                  ". Nodes:", nodes)
+            AccumulateTransient.apply_to(sdfg=state.parent,
+                                         map_exit=nodes[0],
+                                         outer_map_exit=nodes[1])
 
-    fwd_sdfg.save('encoder3_3.sdfg')
     print('encoder3_3.sdfg')
 
     # nest all maps into states
 
-    softmax_sdfg.apply_transformations_repeated([NestMaps], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([NestMaps],
+                                                validate_all=True,
+                                                print_report=True)
 
-    fwd_sdfg.save('encoder4.sdfg')
     print('encoder4.sdfg')
 
     # nest access nodes into maps
 
+    softmax_sdfg.apply_transformations_repeated(
+        [NestExitAccessNode, NestEntryAccessNode, RemoveUnusedAccessNode],
+        validate_all=True,
+        print_report=True)
 
-    softmax_sdfg.apply_transformations_repeated([
-        NestExitAccessNode, NestEntryAccessNode, RemoveUnusedAccessNode], validate_all=True, print_report=True)
-
-    fwd_sdfg.save('encoder5.sdfg')
     print('encoder5.sdfg')
 
+    softmax_sdfg.apply_transformations_repeated([NestedSDFGFusion],
+                                                validate_all=True,
+                                                print_report=True)
 
-    softmax_sdfg.apply_transformations_repeated([NestedSDFGFusion], validate_all=True, print_report=True)
-
-    fwd_sdfg.save('encoder6.sdfg')
     print('encoder6.sdfg')
 
     softmax_sdfg.apply_transformations_repeated(
-        [CleanNestedSDFGConnectors, RemoveDanglingAccessNodes, NestTransients], validate_all=True, print_report=True)
+        [CleanNestedSDFGConnectors, RemoveDanglingAccessNodes, NestTransients],
+        validate_all=True,
+        print_report=True)
 
-
-    fwd_sdfg.save('encoder7.sdfg')
     print('encoder7.sdfg')
 
     # Buggy behavior of TrivialMapRangeElimination that leaves empty map that can't be removed with
     # TrivialMapElimination helps here by blocking even more serious bug in ContantPropagation later
-    softmax_sdfg.apply_transformations_repeated([TrivialMapRangeElimination, TrivialMapElimination], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated(
+        [TrivialMapRangeElimination, TrivialMapElimination],
+        validate_all=True,
+        print_report=True)
 
-    fwd_sdfg.save('encoder7_1.sdfg')
     print('encoder7_1.sdfg')
 
+    softmax_sdfg.apply_transformations_repeated([NestMapContent],
+                                                validate_all=True,
+                                                print_report=True)
 
-    softmax_sdfg.apply_transformations_repeated([NestMapContent], validate_all=True, print_report=True)
-
-    fwd_sdfg.save('encoder8.sdfg')
     print('encoder8.sdfg')
 
+    softmax_sdfg.apply_transformations_repeated([NestedMapFusion],
+                                                validate_all=True,
+                                                print_report=True)
 
-    softmax_sdfg.apply_transformations_repeated([NestedMapFusion], validate_all=True, print_report=True)
-
-    fwd_sdfg.save('encoder9.sdfg')
     print('encoder9.sdfg')
 
     softmax_sdfg.apply_transformations_repeated(
-        [CleanNestedSDFGConnectors, RemoveDanglingAccessNodes, NestTransients], validate_all=True, print_report=True)
+        [CleanNestedSDFGConnectors, RemoveDanglingAccessNodes, NestTransients],
+        validate_all=True,
+        print_report=True)
 
-    fwd_sdfg.save('encoder10.sdfg')
     print('encoder10.sdfg')
 
+    softmax_sdfg.apply_transformations_repeated(
+        [UnifyInOutNestedSDFGConnectors], validate_all=True, print_report=True)
 
-    softmax_sdfg.apply_transformations_repeated([UnifyInOutNestedSDFGConnectors], validate_all=True, print_report=True)
-
-    fwd_sdfg.save('encoder11.sdfg')
     print('encoder11.sdfg')
 
+    softmax_sdfg.apply_transformations_repeated(
+        [WarpAllReduceDetectionNoTasklet],
+        validate_all=True,
+        print_report=True)
 
-    softmax_sdfg.apply_transformations_repeated([WarpAllReduceDetectionNoTasklet], validate_all=True, print_report=True)
-
-    fwd_sdfg.save('encoder11_1.sdfg')
     print('encoder11_1.sdfg')
 
     propagate_memlets_sdfg(fwd_sdfg)
 
-    fwd_sdfg.save('encoder11_2.sdfg')
     print('encoder11_2.sdfg')
 
+    softmax_sdfg.apply_transformations_repeated([AddNestedSDFGInputConnector],
+                                                validate_all=True,
+                                                print_report=True)
 
-    softmax_sdfg.apply_transformations_repeated([AddNestedSDFGInputConnector], validate_all=True, print_report=True)
-
-    fwd_sdfg.save('encoder11_3.sdfg')
     print('encoder11_3.sdfg')
 
+    softmax_sdfg.apply_transformations_repeated([RemoveReadSDFGConnectors],
+                                                validate_all=True,
+                                                print_report=True)
 
-    softmax_sdfg.apply_transformations_repeated([RemoveReadSDFGConnectors], validate_all=True, print_report=True)
-
-    fwd_sdfg.save('encoder12.sdfg')
     print('encoder12.sdfg')
 
+    softmax_sdfg.apply_transformations_repeated([NestTransients],
+                                                validate_all=True,
+                                                print_report=True)
 
-    softmax_sdfg.apply_transformations_repeated([NestTransients], validate_all=True, print_report=True)
-
-    fwd_sdfg.save('encoder12_1.sdfg')
     print('encoder12_1.sdfg')
 
     # TODO: it should be done in transformation that can detect if barrier removable or not
     pattern = sdutil.node_path_graph(Barrier)
 
-    matches = [(subgraph.graph, subgraph.nodes()) for subgraph in enumerate_matches(softmax_sdfg, pattern)]
+    matches = [(subgraph.graph, subgraph.nodes())
+               for subgraph in enumerate_matches(softmax_sdfg, pattern)]
     for state, nodes in matches:
         print("Match found in state", state.label, ". Nodes:", nodes)
 
-        EmptyStateElimination.apply_to(state.parent, empty_state=state, verify=False)
+        EmptyStateElimination.apply_to(state.parent,
+                                       empty_state=state,
+                                       verify=False)
 
-    fwd_sdfg.save('encoder12_2.sdfg')
     print('encoder12_2.sdfg')
 
+    softmax_sdfg.apply_transformations_repeated([CleanNestedWrites],
+                                                validate_all=True,
+                                                print_report=True)
 
-    softmax_sdfg.apply_transformations_repeated([CleanNestedWrites], validate_all=True, print_report=True)
-
-    fwd_sdfg.save('encoder13.sdfg')
     print('encoder13.sdfg')
 
+    softmax_sdfg.apply_transformations_repeated([RemoveUnusedStates],
+                                                validate_all=True,
+                                                print_report=True)
 
-    softmax_sdfg.apply_transformations_repeated([RemoveUnusedStates], validate_all=True, print_report=True)
-
-    fwd_sdfg.save('encoder14.sdfg')
     print('encoder14.sdfg')
 
+    softmax_sdfg.apply_transformations_repeated([PruneConnectors],
+                                                validate_all=True,
+                                                print_report=True)
 
-    softmax_sdfg.apply_transformations_repeated(
-        [PruneConnectors], validate_all=True, print_report=True)
-
-    fwd_sdfg.save('encoder14_1.sdfg')
     print('encoder14_1.sdfg')
 
-    softmax_sdfg.apply_transformations_repeated(
-        [RemoveDanglingAccessNodes], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([RemoveDanglingAccessNodes],
+                                                validate_all=True,
+                                                print_report=True)
 
-    fwd_sdfg.save('encoder15.sdfg')
     print('encoder15.sdfg')
 
+    softmax_sdfg.apply_transformations_repeated([ConstantPropagation],
+                                                validate_all=True,
+                                                print_report=True)
 
-    softmax_sdfg.apply_transformations_repeated([ConstantPropagation], validate_all=True, print_report=True)
-
-    fwd_sdfg.save('encoder15_1.sdfg')
     print('encoder15_1.sdfg')
 
-    softmax_sdfg.apply_transformations_repeated([EmptyStateElimination], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([EmptyStateElimination],
+                                                validate_all=True,
+                                                print_report=True)
 
-    fwd_sdfg.save('encoder15_2.sdfg')
     print('encoder15_2.sdfg')
 
-    softmax_sdfg.apply_transformations_repeated([NestedMapFusion], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([NestedMapFusion],
+                                                validate_all=True,
+                                                print_report=True)
 
-    fwd_sdfg.save('encoder15_3.sdfg')
     print('encoder15_3.sdfg')
 
-    softmax_sdfg.apply_transformations_repeated([CleanNestedSDFGConnectors, RemoveDanglingAccessNodes],
-                                                validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated(
+        [CleanNestedSDFGConnectors, RemoveDanglingAccessNodes],
+        validate_all=True,
+        print_report=True)
 
-    fwd_sdfg.save('encoder15_3_1.sdfg')
     print('encoder15_3_1.sdfg')
 
-    softmax_sdfg.apply_transformations_repeated([UnifyInOutNestedSDFGConnectors], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated(
+        [UnifyInOutNestedSDFGConnectors], validate_all=True, print_report=True)
 
-    fwd_sdfg.save('encoder15_6.sdfg')
     print('encoder15_6.sdfg')
 
-    softmax_sdfg.apply_transformations_repeated([RemoveReadSDFGConnectors], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([RemoveReadSDFGConnectors],
+                                                validate_all=True,
+                                                print_report=True)
 
-    fwd_sdfg.save('encoder15_6_1.sdfg')
     print('encoder15_6_1.sdfg')
 
-    softmax_sdfg.apply_transformations_repeated([NestTransients], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([NestTransients],
+                                                validate_all=True,
+                                                print_report=True)
 
-    fwd_sdfg.save('encoder15_7.sdfg')
     print('encoder15_7.sdfg')
 
-    softmax_sdfg.apply_transformations_repeated([CleanNestedSDFGConnectors], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([CleanNestedSDFGConnectors],
+                                                validate_all=True,
+                                                print_report=True)
 
-    fwd_sdfg.save('encoder16.sdfg')
     print('encoder16.sdfg')
 
     # remove all barriers
@@ -452,44 +473,50 @@ def apply_softmax_transformations(fwd_sdfg, bwd_sdfg):
     pattern = sdutil.node_path_graph(Barrier)
 
     for subgraph in enumerate_matches(softmax_sdfg, pattern):
-        print("Match found in state", subgraph.graph.label, ". Nodes:", subgraph.nodes())
+        print("Match found in state", subgraph.graph.label, ". Nodes:",
+              subgraph.nodes())
 
-        EmptyStateElimination.apply_to(subgraph.graph.parent, empty_state=subgraph.graph, verify=False)
+        EmptyStateElimination.apply_to(subgraph.graph.parent,
+                                       empty_state=subgraph.graph,
+                                       verify=False)
 
-    fwd_sdfg.save('encoder16_2.sdfg')
     print('encoder16_2.sdfg')
 
+    softmax_sdfg.apply_transformations_repeated([EmptyStateElimination],
+                                                validate_all=True,
+                                                print_report=True)
 
-    softmax_sdfg.apply_transformations_repeated([EmptyStateElimination], validate_all=True, print_report=True)
-
-    fwd_sdfg.save('encoder16_3.sdfg')
     print('encoder16_3.sdfg')
 
     softmax_sdfg.apply_transformations_repeated([
-        NestedMapFusion, CleanNestedSDFGConnectors, RemoveDanglingAccessNodes, NestTransients,
-        UnifyInOutNestedSDFGConnectors, RemoveReadSDFGConnectors], validate_all=True, print_report=True)
+        NestedMapFusion, CleanNestedSDFGConnectors, RemoveDanglingAccessNodes,
+        NestTransients, UnifyInOutNestedSDFGConnectors,
+        RemoveReadSDFGConnectors
+    ],
+                                                validate_all=True,
+                                                print_report=True)
 
-    fwd_sdfg.save('encoder16_4.sdfg')
     print('encoder16_4.sdfg')
 
     # it fails with strict_transform enabled for some reason
-    softmax_sdfg.apply_transformations([GPUTransformSDFG], validate_all=True, print_report=True, options={'strict_transform': False})
+    softmax_sdfg.apply_transformations([GPUTransformSDFG],
+                                       validate_all=True,
+                                       print_report=True,
+                                       options={'strict_transform': False})
 
-    fwd_sdfg.save('encoder17.sdfg')
     print('encoder17.sdfg')
 
     # GPUTransformSDFG incorrectly wraps Tasklets of NestedSDFGs deep in the nesting hierarchy with empty maps
     # it is easier to fix it here by applying TrivialMapElimination
-    softmax_sdfg.apply_transformations_repeated([TrivialMapElimination], validate_all=True, print_report=True)
+    softmax_sdfg.apply_transformations_repeated([TrivialMapElimination],
+                                                validate_all=True,
+                                                print_report=True)
 
-    fwd_sdfg.save('encoder18.sdfg')
     print('encoder18.sdfg')
 
     softmax_sdfg.expand_library_nodes()
 
-    fwd_sdfg.save('encoder_last.sdfg')
     print('encoder_last.sdfg')
-
 
 
 @pytest.mark.pure
@@ -515,13 +542,11 @@ def test_bert(sdfg_name, gpu):
                             cuda=gpu)
 
     if gpu:
-        dace_model.append_post_autodiff_hook('apply_softmax_transformations', apply_softmax_transformations)
+        dace_model.append_post_autodiff_hook('apply_softmax_transformations',
+                                             apply_softmax_transformations)
 
     # check forward pass using loss
     input = torch.randn([batch_size, seq_len, hidden_size])
     labels = torch.tensor([0, 123], dtype=torch.long)
 
-    training_step(dace_model, model,
-                  (input, labels), sdfg_name, gpu)
-
-
+    training_step(dace_model, model, (input, labels), sdfg_name, gpu)

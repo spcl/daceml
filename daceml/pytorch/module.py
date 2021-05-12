@@ -14,7 +14,9 @@ from torch.onnx import TrainingMode
 from daceml.autodiff.pytorch import make_backward_function
 from daceml.onnx import ONNXModel
 from daceml.onnx.shape_inference import infer_shapes
-from daceml.util import utils
+from daceml.util import utils, find_str_not_in_set
+
+log = logging.getLogger(__name__)
 
 
 class DaceModule(nn.Module):
@@ -70,7 +72,7 @@ class DaceModule(nn.Module):
 
         #: hooks that are executed after onnx graph is imported to an SDFG
         self.post_onnx_hooks: OrderedDict[str, Callable[
-            [ONNXModel], None]] = collections.OrderedDict()
+            [DaceModule], None]] = collections.OrderedDict()
 
         #: hooks that are executed after the backpropagation sdfg has been created
         self.post_autodiff_hooks: OrderedDict[str, Callable[
@@ -92,9 +94,9 @@ class DaceModule(nn.Module):
                     "auto_optimize"] = auto_optimize_backward
             else:
                 self.post_onnx_hooks["auto_optimize"] = \
-                    lambda onnx_model: utils.auto_optimize(onnx_model.sdfg,
-                                                           self.cuda,
-                                                           apply_strict=apply_strict)
+                    lambda dace_module: utils.auto_optimize(dace_module.dace_model.sdfg,
+                                                            self.cuda,
+                                                            apply_strict=apply_strict)
         elif apply_strict:
             if self.backward:
 
@@ -105,7 +107,7 @@ class DaceModule(nn.Module):
                 self.post_autodiff_hooks["apply_strict"] = apply_strict
             else:
                 self.post_onnx_hooks["apply_strict"] = \
-                    lambda onnx_model: onnx_model.sdfg.apply_strict_transformations()
+                    lambda dace_module: dace_module.sdfg.apply_strict_transformations()
 
         if dummy_inputs is not None:
             self.function = self._initialize_sdfg(dummy_inputs)
@@ -114,24 +116,44 @@ class DaceModule(nn.Module):
         """ Clear the sdfg so that optimizations are reapplied. """
         self.function = None
 
-    def prepend_post_onnx_hook(self, name: str, func: Callable[[ONNXModel],
+    def prepend_post_onnx_hook(self, name: str, func: Callable[["DaceModule"],
                                                                None]):
+        if self.function is not None:
+            log.warning(
+                f"Added a hook after the model was already initialized. This hook "
+                f"(with name {name}) will not be executed!")
+        name = find_str_not_in_set(set(self.post_onnx_hooks), name)
         self.post_onnx_hooks[name] = func
         self.post_onnx_hooks.move_to_end(name, last=False)
 
-    def append_post_onnx_hook(self, name: str, func: Callable[[ONNXModel],
+    def append_post_onnx_hook(self, name: str, func: Callable[["DaceModule"],
                                                               None]):
+        if self.function is not None:
+            log.warning(
+                f"Added a hook after the model was already initialized. This hook "
+                f"(with name {name}) will not be executed!")
+        name = find_str_not_in_set(set(self.post_onnx_hooks), name)
         self.post_onnx_hooks[name] = func
 
     def prepend_post_autodiff_hook(self, name: str,
                                    func: Callable[[dace.SDFG, dace.SDFG],
                                                   None]):
+        if self.function is not None:
+            log.warning(
+                f"Added a hook after the model was already initialized. This hook "
+                f"(with name {name}) will not be executed!")
+        name = find_str_not_in_set(set(self.post_autodiff_hooks), name)
         self.post_autodiff_hooks[name] = func
         self.post_autodiff_hooks.move_to_end(name, last=False)
 
     def append_post_autodiff_hook(self, name: str,
                                   func: Callable[[dace.SDFG, dace.SDFG],
                                                  None]):
+        if self.function is not None:
+            log.warning(
+                f"Added a hook after the model was already initialized. This hook "
+                f"(with name {name}) will not be executed!")
+        name = find_str_not_in_set(set(self.post_autodiff_hooks), name)
         self.post_autodiff_hooks[name] = func
 
     def _initialize_sdfg(self, dummy_inputs):
@@ -168,7 +190,7 @@ class DaceModule(nn.Module):
             self.sdfg.validate()
 
             for _, hook in self.post_onnx_hooks.items():
-                hook(self.dace_model)
+                hook(self)
 
             if self.backward:
                 function = make_backward_function(dace_model)
