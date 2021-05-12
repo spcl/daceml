@@ -52,6 +52,7 @@ from dace.transformation.interstate.state_elimination import EmptyStateEliminati
 from dace.libraries.standard.nodes.barrier import Barrier
 from dace.transformation.interstate.gpu_transform_sdfg import GPUTransformSDFG
 from dace.transformation.dataflow.vectorization import Vectorization
+from dace.transformation.dataflow.vectorize_sdfg import VectorizeSDFG
 
 
 from dace.config import Config
@@ -157,6 +158,8 @@ def test_bert_encoder_transformations():
     pt_outputs = ptmodel(input.clone())
 
     dace_model = DaceModule(ptmodel, dummy_inputs=input.clone(), cuda=False, train=False)
+
+    Config.set('optimizer', 'match_exception', value=True)
 
     # Transformed version
 
@@ -521,11 +524,21 @@ def test_bert_encoder_transformations():
 
     softmax_sdfg.apply_transformations_repeated([NestMapContent], validate_all=True, print_report=True)
 
-    #softmax_sdfg.apply_transformations_repeated([Vectorization], validate_all=True, print_report=True)
+    dace_model.sdfg.save('attn17_3.sdfg')
+    print('attn17_3.sdfg')
 
+    softmax_sdfg.apply_transformations([VectorizeSDFG], validate_all=True, validate=True, print_report=True)
+    softmax_sdfg.apply_transformations([VectorizeSDFG], validate_all=True, validate=True, print_report=True)
+
+    dace_model.sdfg.save('attn17_4.sdfg')
+    print('attn17_4.sdfg')
+
+    # softmax_sdfg.apply_transformations([VectorizeSDFG], validate_all=True, validate=True, print_report=True)
 
     dace_model.sdfg.save('attn18.sdfg')
     print('attn18.sdfg')
+
+    softmax_sdfg.validate()
 
     softmax_sdfg.expand_library_nodes()
 
