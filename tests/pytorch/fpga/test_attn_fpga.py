@@ -8,7 +8,6 @@ from dace.transformation.dataflow import RedundantSecondArray
 from daceml.transformation import ConstantFolding
 import daceml.onnx as donnx
 
-donnx.default_implementation = "pure"
 from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
 from dace.transformation.dataflow import PruneConnectors
 from dace.transformation.dataflow import streaming_memory as sm
@@ -100,89 +99,94 @@ def evaluate(batch_size=1,
     ]
     ptmodel = torch.nn.MultiheadAttention(N, H, bias=False)
 
-    donnx.ONNXCast.default_implementation = "onnxruntime"
-
     pt_outputs = ptmodel(Q, K, V)
 
-    if execute_cpu_dace:
-        dace_model = DaceModule(ptmodel,
-                                dummy_inputs=(Q, K, V),
-                                auto_optimize=False)
-        # dace_outputs_0 = dace_model(Q, K, V)
+    old_default = donnx.default_implementation
 
-    else:
-        dace_model = DaceModule(ptmodel,
-                                dummy_inputs=(Q, K, V),
-                                auto_optimize=False)
+    try:
+        donnx.default_implementation = "pure"
 
-    ################################################
-    # Apply transformations
-    dace_model.dace_model.sdfg.apply_transformations_repeated(
-        [ConstantFolding, RedundantSecondArray],
-        validate_all=True,
-        print_report=True)
-    if execute_cpu_dace:
-        dace_outputs_1 = dace_model(Q, K, V)
-        assert np.allclose(pt_outputs[0].detach().numpy(),
-                           dace_outputs_1[0],
-                           atol=1e-06)
-        assert np.allclose(pt_outputs[1].detach().numpy(),
-                           dace_outputs_1[1],
-                           atol=1e-06)
+        if execute_cpu_dace:
+            dace_model = DaceModule(ptmodel,
+                                    dummy_inputs=(Q, K, V),
+                                    auto_optimize=False)
+            # dace_outputs_0 = dace_model(Q, K, V)
 
-    # Get the SDFG
-    sdfg = dace_model.sdfg
-    ##################################
-    # Vectorize
-    # TODO: this is still partial
-    vec_width = 4  # we can not go further in this because of the systolic organization
-    vec_type = dace.vector(dace.float32, vec_width)
-    #
-    # #vectorize input B matmul, output not vectorized
-    input_data_name = "ONNX___tmp43"
-    utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
-    print("Applying vectorization {} to Array {}".format(
-        vec_width, input_data_name))
+        else:
+            dace_model = DaceModule(ptmodel,
+                                    dummy_inputs=(Q, K, V),
+                                    auto_optimize=False)
 
-    # vectorize input B matmul, output not vectorized
-    input_data_name = "ONNX___tmp46"
-    utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
-    print("Applying vectorization {} to Array {}".format(
-        vec_width, input_data_name))
+        ################################################
+        # Apply transformations
+        dace_model.dace_model.sdfg.apply_transformations_repeated(
+            [ConstantFolding, RedundantSecondArray],
+            validate_all=True,
+            print_report=True)
+        if execute_cpu_dace:
+            dace_outputs_1 = dace_model(Q, K, V)
+            assert np.allclose(pt_outputs[0].detach().numpy(),
+                               dace_outputs_1[0],
+                               atol=1e-06)
+            assert np.allclose(pt_outputs[1].detach().numpy(),
+                               dace_outputs_1[1],
+                               atol=1e-06)
 
-    # vectorize input B matmul, output not vectorized
-    input_data_name = "ONNX___tmp47"
-    utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
-    # ##################################
+        # Get the SDFG
+        sdfg = dace_model.sdfg
+        ##################################
+        # Vectorize
+        # TODO: this is still partial
+        vec_width = 4  # we can not go further in this because of the systolic organization
+        vec_type = dace.vector(dace.float32, vec_width)
+        #
+        # #vectorize input B matmul, output not vectorized
+        input_data_name = "ONNX___tmp43"
+        utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
+        print("Applying vectorization {} to Array {}".format(
+            vec_width, input_data_name))
 
-    ###################################################
-    # Transform to FPGA
+        # vectorize input B matmul, output not vectorized
+        input_data_name = "ONNX___tmp46"
+        utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
+        print("Applying vectorization {} to Array {}".format(
+            vec_width, input_data_name))
 
-    donnx.ONNXMatMul.default_implementation = "fpga"
-    donnx.ONNXReshape.default_implementation = "fpga"
-    donnx.ONNXSoftmax.default_implementation = "fpga"
-    donnx.ONNXReduceSum.default_implementation = "fpga"
+        # vectorize input B matmul, output not vectorized
+        input_data_name = "ONNX___tmp47"
+        utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
+        # ##################################
 
-    sdfg.apply_transformations([FPGATransformSDFG], validate=False)
-    sdfg.expand_library_nodes()
+        ###################################################
+        # Transform to FPGA
+        with dace.library.change_default(
+                donnx.ONNXMatMul, "fpga"), dace.library.change_default(
+                    donnx.ONNXReshape, "fpga"), dace.library.change_default(
+                        donnx.ONNXSoftmax, "fpga"), dace.library.change_default(
+                            donnx.ONNXReduceSum, "fpga"):
 
-    sdfg.apply_transformations_repeated([InlineSDFG])
-    sdfg.apply_transformations_repeated(PruneConnectors)
+            sdfg.apply_transformations([FPGATransformSDFG], validate=False)
+            sdfg.expand_library_nodes()
 
-    # Streaming composition (Prov. disabled)
-    # sdfg.apply_transformations_repeated([InlineSDFG, sm.StreamingMemory],
-    #                                     [{}, {
-    #                                         "storage": StorageType.FPGA_Local
-    #                                     }],
-    #                                     print_report=True)
-    # sdfg.apply_transformations_repeated([InlineSDFG, sm.StreamingComposition],
-    #                                     [{}, {
-    #                                         "storage": StorageType.FPGA_Local
-    #                                     }],
-    #                                     print_report=True)
+            sdfg.apply_transformations_repeated([InlineSDFG])
+            sdfg.apply_transformations_repeated(PruneConnectors)
 
-    dace_output_fpga = dace_model(Q, K, V)
+        # Streaming composition (Prov. disabled)
+        # sdfg.apply_transformations_repeated([InlineSDFG, sm.StreamingMemory],
+        #                                     [{}, {
+        #                                         "storage": StorageType.FPGA_Local
+        #                                     }],
+        #                                     print_report=True)
+        # sdfg.apply_transformations_repeated([InlineSDFG, sm.StreamingComposition],
+        #                                     [{}, {
+        #                                         "storage": StorageType.FPGA_Local
+        #                                     }],
+        #                                     print_report=True)
 
+        dace_output_fpga = dace_model(Q, K, V)
+
+    finally:
+        donnx.default_implementation = old_default
     if queue is not None:
         diff0 = np.linalg.norm(pt_outputs[0].detach().numpy() -
                                dace_output_fpga[0].numpy()) / np.linalg.norm(

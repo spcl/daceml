@@ -19,8 +19,6 @@ from multiprocessing import Process, Queue
 
 import daceml.onnx as donnx
 
-donnx.default_implementation = "pure"
-donnx.ONNXConv.default_implementation = 'pure'
 
 
 class Model(nn.Module):
@@ -65,7 +63,8 @@ def evaluate(in_channels,
     dace_model = DaceModule(ptmodel, dummy_inputs=x, auto_optimize=False)
 
     if execute_cpu_dace:
-        dace_output = dace_model(x)
+        with dace.library.change_default(donnx.ONNXConv, "pure"):
+            dace_output = dace_model(x)
 
     sdfg = dace_model.sdfg
     ##################################
@@ -76,18 +75,18 @@ def evaluate(in_channels,
 
     ###################################################
     # Transform for FPGA and Inline
-    donnx.ONNXConv.default_implementation = "fpga"
-    sdfg.apply_transformations([FPGATransformSDFG])
+    with dace.library.change_default(donnx.ONNXConv, "fpga"):
+        sdfg.apply_transformations([FPGATransformSDFG])
 
-    ###################################
-    sdfg.expand_library_nodes()
-    sdfg.apply_transformations_repeated([InlineSDFG])
+        ###################################
+        sdfg.expand_library_nodes()
+        sdfg.apply_transformations_repeated([InlineSDFG])
 
-    # ###################################################################
-    # # Input to constant
-    if input_to_constant:
-        sdfg.apply_transformations_repeated([InputToConstant],
-                                            print_report=True)
+        # ###################################################################
+        # # Input to constant
+        if input_to_constant:
+            sdfg.apply_transformations_repeated([InputToConstant],
+                                                print_report=True)
 
     #################################
     # Execute
@@ -97,7 +96,7 @@ def evaluate(in_channels,
 
     diff = np.linalg.norm(torch_output.detach().numpy() -
                           dace_output_fpga) / np.linalg.norm(
-                              torch_output.detach().numpy())
+        torch_output.detach().numpy())
     print("Difference: ", diff)
     if queue is not None:
         # we are testing

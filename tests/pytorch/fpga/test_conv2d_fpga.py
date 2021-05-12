@@ -19,9 +19,6 @@ from multiprocessing import Process, Queue
 
 import daceml.onnx as donnx
 
-donnx.default_implementation = "pure"
-donnx.ONNXConv.default_implementation = 'pure'
-
 
 class Model(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size,
@@ -70,18 +67,18 @@ def evaluate(in_channels,
 
     ###################################################
     # Transform for FPGA and Inline
-    donnx.ONNXConv.default_implementation = "naive_fpga"
-    sdfg.apply_transformations([FPGATransformSDFG])
+    with dace.library.change_default(donnx.ONNXConv, "naive_fpga"):
+        sdfg.apply_transformations([FPGATransformSDFG])
 
-    ###################################
-    sdfg.expand_library_nodes()
-    sdfg.apply_transformations_repeated([InlineSDFG])
+        ###################################
+        sdfg.expand_library_nodes()
+        sdfg.apply_transformations_repeated([InlineSDFG])
 
-    # ###################################################################
-    # # Input to constant
-    if input_to_constant:
-        sdfg.apply_transformations_repeated([InputToConstant],
-                                            print_report=True)
+        # ###################################################################
+        # # Input to constant
+        if input_to_constant:
+            sdfg.apply_transformations_repeated([InputToConstant],
+                                                print_report=True)
 
     #################################
     # Execute
@@ -112,6 +109,7 @@ def run(input_to_constant):
 
 
 @pytest.mark.fpga
+@pytest.mark.pure
 def test(input_to_constant=False):
     '''
     Evaluates multiple combination of Convolution/input size

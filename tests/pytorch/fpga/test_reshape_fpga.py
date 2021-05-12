@@ -12,11 +12,8 @@ import numpy as np
 import pytest
 import daceml.onnx as donnx
 from daceml.pytorch import DaceModule, dace_module
-from daceml.onnx import ONNXModel
-import copy
 import dace
 import argparse
-import onnx
 from daceml.util import utils
 from multiprocessing import Process, Queue
 
@@ -34,21 +31,20 @@ class Model(nn.Module):
 def run(data_shape: tuple, reshaped_shape: tuple, vec_width=1, queue=None):
     # dace_output = dace_model(x)
 
-    import daceml.onnx as donnx
-    donnx.default_implementation = "pure"
     ptmodel = Model(reshaped_shape)
     x = torch.rand(data_shape)
 
     torch_output = ptmodel(x)
 
     dace_model = DaceModule(ptmodel, auto_optimize=False)
-    out = dace_model(x)
+    with dace.library.change_default(donnx.ONNXReshape, "pure"):
+        out = dace_model(x)
     sdfg = dace_model.sdfg
     sdfg.apply_transformations([FPGATransformSDFG])
 
-    donnx.ONNXReshape.default_implementation = 'fpga'
-    sdfg.expand_library_nodes()
-    sdfg.apply_transformations_repeated([InlineSDFG])
+    with dace.library.change_default(donnx.ONNXReshape, "fpga"):
+        sdfg.expand_library_nodes()
+        sdfg.apply_transformations_repeated([InlineSDFG])
 
     dace_output_fpga = dace_model(x)
     dace_output_fpga = dace_output_fpga.reshape(

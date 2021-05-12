@@ -17,6 +17,7 @@ import dace
 import copy
 import argparse
 from multiprocessing import Process, Queue
+import daceml.onnx as donnx
 
 
 class Model(nn.Module):
@@ -59,8 +60,6 @@ def run(vec_width,
     :return:
     '''
 
-    import daceml.onnx as donnx
-    donnx.default_implementation = "pure"
 
     x = torch.rand(batch_size, input_features, dtype=torch.float32)
     # build the DaCe model from the pytorch model
@@ -71,7 +70,8 @@ def run(vec_width,
 
     torch_output = ptmodel(x)
     if execute_cpu_dace:
-        dace_output = dace_model(x)
+        with dace.library.change_default(donnx.ONNXGemm, "pure"):
+            dace_output = dace_model(x)
         diff = np.linalg.norm(torch_output.detach().numpy() -
                               dace_output.numpy()) / np.linalg.norm(
                                   torch_output.detach().numpy())
@@ -90,14 +90,14 @@ def run(vec_width,
 
     ###################################################
     # Transform for FPGA and Inline
-    donnx.ONNXGemm.default_implementation = "fpga"
-    sdfg.apply_transformations([FPGATransformSDFG])
-    sdfg.expand_library_nodes()
-    sdfg.apply_transformations_repeated([InlineSDFG])
+    with dace.library.change_default(donnx.ONNXGemm, "fpga"):
+        sdfg.apply_transformations([FPGATransformSDFG])
+        sdfg.expand_library_nodes()
+        sdfg.apply_transformations_repeated([InlineSDFG])
 
-    if input_to_constant:
-        sdfg.apply_transformations_repeated([InputToConstant],
-                                            print_report=True)
+        if input_to_constant:
+            sdfg.apply_transformations_repeated([InputToConstant],
+                                                print_report=True)
 
     dace_output_fpga = dace_model(torch.clone(x))
     # reshape if vec_width is different than 1

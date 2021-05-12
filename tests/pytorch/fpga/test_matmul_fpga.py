@@ -7,11 +7,7 @@ from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-
 import numpy as np
-
-import daceml.onnx as donnx
 from daceml.pytorch import DaceModule, dace_module
 import pytest
 import dace
@@ -42,7 +38,6 @@ def run(x_shape: tuple, y_shape: tuple, vec_width=1, queue=None):
     '''
 
     import daceml.onnx as donnx
-    donnx.default_implementation = "pure"
 
     ptmodel = Model()
 
@@ -51,7 +46,9 @@ def run(x_shape: tuple, y_shape: tuple, vec_width=1, queue=None):
     torch_output = ptmodel(x, y)
 
     dace_model = DaceModule(ptmodel, auto_optimize=False)
-    dace_output = dace_model(x, y)
+    with dace.library.change_default(donnx.ONNXMatMul, "pure"):
+        dace_output = dace_model(x, y)
+
     assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
     sdfg = dace_model.sdfg
 
@@ -68,10 +65,10 @@ def run(x_shape: tuple, y_shape: tuple, vec_width=1, queue=None):
     # ##################################
     # Transform to FPGA
 
-    donnx.ONNXMatMul.default_implementation = "fpga"
-    sdfg.apply_transformations([FPGATransformSDFG])
-    sdfg.expand_library_nodes()
-    sdfg.apply_transformations_repeated([InlineSDFG])
+    with dace.library.change_default(donnx.ONNXMatMul, "fpga"):
+        sdfg.apply_transformations([FPGATransformSDFG])
+        sdfg.expand_library_nodes()
+        sdfg.apply_transformations_repeated([InlineSDFG])
 
     ###################################################
     dace_output_fpga = dace_model(x, y)

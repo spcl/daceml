@@ -11,11 +11,12 @@ import torch.nn.functional as F
 
 import numpy as np
 import pytest
-import daceml.onnx as donnx
 from daceml.pytorch import DaceModule, dace_module
 import copy
 import argparse
 from multiprocessing import Process, Queue
+import daceml.onnx as donnx
+import dace
 
 
 class Model(nn.Module):
@@ -30,14 +31,12 @@ class Model(nn.Module):
 
 def run(data_shape: tuple, axis, queue=None):
 
-    import daceml.onnx as donnx
-    donnx.default_implementation = "pure"
-
     ptmodel = Model(axis)
     x = torch.rand(data_shape)
 
     dace_model = DaceModule(ptmodel, auto_optimize=False)
-    dace_output = dace_model(x)
+    with dace.library.change_default(donnx.ONNXReduceSum, "pure"):
+        dace_output = dace_model(x)
 
     torch_output = ptmodel(x)
     assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
@@ -46,10 +45,10 @@ def run(data_shape: tuple, axis, queue=None):
 
     sdfg = dace_model.sdfg
 
-    donnx.ONNXReduceSum.default_implementation = "fpga"
-    sdfg.apply_transformations([FPGATransformSDFG])
-    sdfg.expand_library_nodes()
-    sdfg.apply_transformations_repeated([InlineSDFG])
+    with dace.library.change_default(donnx.ONNXReduceSum, "fpga"):
+        sdfg.apply_transformations([FPGATransformSDFG])
+        sdfg.expand_library_nodes()
+        sdfg.apply_transformations_repeated([InlineSDFG])
 
     dace_output_fpga = dace_model(torch.clone(x))
 

@@ -16,6 +16,7 @@ from daceml.pytorch import DaceModule, dace_module
 import copy
 import argparse
 from multiprocessing import Process, Queue
+import daceml.onnx as donnx
 
 
 class Model(nn.Module):
@@ -34,13 +35,13 @@ def run(data_shape: tuple, vec_width=1, queue=None):
     :param queue:
     :return:
     '''
-    import daceml.onnx as donnx
-    donnx.default_implementation = "pure"
+
     ptmodel = Model()
     x = torch.rand(data_shape)
 
     dace_model = DaceModule(ptmodel, auto_optimize=False)
-    dace_output = dace_model(x)
+    with dace.library.change_default(donnx.ONNXMaxPool, "pure"):
+        dace_output = dace_model(x)
     torch_output = ptmodel(x)
 
     # Transform to FPGA
@@ -55,11 +56,11 @@ def run(data_shape: tuple, vec_width=1, queue=None):
 
     ##########################################
 
-    donnx.ONNXMaxPool.default_implementation = "fpga"
+    with dace.library.change_default(donnx.ONNXMaxPool, "fpga"):
+        sdfg.apply_transformations([FPGATransformSDFG])
+        sdfg.expand_library_nodes()
+        sdfg.apply_transformations_repeated([InlineSDFG])
 
-    sdfg.apply_transformations([FPGATransformSDFG])
-    sdfg.expand_library_nodes()
-    sdfg.apply_transformations_repeated([InlineSDFG])
     dace_output_fpga = dace_model(torch.clone(x))
     diff = np.linalg.norm(torch_output.detach().numpy() -
                           dace_output_fpga.numpy()) / np.linalg.norm(

@@ -5,9 +5,7 @@ from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 import numpy as np
-
 import daceml.onnx as donnx
 from daceml.pytorch import DaceModule, dace_module
 import dace
@@ -33,13 +31,12 @@ def run(data_shape: tuple, vec_width=1, queue=None):
     :param queue:
     :return:
     '''
-    import daceml.onnx as donnx
-    donnx.default_implementation = "pure"
 
     ptmodel = Model()
     x = torch.rand(data_shape) - 0.5
     dace_model = DaceModule(ptmodel, auto_optimize=False)
-    dace_output = dace_model(x)
+    with dace.library.change_default(donnx.ONNXRelu, "pure"):
+        dace_output = dace_model(x)
 
     torch_output = ptmodel(x)
 
@@ -60,9 +57,10 @@ def run(data_shape: tuple, vec_width=1, queue=None):
     ##########################################
 
     sdfg.apply_transformations([FPGATransformSDFG])
-    donnx.ONNXRelu.default_implementation = "fpga"
-    sdfg.expand_library_nodes()
-    sdfg.apply_transformations_repeated([InlineSDFG])
+    with dace.library.change_default(donnx.ONNXRelu, "fpga"):
+        sdfg.expand_library_nodes()
+        sdfg.apply_transformations_repeated([InlineSDFG])
+
     dace_output_fpga = dace_model(x)
     dace_output_fpga = dace_output_fpga.reshape(data_shape)
     diff = np.linalg.norm(torch_output.detach().numpy() -

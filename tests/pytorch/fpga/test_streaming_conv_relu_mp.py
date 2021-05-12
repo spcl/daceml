@@ -18,6 +18,7 @@ from dace.transformation.interstate import InlineSDFG
 import argparse
 import pytest
 from multiprocessing import Process, Queue
+import daceml.onnx as donnx
 
 
 class Model(nn.Module):
@@ -38,23 +39,21 @@ class Model(nn.Module):
 
 
 def run(data_shape, vec_width=1, input_to_constant=False, queue=None):
-    import daceml.onnx as donnx
-    donnx.default_implementation = "pure"
-    donnx.ONNXConv.default_implementation = 'pure'
 
     ptmodel = Model(input_to_constant)
 
     x = torch.rand(data_shape)
     dace_model = DaceModule(ptmodel, auto_optimize=False)
-    dace_output = dace_model(x)
+    with dace.library.change_default(donnx.ONNXConv,
+                                     "pure"), dace.library.change_default(
+                                         donnx.ONNXRelu,
+                                         "pure"), dace.library.change_default(
+                                             donnx.ONNXMaxPool, "pure"):
+        dace_output = dace_model(x)
 
     torch_output = ptmodel(x)
 
     assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
-
-    donnx.ONNXConv.default_implementation = "fpga"
-    donnx.ONNXRelu.default_implementation = "fpga"
-    donnx.ONNXMaxPool.default_implementation = "fpga"
 
     sdfg = dace_model.sdfg
     ##################################
@@ -69,15 +68,17 @@ def run(data_shape, vec_width=1, input_to_constant=False, queue=None):
 
     ############################################################
     # Transform to FPGA
-
-    donnx.ONNXConv.default_implementation = "fpga"
-    donnx.ONNXRelu.default_implementation = "fpga"
-    donnx.ONNXMaxPool.default_implementation = "fpga"
-
-    # Apply transformations
     sdfg.apply_transformations([FPGATransformSDFG])
-    sdfg.expand_library_nodes()
-    sdfg.apply_transformations_repeated([InlineSDFG])
+
+    with dace.library.change_default(donnx.ONNXConv,
+                                     "fpga"), dace.library.change_default(
+                                         donnx.ONNXRelu,
+                                         "fpga"), dace.library.change_default(
+                                             donnx.ONNXMaxPool, "fpga"):
+
+        # Apply transformations
+        sdfg.expand_library_nodes()
+        sdfg.apply_transformations_repeated([InlineSDFG])
 
     if input_to_constant:
         sdfg.apply_transformations_repeated([InputToConstant],

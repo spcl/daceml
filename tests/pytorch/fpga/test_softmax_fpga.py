@@ -16,6 +16,8 @@ from daceml.pytorch import DaceModule, dace_module
 import argparse
 import pytest
 from multiprocessing import Process, Queue
+import dace
+import daceml.onnx as donnx
 
 
 class Model(nn.Module):
@@ -30,27 +32,24 @@ class Model(nn.Module):
 
 def run(data_shape: tuple, axis, queue=None):
 
-    import daceml.onnx as donnx
-    donnx.default_implementation = "pure"
-
     ptmodel = Model(axis)
     x = torch.rand(data_shape, )
 
     dace_model = DaceModule(ptmodel, auto_optimize=False)
-    dace_output = dace_model(x)
+    with dace.library.change_default(donnx.ONNXSoftmax, "pure"):
+        dace_output = dace_model(x)
 
     torch_output = ptmodel(x)
-    dace_model.sdfg.save('/tmp/out.sdfg')
 
     assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
 
     # Transform to FPGA
     sdfg = dace_model.sdfg
 
-    donnx.ONNXSoftmax.default_implementation = "fpga"
-    sdfg.apply_transformations([FPGATransformSDFG])
-    sdfg.expand_library_nodes()
-    sdfg.apply_transformations_repeated([InlineSDFG])
+    with dace.library.change_default(donnx.ONNXSoftmax, "fpga"):
+        sdfg.apply_transformations([FPGATransformSDFG])
+        sdfg.expand_library_nodes()
+        sdfg.apply_transformations_repeated([InlineSDFG])
 
     dace_output_fpga = dace_model(torch.clone(x)).numpy()
 
