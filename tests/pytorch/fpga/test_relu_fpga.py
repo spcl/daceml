@@ -6,7 +6,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-import daceml.onnx as donnx
 from daceml.pytorch import DaceModule, dace_module
 import dace
 import argparse
@@ -35,6 +34,7 @@ def run(data_shape: tuple, vec_width=1, queue=None):
     ptmodel = Model()
     x = torch.rand(data_shape) - 0.5
     dace_model = DaceModule(ptmodel, auto_optimize=False)
+    import daceml.onnx as donnx
     with dace.library.change_default(donnx.ONNXRelu, "pure"):
         dace_output = dace_model(x)
 

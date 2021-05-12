@@ -6,7 +6,6 @@ from daceml.pytorch import DaceModule
 
 from dace.transformation.dataflow import RedundantSecondArray
 from daceml.transformation import ConstantFolding
-import daceml.onnx as donnx
 
 from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
 from dace.transformation.dataflow import PruneConnectors
@@ -101,6 +100,7 @@ def evaluate(batch_size=1,
 
     pt_outputs = ptmodel(Q, K, V)
 
+    import daceml.onnx as donnx
     old_default = donnx.default_implementation
 
     try:

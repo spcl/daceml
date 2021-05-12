@@ -15,7 +15,6 @@ from daceml.pytorch import DaceModule, dace_module
 import copy
 import argparse
 from multiprocessing import Process, Queue
-import daceml.onnx as donnx
 import dace
 
 
@@ -35,6 +34,7 @@ def run(data_shape: tuple, axis, queue=None):
     x = torch.rand(data_shape)
 
     dace_model = DaceModule(ptmodel, auto_optimize=False)
+    import daceml.onnx as donnx
     with dace.library.change_default(donnx.ONNXReduceSum, "pure"):
         dace_output = dace_model(x)
 

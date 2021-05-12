@@ -17,8 +17,6 @@ from dace.transformation.dataflow import streaming_memory as sm
 from dace.transformation.dataflow import PruneConnectors
 from multiprocessing import Process, Queue
 
-import daceml.onnx as donnx
-
 
 class Model(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size,
@@ -61,6 +59,7 @@ def evaluate(in_channels,
     #create dace model
     dace_model = DaceModule(ptmodel, dummy_inputs=x, auto_optimize=False)
 
+    import daceml.onnx as donnx
     if execute_cpu_dace:
         with dace.library.change_default(donnx.ONNXConv, "pure"):
             dace_output = dace_model(x)

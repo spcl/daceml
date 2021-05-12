@@ -8,7 +8,6 @@ import torch.nn.functional as F
 
 import numpy as np
 import pytest
-import daceml.onnx as donnx
 from daceml.pytorch import DaceModule, dace_module
 from daceml.util import utils
 from daceml.transformation import InputToConstant
@@ -17,7 +16,6 @@ import dace
 import copy
 import argparse
 from multiprocessing import Process, Queue
-import daceml.onnx as donnx
 
 
 class Model(nn.Module):
@@ -68,6 +66,8 @@ def run(vec_width,
     dace_model = DaceModule(ptmodel, dummy_inputs=x, auto_optimize=False)
 
     torch_output = ptmodel(x)
+    import daceml.onnx as donnx
+
     if execute_cpu_dace:
         with dace.library.change_default(donnx.ONNXGemm, "pure"):
             dace_output = dace_model(x)

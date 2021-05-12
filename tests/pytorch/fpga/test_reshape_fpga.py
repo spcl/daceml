@@ -10,7 +10,6 @@ import torch.nn.functional as F
 from torch import onnx
 import numpy as np
 import pytest
-import daceml.onnx as donnx
 from daceml.pytorch import DaceModule, dace_module
 import dace
 import argparse
@@ -37,6 +36,8 @@ def run(data_shape: tuple, reshaped_shape: tuple, vec_width=1, queue=None):
     torch_output = ptmodel(x)
 
     dace_model = DaceModule(ptmodel, auto_optimize=False)
+
+    import daceml.onnx as donnx
     with dace.library.change_default(donnx.ONNXReshape, "pure"):
         out = dace_model(x)
     sdfg = dace_model.sdfg

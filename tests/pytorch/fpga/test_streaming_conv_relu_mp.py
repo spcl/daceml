@@ -18,7 +18,6 @@ from dace.transformation.interstate import InlineSDFG
 import argparse
 import pytest
 from multiprocessing import Process, Queue
-import daceml.onnx as donnx
 
 
 class Model(nn.Module):
@@ -44,6 +43,7 @@ def run(data_shape, vec_width=1, input_to_constant=False, queue=None):
 
     x = torch.rand(data_shape)
     dace_model = DaceModule(ptmodel, auto_optimize=False)
+    import daceml.onnx as donnx
     with dace.library.change_default(donnx.ONNXConv,
                                      "pure"), dace.library.change_default(
                                          donnx.ONNXRelu,

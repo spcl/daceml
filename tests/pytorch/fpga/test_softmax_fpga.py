@@ -17,7 +17,6 @@ import argparse
 import pytest
 from multiprocessing import Process, Queue
 import dace
-import daceml.onnx as donnx
 
 
 class Model(nn.Module):
@@ -45,6 +44,7 @@ def run(data_shape: tuple, axis, queue=None):
 
     # Transform to FPGA
     sdfg = dace_model.sdfg
+    import daceml.onnx as donnx
 
     with dace.library.change_default(donnx.ONNXSoftmax, "fpga"):
         sdfg.apply_transformations([FPGATransformSDFG])

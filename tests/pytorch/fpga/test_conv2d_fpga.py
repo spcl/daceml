@@ -17,8 +17,6 @@ from dace.transformation.dataflow import streaming_memory as sm
 from dace.transformation.dataflow import PruneConnectors
 from multiprocessing import Process, Queue
 
-import daceml.onnx as donnx
-
 
 class Model(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size,
@@ -67,6 +65,7 @@ def evaluate(in_channels,
 
     ###################################################
     # Transform for FPGA and Inline
+    import daceml.onnx as donnx
     with dace.library.change_default(donnx.ONNXConv, "naive_fpga"):
         sdfg.apply_transformations([FPGATransformSDFG])
 
