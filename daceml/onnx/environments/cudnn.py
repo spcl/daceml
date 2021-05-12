@@ -62,6 +62,11 @@ cudnnHandle_t &__dace_cudnn_handle = __state->cudnn_handle->Get(__dace_cuda_devi
                                    prefix + 'cudnn.' + suffix)
             if os.path.isfile(libfile):
                 return [libfile]
+            else:
+                log.warning(f'The CUDNN_HOME environment variable is set, but '
+                            f'$CUDNN_HOME/lib64/{prefix}cudnn.{suffix} was '
+                            'not found. Compilation may fail')
+        else:
+            log.warning("CUDNN_HOME was not set, compilation may fail")
 
-        log.warning("CUDNN_HOME was not set, compilation may fail")
         return ['cudnn']
