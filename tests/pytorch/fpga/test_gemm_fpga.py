@@ -60,7 +60,6 @@ def run(vec_width,
     :return:
     '''
 
-
     x = torch.rand(batch_size, input_features, dtype=torch.float32)
     # build the DaCe model from the pytorch model
     ptmodel = Model(input_to_constant,

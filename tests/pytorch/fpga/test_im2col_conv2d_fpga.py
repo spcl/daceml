@@ -20,7 +20,6 @@ from multiprocessing import Process, Queue
 import daceml.onnx as donnx
 
 
-
 class Model(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size,
                  input_to_constant):
@@ -96,7 +95,7 @@ def evaluate(in_channels,
 
     diff = np.linalg.norm(torch_output.detach().numpy() -
                           dace_output_fpga) / np.linalg.norm(
-        torch_output.detach().numpy())
+                              torch_output.detach().numpy())
     print("Difference: ", diff)
     if queue is not None:
         # we are testing

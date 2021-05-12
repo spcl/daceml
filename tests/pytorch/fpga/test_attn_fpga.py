@@ -162,7 +162,8 @@ def evaluate(batch_size=1,
         with dace.library.change_default(
                 donnx.ONNXMatMul, "fpga"), dace.library.change_default(
                     donnx.ONNXReshape, "fpga"), dace.library.change_default(
-                        donnx.ONNXSoftmax, "fpga"), dace.library.change_default(
+                        donnx.ONNXSoftmax,
+                        "fpga"), dace.library.change_default(
                             donnx.ONNXReduceSum, "fpga"):
 
             sdfg.apply_transformations([FPGATransformSDFG], validate=False)
