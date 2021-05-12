@@ -388,21 +388,8 @@ def test_bert_encoder_transformations():
                                                 validate_all=True,
                                                 print_report=True)
 
+
     print('attn12_1.sdfg')
-
-    # TODO: it should be done in transformation that can detect if barrier removable or not
-    pattern = sdutil.node_path_graph(Barrier)
-
-    matches = [(subgraph.graph, subgraph.nodes())
-               for subgraph in enumerate_matches(softmax_sdfg, pattern)]
-    for state, nodes in matches:
-        print("Match found in state", state.label, ". Nodes:", nodes)
-
-        EmptyStateElimination.apply_to(state.parent,
-                                       empty_state=state,
-                                       verify=False)
-
-    print('attn12_2.sdfg')
 
     softmax_sdfg.apply_transformations_repeated([CleanNestedWrites],
                                                 validate_all=True,
@@ -548,6 +535,21 @@ def test_bert_encoder_transformations():
 
     dace_model.sdfg.save('attn18.sdfg')
     print('attn18.sdfg')
+
+    # TODO: it should be done in transformation that can detect if barrier removable or not
+    pattern = sdutil.node_path_graph(Barrier)
+
+    matches = [(subgraph.graph, subgraph.nodes())
+               for subgraph in enumerate_matches(softmax_sdfg, pattern)]
+    for state, nodes in matches:
+        print("Match found in state", state.label, ". Nodes:", nodes)
+
+        EmptyStateElimination.apply_to(state.parent,
+                                       empty_state=state,
+                                       verify=False)
+
+    dace_model.sdfg.save('attn19.sdfg')
+    print('attn19.sdfg')
 
     softmax_sdfg.validate()
 
