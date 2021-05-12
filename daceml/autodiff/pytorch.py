@@ -119,7 +119,7 @@ def make_backward_function(model: ONNXModel,
             inputs, symbols, outputs = model._call_args(args=copied_inputs,
                                                         kwargs={})
 
-            params = DaceFunction._forward_model.initialized_parameters
+            params = DaceFunction._model.initialized_parameters
             # create the empty tensors we need for the intermediate values
             for inp, val in backward_input_arrays.items():
                 if isinstance(val, dt.Scalar):
