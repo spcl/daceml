@@ -62,8 +62,13 @@ class ExpandLNFwd(ExpandTransformation):
     @staticmethod
     def expansion(node, parent_state: dace.SDFGState, parent_sdfg: dace.SDFG,
                   **kwargs):
-        shape = parent_sdfg.arrays[list(
-            parent_state.in_edges_by_connector(node, "_X"))[0].data.data].shape
+        desc = parent_sdfg.arrays[list(
+            parent_state.in_edges_by_connector(node, "_X"))[0].data.data]
+        shape = desc.shape
+        if desc.dtype is not dace.float32:
+            raise ValueError(
+                f"The LayerNorm library node expects float32 inputs, got {desc.dtype}"
+            )
         return add_ln_tasklet(parent_state, shape, node.axis)
 
 

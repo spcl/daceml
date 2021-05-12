@@ -12,6 +12,7 @@ from dace.registry import autoregister_params
 import daceml.autodiff.utils as butils
 from daceml.autodiff.base_abc import BackwardImplementation, BackwardContext, BackwardResult
 from daceml.onnx.op_implementations.cpp_implementations import LayerNorm, LayerNormEnvironment, add_ln_tasklet_bwd
+from daceml.util import in_desc_with_name
 
 include_dir = os.path.join(os.path.dirname(__file__), "cpp")
 
@@ -51,6 +52,11 @@ def _prod(sequence):
 @autoregister_params(node_type=LayerNorm, name="onnxruntime")
 class ORTLNGrad(BackwardImplementation):
     @staticmethod
+    def backward_can_be_applied(node: nd.Node, state: dace.SDFGState,
+                                sdfg: dace.SDFG) -> bool:
+        return in_desc_with_name(node, state, sdfg, "_X").dtype is dace.float32
+
+    @staticmethod
     def backward(
         forward_node: nd.Node, context: BackwardContext,
         given_gradients: List[Optional[str]],
@@ -80,6 +86,12 @@ class ORTLNGrad(BackwardImplementation):
 
 @autoregister_params(op="Softmax", name="onnxruntime")
 class ORTSoftmaxGrad(BackwardImplementation):
+    @staticmethod
+    def backward_can_be_applied(node: nd.Node, state: dace.SDFGState,
+                                sdfg: dace.SDFG) -> bool:
+        return in_desc_with_name(node, state, sdfg,
+                                 "input").dtype is dace.float32
+
     @staticmethod
     def backward(
         forward_node: nd.Node, context: BackwardContext,
