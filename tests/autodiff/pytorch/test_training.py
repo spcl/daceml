@@ -57,6 +57,7 @@ from dace.transformation.dataflow.clean_connectors import merge_symbols
 from dace.transformation.interstate.state_elimination import EmptyStateElimination
 from dace.libraries.standard.nodes.barrier import Barrier
 from dace.transformation.interstate.gpu_transform_sdfg import GPUTransformSDFG
+from dace.transformation.dataflow.vectorize_sdfg import VectorizeSDFG
 
 
 def torch_tensors_close(name, torch_v, dace_v):
@@ -512,10 +513,56 @@ def apply_softmax_transformations(fwd_sdfg, bwd_sdfg):
                                                 validate_all=True,
                                                 print_report=True)
 
+    softmax_sdfg.save('encoder18.sdfg')
     print('encoder18.sdfg')
+
+    pattern = sdutil.node_path_graph(dace.nodes.MapEntry(dace.nodes.Map('_', [], [])))
+
+    vector_size = 4
+
+    for subgraph in enumerate_matches(softmax_sdfg, pattern):
+        map_entry: sdfg_nodes.MapEntry = subgraph.nodes()[0]
+
+        if map_entry.map.range.size() != [seq_len // 32]:
+            continue  # vectorization dimension should have specific length
+
+        if map_entry.map.range.min_element() == [0]:
+            continue  # min element should depend on other parametric value, it can't be zero
+
+        print("Applying StripMining tranformation ", subgraph.graph.label, ". Nodes:", subgraph.nodes())
+        StripMining.apply_to(sdfg=subgraph.graph.parent,
+                             options={'tile_size': vector_size,
+                                      'divides_evenly': True},
+                             _map_entry=map_entry)
+
+    softmax_sdfg.save('encoder18_1.sdfg')
+    print('encoder18_1.sdfg')
+
+    softmax_sdfg.apply_transformations_repeated([NestMapContent], validate_all=True, print_report=True)
+
+    softmax_sdfg.save('encoder18_2.sdfg')
+    print('encoder18_2.sdfg')
+
+    softmax_sdfg.apply_transformations_repeated([VectorizeSDFG], validate_all=True, validate=True, print_report=True)
+
+    softmax_sdfg.save('encoder18_3.sdfg')
+    print('encoder18_3.sdfg')
+
+    # TODO: it should be done in transformation that can detect if barrier removable or not
+    pattern = sdutil.node_path_graph(Barrier)
+
+    matches = [(subgraph.graph, subgraph.nodes())
+               for subgraph in enumerate_matches(softmax_sdfg, pattern)]
+    for state, nodes in matches:
+        print("Match found in state", state.label, ". Nodes:", nodes)
+
+        EmptyStateElimination.apply_to(state.parent,
+                                       empty_state=state,
+                                       verify=False)
 
     softmax_sdfg.expand_library_nodes()
 
+    softmax_sdfg.save('encoder_last.sdfg')
     print('encoder_last.sdfg')
 
 
