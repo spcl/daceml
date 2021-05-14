@@ -1,4 +1,4 @@
-name: GPU CI
+name: Docs
 
 on:
   push:
