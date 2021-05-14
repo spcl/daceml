@@ -12,9 +12,10 @@ import dace
 import daceml.onnx as donnx
 import numpy as np
 
+
 @dace.program
-def conv_program(X_arr: dace.float32[5, 3, 10, 10],
-                 W_arr: dace.float32[16, 3, 3, 3]):
+def conv_program(X_arr: dace.float32[5, 3, 10, 10], W_arr: dace.float32[16, 3,
+                                                                        3, 3]):
     output = dace.define_local([5, 16, 4, 4], dace.float32)
     donnx.ONNXConv(X=X_arr, W=W_arr, Y=output, strides=[2, 2])
     return output
@@ -24,7 +25,6 @@ def conv_program(X_arr: dace.float32[5, 3, 10, 10],
 # The resulting SDFG contains an instance of the :class:`~daceml.onnx.nodes.onnx_op.ONNXConv` library node.
 
 conv_program.to_sdfg()
-
 
 # %%
 # We can now execute the program with some example inputs
@@ -39,7 +39,9 @@ result = conv_program(X_arr=X, W_arr=W)
 
 import torch
 import torch.nn.functional as F
-torch_result = F.conv2d(torch.from_numpy(X), torch.from_numpy(W), stride=2).numpy()
+
+torch_result = F.conv2d(torch.from_numpy(X), torch.from_numpy(W),
+                        stride=2).numpy()
 
 assert np.allclose(torch_result, result)
 
@@ -65,13 +67,11 @@ state.add_edge(access_X, None, conv, "X", sdfg.make_array_memlet("X_arr"))
 state.add_edge(access_W, None, conv, "W", sdfg.make_array_memlet("W_arr"))
 state.add_edge(conv, "Y", access_Z, None, sdfg.make_array_memlet("Z_arr"))
 
-
 sdfg
 
 # %%
-# The SDFG looks the same as the one above. Now let's try running it 
+# The SDFG looks the same as the one above. Now let's try running it
 
 Z = np.zeros((5, 16, 4, 4)).astype(np.float32)
 sdfg(X_arr=X, W_arr=W, Z_arr=Z)
 assert np.allclose(torch_result, Z)
-

@@ -62,7 +62,7 @@ check-formatting:
 		--parallel \
 		--diff \
 		--recursive \
-		daceml tests setup.py \
+		daceml tests setup.py examples doc \
 		--exclude daceml/onnx/shape_inference/symbolic_shape_infer.py
 	# check for sdfg.view()
 	! git grep '\.view()' -- tests/** daceml/**
@@ -72,7 +72,7 @@ check-formatting-names:
 		--parallel \
 		--diff \
 		--recursive \
-		daceml tests setup.py \
+		daceml tests setup.py examples doc \
 		--exclude daceml/onnx/shape_inference/symbolic_shape_infer.py |  grep "+++" || echo "All good!"
 	# check for sdfg.view()
 	! git grep '\.view()' -- tests/** daceml/**

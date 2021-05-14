@@ -4,14 +4,13 @@ import tempfile
 import subprocess
 import importlib
 import inspect
+import time
+from io import BytesIO
+from zipfile import ZipFile
+
+import requests
 
 sys.path.insert(0, os.path.abspath('..'))
-
-on_rtd = os.environ.get('READTHEDOCS') == 'True'
-
-if on_rtd:
-    # set ORT_RELEASE to nonsense
-    os.environ['ORT_RELEASE'] = "FAIL"
 
 # -- Project information -----------------------------------------------------
 
@@ -55,9 +54,8 @@ typehints_fully_qualified = False
 add_module_names = False
 autoclass_content = 'both'
 
-sphinx_gallery_conf = {
-    'default_thumb_file': 'dace.png'
-}
+sphinx_gallery_conf = {'default_thumb_file': 'dace.png'}
+
 
 def linkcode_resolve(domain, info):
     if domain != 'py':
@@ -97,3 +95,63 @@ def linkcode_resolve(domain, info):
         os.path.relpath(obj_source_path, project_root),
         "#L{}".format(line) if line is not None else "")
 
+
+# the following is inspired by https://github.com/dfm/rtds-action/blob/main/src/rtds_action/rtds_action.py
+def download_auto_examples_artifact(gh_token):
+    print("Downloading auto_examples")
+    try:
+        git_hash = (subprocess.check_output(["git", "rev-parse",
+                                             "HEAD"]).strip().decode("ascii"))
+    except subprocess.CalledProcessError:
+        raise RuntimeError("can't get git hash")
+
+    expected_name = f"auto_examples_{git_hash}"
+    out_dir = os.path.join(os.path.dirname(__file__), "auto_examples")
+
+    # 3 retries
+    for i in range(3):
+        # read the artifacts
+        r = requests.get(
+            f"https://api.github.com/repos/spcl/daceml/actions/artifacts",
+            params=dict(per_page=100),
+        )
+        if r.status_code != 200:
+            raise RuntimeError(f"Can't list files ({r.status_code})")
+
+        result = r.json()
+        for artifact in result.get("artifacts", []):
+            if artifact["name"] == expected_name:
+                print(f"Found artifact {artifact}")
+                r = requests.get(
+                    artifact["archive_download_url"],
+                    headers={"Authorization": f"token {gh_token}"},
+                )
+
+                if r.status_code != 200:
+                    raise ValueError(
+                        f"Can't download artifact ({r.status_code})")
+
+                with ZipFile(BytesIO(r.content)) as f:
+                    f.extractall(path=out_dir)
+
+                return
+
+        print(f"Couldn't find expected artifact '{expected_name}' "
+              f"at https://api.github.com/repos/spcl/daceml/actions/artifacts")
+        time.sleep(30)
+        print("Retrying...")
+
+    raise ValueError(
+        f"Couldn't find expected artifact '{expected_name}' "
+        f"at https://api.github.com/repos/spcl/daceml/actions/artifacts")
+
+
+# RTD-specific steps
+on_rtd = os.environ.get('READTHEDOCS') == 'True'
+if on_rtd:
+    # set ORT_RELEASE to nonsense
+    os.environ['ORT_RELEASE'] = "FAIL"
+
+    # the github access token can only be accessed from master builds
+    token = os.environ["GH_TOKEN"]
+    download_auto_examples_artifact(token)
