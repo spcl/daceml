@@ -23,7 +23,7 @@ author = 'Scalable Parallel Computing Laboratory, ETH Zurich, and the DaCeML aut
 
 extensions = [
     'sphinx.ext.autodoc', 'sphinx.ext.doctest', 'sphinx_autodoc_typehints',
-    'sphinx.ext.linkcode'
+    'sphinx.ext.linkcode', 'sphinx_gallery.gen_gallery'
 ]
 
 autodoc_typehints = 'description'
@@ -55,6 +55,9 @@ typehints_fully_qualified = False
 add_module_names = False
 autoclass_content = 'both'
 
+sphinx_gallery_conf = {
+    'default_thumb_file': 'dace.png'
+}
 
 def linkcode_resolve(domain, info):
     if domain != 'py':
@@ -93,3 +96,4 @@ def linkcode_resolve(domain, info):
     return "https://github.com/spcl/daceml/blob/master/{}{}".format(
         os.path.relpath(obj_source_path, project_root),
         "#L{}".format(line) if line is not None else "")
+
