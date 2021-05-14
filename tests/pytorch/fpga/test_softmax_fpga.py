@@ -35,6 +35,7 @@ def run(data_shape: tuple, axis, queue=None):
     x = torch.rand(data_shape, )
 
     dace_model = DaceModule(ptmodel, auto_optimize=False)
+    import daceml.onnx as donnx
     with dace.library.change_default(donnx.ONNXSoftmax, "pure"):
         dace_output = dace_model(x)
 
@@ -44,7 +45,6 @@ def run(data_shape: tuple, axis, queue=None):
 
     # Transform to FPGA
     sdfg = dace_model.sdfg
-    import daceml.onnx as donnx
 
     with dace.library.change_default(donnx.ONNXSoftmax, "fpga"):
         sdfg.apply_transformations([FPGATransformSDFG])
