@@ -44,6 +44,7 @@ torch_result = F.conv2d(torch.from_numpy(X), torch.from_numpy(W),
                         stride=2).numpy()
 
 assert np.allclose(torch_result, result)
+np.linalg.norm(torch_result - result)
 
 # %%
 # We can also use ONNX nodes using the SDFG Python API.
@@ -75,3 +76,4 @@ sdfg
 Z = np.zeros((5, 16, 4, 4)).astype(np.float32)
 sdfg(X_arr=X, W_arr=W, Z_arr=Z)
 assert np.allclose(torch_result, Z)
+np.linalg.norm(torch_result - Z)
