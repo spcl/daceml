@@ -34,3 +34,6 @@ jobs:
 
       - name: Trigger RTD
         run: python doc/trigger_rtd.py
+        env: 
+          RTD_WEBHOOK_TOKEN: ${{ secrets.RTD_WEBHOOK_TOKEN }}
+          RTD_WEBHOOK_URL: ${{ secrets.RTD_WEBHOOK_URL }}
