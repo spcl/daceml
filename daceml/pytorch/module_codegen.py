@@ -15,6 +15,7 @@ from dace.codegen.codeobject import CodeObject
 from dace.codegen.compiled_sdfg import CompiledSDFG
 
 from daceml.onnx.converters import clean_onnx_name
+from daceml.pytorch.environments import PyTorch
 from daceml.util import is_cuda, platform_library_name
 
 
@@ -214,13 +215,18 @@ def get_function_for_module(module: 'daceml.pytorch.DaceModule',
     sdfg_build_path = os.path.abspath(module.sdfg.build_folder)
     compiled: CompiledSDFG = module.dace_model.compile_and_init()
 
-    args = tuple(dummy_inputs) + tuple(p.data for n, p in module.model.named_parameters() if n in module.dace_model.inputs)
+    args = tuple(dummy_inputs) + tuple(
+        p.data for n, p in module.model.named_parameters()
+        if n in module.dace_model.inputs)
     # construct the arguments and initialize the SDFG
-    inputs, symbols, outputs = module.dace_model._call_args(
-        args=args, kwargs={})
-    _, initargtuple = compiled._construct_args(
-        **inputs, **outputs, **symbols,
-        **module.dace_model.initialized_parameters)
+    inputs, symbols, outputs = module.dace_model._call_args(args=args,
+                                                            kwargs={})
+    _, initargtuple = compiled._construct_args({
+        **inputs,
+        **outputs,
+        **symbols,
+        **module.dace_model.initialized_parameters
+    })
     compiled.initialize(*initargtuple)
     handle_ptr = torch.tensor([compiled._libhandle.value]).squeeze(0)
 
@@ -256,7 +262,10 @@ def get_function_for_module(module: 'daceml.pytorch.DaceModule',
                          "cpp",
                          targets.cpu.CPUCodeGen,
                          f"Torch{module.sdfg_name}",
-                         environments={"PyTorch", module.sdfg.name})
+                         environments={
+                             PyTorch.full_class_path(),
+                             SDFGEnvironment.full_class_path()
+                         })
     torch_module_build_path = os.path.join('.dacecache',
                                            f"torch_{module.sdfg.name}")
 

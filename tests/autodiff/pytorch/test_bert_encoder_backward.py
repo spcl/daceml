@@ -17,7 +17,7 @@ def test_bert_encoder_backward(gpu, sdfg_name):
     ptmodel = copy_to_gpu(gpu, BertLayer(BertConfig(hidden_act="relu")).eval())
 
     dace_model = DaceModule(ptmodel,
-                            train=False,
+                            training=False,
                             backward=True,
                             sdfg_name=sdfg_name,
                             apply_strict=True)

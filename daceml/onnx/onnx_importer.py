@@ -466,7 +466,7 @@ class ONNXModel:
         transient_kwargs = {}
         if self.save_transients is not None:
 
-            for node in self.state.nodes():
+            for node, parent in self.sdfg.all_nodes_recursive():
                 if isinstance(node, nodes.AccessNode):
                     desc = self.sdfg.arrays[node.data]
                     if not isinstance(desc, dt.View) and desc.transient:
