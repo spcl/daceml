@@ -1,0 +1,39 @@
+name: Docs
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  build-doc:
+    runs-on: [self-hosted, linux, gpu]
+    env:
+      ORT_ROOT: '/opt/onnxruntime'
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+          submodules: 'recursive'
+
+      - name: Install dependencies
+        env:
+          UPDATE_PIP: 'true'
+        run: |
+          rm -rf .dacecache tests/.dacecache
+          . /opt/setupenv
+          make clean install
+
+      - name: Build docs
+        run: make doc
+
+      - uses: actions/upload-artifact@v2
+        with:
+          name: auto_examples_${{ github.sha }}
+          path: doc/auto_examples/
+
+      - name: Trigger RTD
+        run: python doc/trigger_rtd.py
+        env: 
+          RTD_WEBHOOK_TOKEN: ${{ secrets.RTD_WEBHOOK_TOKEN }}
+          RTD_WEBHOOK_URL: ${{ secrets.RTD_WEBHOOK_URL }}
