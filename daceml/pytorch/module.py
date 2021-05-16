@@ -27,7 +27,7 @@ class DaceModule(nn.Module):
         :param dummy_inputs: a tuple of tensors to use as input when tracing ``model``.
         :param cuda: if ``True``, the module will execute using CUDA. If ``None``, it will be detected from the
                      ``module``.
-        :param train: whether to use train mode when tracing ``model``.
+        :param training: whether to use train mode when tracing ``model``.
         :param backward: whether to enable the backward pass.
         :param apply_strict: whether to apply strict transforms after conversion (this generally improves performance,
                              but can be slow).
@@ -55,7 +55,7 @@ class DaceModule(nn.Module):
                  module: nn.Module,
                  dummy_inputs: Optional[Tuple[torch.Tensor]] = None,
                  cuda: Optional[bool] = None,
-                 train: bool = False,
+                 training: bool = False,
                  backward=False,
                  apply_strict: bool = True,
                  auto_optimize: bool = True,
@@ -65,7 +65,7 @@ class DaceModule(nn.Module):
         self.backward = backward
         self.model = module
         self.dace_model: Optional[ONNXModel] = None
-        self.train = train
+        self.training = training
         self.sdfg: Optional[dace.SDFG] = None
         self.cuda = cuda
         self.sdfg_name = sdfg_name or "dace_model"
@@ -188,7 +188,7 @@ class DaceModule(nn.Module):
                 export_name,
                 verbose=logging.root.level <= logging.DEBUG,
                 training=(TrainingMode.TRAINING
-                          if self.train else TrainingMode.EVAL),
+                          if self.training else TrainingMode.EVAL),
                 opset_version=12,
                 strip_doc_string=False,
                 export_params=not self.backward,
@@ -230,7 +230,10 @@ class DaceModule(nn.Module):
                 return forward
             else:
                 self.fwd_func = get_function_for_module(self, dummy_inputs)
-                parameters_to_pass = tuple(p.data for n, p in self.model.named_parameters() if n in self.dace_model.inputs)
+                parameters_to_pass = tuple(
+                    p.data for n, p in self.model.named_parameters()
+                    if n in self.dace_model.inputs)
+
                 def forward(*args):
                     return self.fwd_func.function(self.fwd_func.ptr, *args,
                                                   *parameters_to_pass)
@@ -249,7 +252,7 @@ class DaceModule(nn.Module):
 def dace_module(moduleclass,
                 dummy_inputs: Optional[Tuple[torch.Tensor]] = None,
                 cuda: Optional[bool] = None,
-                train: bool = False,
+                training: bool = False,
                 backward=False,
                 apply_strict: bool = True,
                 auto_optimize: bool = True,
@@ -276,7 +279,7 @@ def dace_module(moduleclass,
         :param dummy_inputs: a tuple of tensors to use as input when tracing ``model``.
         :param cuda: if ``True``, the module will execute using CUDA. If ``None``, it will be detected from the
                      ``module``.
-        :param train: whether to use train mode when tracing ``model``.
+        :param training: whether to use train mode when tracing ``model``.
         :param backward: whether to enable the backward pass.
         :param apply_strict: whether to apply strict transforms after conversion (this generally improves performance,
                              but can be slow).
@@ -288,7 +291,7 @@ def dace_module(moduleclass,
         return DaceModule(moduleclass(*args, **kwargs),
                           dummy_inputs=dummy_inputs,
                           cuda=cuda,
-                          train=train,
+                          training=training,
                           backward=backward,
                           apply_strict=apply_strict,
                           auto_optimize=auto_optimize,
