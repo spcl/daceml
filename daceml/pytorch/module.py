@@ -12,7 +12,7 @@ import torch.nn as nn
 from dace.codegen import compiled_sdfg
 from torch.onnx import TrainingMode
 
-from daceml.pytorch.module_codegen import get_function_for_module
+from daceml.pytorch.module_codegen import compile_and_get_function
 from daceml.autodiff.pytorch import make_backward_function
 from daceml.onnx import ONNXModel
 from daceml.onnx.shape_inference import infer_shapes
@@ -255,7 +255,7 @@ class DaceModule(nn.Module):
 
                 return forward
             else:
-                self.fwd_func = get_function_for_module(self, dummy_inputs)
+                self.fwd_func = compile_and_get_function(self, dummy_inputs)
                 parameters_to_pass = tuple(
                     p.data for n, p in self.model.named_parameters()
                     if n in self.dace_model.inputs)
