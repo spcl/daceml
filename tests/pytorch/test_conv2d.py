@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import faulthandler
 import torch.nn.functional as F
 
 import numpy as np

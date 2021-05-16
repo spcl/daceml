@@ -100,9 +100,14 @@ def argument_codegen(module: 'daceml.pytorch.DaceModule',
 
     # initialize the inputs and outputs
     ptr_init_code = "\n    // setup input and output pointers\n    "
+    # inputs: make these contiguous if they're not
+    ptr_init_code += '\n    '.join(
+        f"{arglist[name].dtype.ctype} *{name}_ptr = {name}_.contiguous().data_ptr<{arglist[name].dtype.ctype}>();"
+        for name in input_names)
+    # outputs
     ptr_init_code += '\n    '.join(
         f"{arglist[name].dtype.ctype} *{name}_ptr = {name}_.data_ptr<{arglist[name].dtype.ctype}>();"
-        for name in itertools.chain(input_names, output_names))
+        for name in output_names)
     ptr_init_code += "\n    // setup constant arguments\n"
 
     # initialize all remaining parameters
@@ -190,8 +195,6 @@ TORCH_LIBRARY(daceml_{sdfg_name}, m) {{
 {"Tensor" if len(outputs) == 1 else f"std::tuple<{', '.join(['Tensor'] * len(outputs))}>"}
 {sdfg_name}(int64_t handle_ptr, {",".join(f"const Tensor& {name}_" for name in inputs)}) {{
 
-    // TODO check contiguous
-
     // initialize outputs
     {initialize_outputs_code(module, outputs)}
     
@@ -214,8 +217,8 @@ TORCH_LIBRARY_IMPL(daceml_{sdfg_name}, {'CUDA' if module.cuda else 'CPU'}, m) {{
         """
 
 
-def get_function_for_module(module: 'daceml.pytorch.DaceModule',
-                            dummy_inputs) -> CompiledTorchFunction:
+def compile_and_get_function(module: 'daceml.pytorch.DaceModule',
+                             dummy_inputs) -> CompiledTorchFunction:
     """ Get a torch callable for the module. This will compile the sdfg, compile a PyTorch C++ operator, register it
         with PyTorch and return the function that calls it.
 
