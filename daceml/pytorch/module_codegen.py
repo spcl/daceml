@@ -228,6 +228,10 @@ def get_function_for_module(module: 'daceml.pytorch.DaceModule',
         **module.dace_model.initialized_parameters
     })
     compiled.initialize(*initargtuple)
+
+    for _, hook in module.post_compile_hooks.items():
+        hook(compiled)
+
     handle_ptr = torch.tensor([compiled._libhandle.value]).squeeze(0)
 
     class SDFGEnvironment:

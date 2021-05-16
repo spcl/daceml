@@ -9,6 +9,7 @@ import dace
 import onnx
 import torch
 import torch.nn as nn
+from dace.codegen import compiled_sdfg
 from torch.onnx import TrainingMode
 
 from daceml.pytorch.module_codegen import get_function_for_module
@@ -82,6 +83,10 @@ class DaceModule(nn.Module):
         self.post_autodiff_hooks: OrderedDict[str, Callable[
             [dace.SDFG, dace.SDFG], None]] = collections.OrderedDict()
 
+        #: hooks that are executed after the sdfg is compiled
+        self.post_compile_hooks: OrderedDict[str, Callable[
+            [compiled_sdfg.CompiledSDFG], None]] = collections.OrderedDict()
+
         if dummy_inputs is not None:
             self.function = self._initialize_sdfg(dummy_inputs)
 
@@ -128,6 +133,27 @@ class DaceModule(nn.Module):
                 f"(with name {name}) will not be executed!")
         name = find_str_not_in_set(set(self.post_autodiff_hooks), name)
         self.post_autodiff_hooks[name] = func
+
+    def prepend_post_compile_hook(self, name: str,
+                                  func: Callable[[compiled_sdfg.CompiledSDFG],
+                                                 None]):
+        if self.function is not None:
+            log.warning(
+                f"Added a hook after the model was already initialized. This hook "
+                f"(with name {name}) will not be executed!")
+        name = find_str_not_in_set(set(self.post_compile_hooks), name)
+        self.post_compile_hooks[name] = func
+        self.post_compile_hooks.move_to_end(name, last=False)
+
+    def append_post_compile_hook(self, name: str,
+                                 func: Callable[[compiled_sdfg.CompiledSDFG],
+                                                None]):
+        if self.function is not None:
+            log.warning(
+                f"Added a hook after the model was already initialized. This hook "
+                f"(with name {name}) will not be executed!")
+        name = find_str_not_in_set(set(self.post_compile_hooks), name)
+        self.post_compile_hooks[name] = func
 
     def _initialize_sdfg(self, dummy_inputs):
 

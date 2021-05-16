@@ -79,10 +79,6 @@ def parameter_to_transient(dace_module: DaceModule, parameter_path: str):
         state.remove_node(cand)
         del dace_module.sdfg[array_name]
 
-    if "initialize_hook" not in dace_module.dace_model.post_compile_hooks:
-        dace_module.dace_model.post_compile_hooks[
-            "initialize_hook"] = lambda sdfg: sdfg.initialize()
-
     def post_compile_hook(compiled_sdfg):
         struct = compiled_sdfg.get_state_struct()
 
@@ -97,5 +93,5 @@ def parameter_to_transient(dace_module: DaceModule, parameter_path: str):
             ptr, compiled_sdfg.sdfg.arrays[gpu_array_name])
         torch_tensor[:] = pt_tensor
 
-    dace_module.dace_model.post_compile_hooks[
-        "init_" + pt_weight_name] = post_compile_hook
+    dace_module.post_compile_hooks["init_" +
+                                   pt_weight_name] = post_compile_hook
