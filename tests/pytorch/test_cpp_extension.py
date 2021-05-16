@@ -7,7 +7,7 @@ from dace.codegen.codeobject import CodeObject
 import dace.library
 from torch import nn
 
-from daceml.pytorch import dace_module
+from daceml.pytorch import dace_module, PyTorch
 from daceml.testing import copy_to_gpu, torch_tensors_close
 
 op_source = """
@@ -82,7 +82,7 @@ def test_extension():
                          "cpp",
                          targets.cpu.CPUCodeGen,
                          "MyAddFunction",
-                         environments={"PyTorch"})
+                         environments={PyTorch.full_class_path()})
 
     BUILD_PATH = os.path.join('.dacecache', "pt_extension")
     compiler.generate_program_folder(None, [program], BUILD_PATH)
