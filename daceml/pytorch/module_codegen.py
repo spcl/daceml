@@ -130,10 +130,23 @@ def argument_codegen(module: 'daceml.pytorch.DaceModule',
     return ptr_init_code, arguments, init_arguments
 
 
+def item_to_cpp_literal(item) -> str:
+    dtype = str(item.dtype)
+    if dtype == "float32":
+        return f"{item}f"
+    elif dtype == "int64":
+        return f"{item}l"
+    elif dtype in ["float64", "int32", "int16", "int8"]:
+        return str(item)
+    else:
+        raise ValueError(f"Unsupported tensor type {item.dtype}")
+
+
 def constant_initializer_code(name: str, desc: data.Data, value) -> str:
     if isinstance(desc, data.Array):
         iterator = np.nditer(value.cpu().numpy(), order="C")
-        return f"{desc.dtype.ctype} {name}[{desc.total_size}] = {{{', '.join(str(e) for e in iterator)}}};"
+        return f"{desc.dtype.ctype} {name}[{desc.total_size}] =" \
+               f" {{{', '.join(item_to_cpp_literal(e) for e in iterator)}}};"
     else:
         return f"{desc.dtype.ctype} {name} = {str(value.item())};"
 
@@ -213,6 +226,9 @@ def get_function_for_module(module: 'daceml.pytorch.DaceModule',
 
     # build the SDFG
     sdfg_build_path = os.path.abspath(module.sdfg.build_folder)
+    # set all states to not-sync
+    for state in module.sdfg.nodes():
+        state.nosync = True
     compiled: CompiledSDFG = module.dace_model.compile_and_init()
 
     args = tuple(dummy_inputs) + tuple(
