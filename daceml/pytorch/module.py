@@ -48,8 +48,8 @@ class DaceModule(nn.Module):
             tensor([0., 0.])
             >>> dace_module = DaceModule(module)
             >>> dace_module(torch.ones(2))
-            Automatically expanded library node "ONNX_Log_0" with implementation "onnxruntime".
-            Automatically expanded library node "ONNX_Sqrt_1" with implementation "onnxruntime".
+            Automatically expanded library node "Log_0" with implementation "onnxruntime".
+            Automatically expanded library node "Sqrt_1" with implementation "onnxruntime".
             tensor([0., 0.])
     """
     def __init__(self,
@@ -69,7 +69,7 @@ class DaceModule(nn.Module):
         self.training = training
         self.sdfg: Optional[dace.SDFG] = None
         self.cuda = cuda
-        self.sdfg_name = sdfg_name or "dace_model"
+        self.sdfg_name = sdfg_name or type(module).__name__
         self.auto_optimize = auto_optimize
         self.apply_strict = apply_strict
 
@@ -290,15 +290,15 @@ def dace_module(moduleclass,
 
             >>> from daceml.pytorch import dace_module
             >>> @dace_module
-            ... class MyModule(nn.Module):
+            ... class MyDecoratedModule(nn.Module):
             ...     def forward(self, x):
             ...        x = torch.log(x)
             ...        x = torch.sqrt(x)
             ...        return x
-            >>> module = MyModule()
+            >>> module = MyDecoratedModule()
             >>> module(torch.ones(2))
-            Automatically expanded library node "ONNX_Log_0" with implementation "onnxruntime".
-            Automatically expanded library node "ONNX_Sqrt_1" with implementation "onnxruntime".
+            Automatically expanded library node "Log_0" with implementation "onnxruntime".
+            Automatically expanded library node "Sqrt_1" with implementation "onnxruntime".
             tensor([0., 0.])
 
         :param moduleclass: the model to wrap.

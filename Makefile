@@ -40,6 +40,7 @@ doc:
 	| grep -v ".*daceml\/daceml\/onnx\/nodes\/onnx_op\.py:docstring of daceml\.onnx\.nodes\.onnx_op\.ONNX.*:[0-9]*: WARNING:"
 
 
+doctest: export DACE_debugprint=False
 doctest:
 	$(ACTIVATE) cd doc && make doctest
 
