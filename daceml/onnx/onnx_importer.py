@@ -154,11 +154,6 @@ class ONNXModel:
         self.inputs: List[str] = []  #: the inputs to the model
         self.outputs: List[str] = []  #: the outputs of the model
 
-        #: hooks that are executed after the sdfg is compiled
-        self.post_compile_hooks: Dict[str,
-                                      Callable[[compiled_sdfg.CompiledSDFG],
-                                               None]] = {}
-
         if storage is None:
             storage = dtypes.StorageType.GPU_Global if self.cuda else dtypes.StorageType.Default
 
@@ -447,8 +442,6 @@ class ONNXModel:
                         name)] = arr.cuda() if cuda else arr
 
         compiled_sdfg = self.sdfg.compile()
-        for _, hook in self.post_compile_hooks.items():
-            hook(compiled_sdfg)
         return compiled_sdfg
 
     def __call__(
