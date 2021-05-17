@@ -39,9 +39,10 @@ def test_save_transients(gpu, sdfg_name):
     dace_model = ONNXModel(sdfg_name,
                            model,
                            save_transients=transients,
-                           cuda=gpu)
+                           cuda=gpu,
+                           fold_constants=False)
     dace_model()
     assert torch.allclose(
-        transients["ONNX_bertSLASHembeddingsSLASHReshape_4__42COLON0"].type(
+        transients["bertSLASHembeddingsSLASHReshape_4__42COLON0"].type(
             torch.int32).cpu(),
         dace_model.weights["bert/embeddings/Reshape_4/shape:0"])

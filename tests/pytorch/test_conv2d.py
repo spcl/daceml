@@ -22,11 +22,11 @@ def test_conv2d(default_implementation, sdfg_name):
     ptmodel = Model()
     x = torch.rand(1, 1, 8, 8)
 
-    @dace_module
+    @dace_module(sdfg_name=sdfg_name)
     class TestDecorator(Model):
         pass
 
-    dace_model = DaceModule(ptmodel, sdfg_name=sdfg_name)
+    dace_model = DaceModule(ptmodel, sdfg_name=sdfg_name + "_wrapped")
     dace_output = dace_model(x)
 
     dace_model_decorated = TestDecorator()

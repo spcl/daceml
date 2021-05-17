@@ -57,7 +57,7 @@ There are two main ways to generate backward passes in DaCeML.
         :hide:
         :options: +ELLIPSIS
 
-        Automatically expanded library node "ONNX_LogSoftmax_5" with implementation "onnxruntime".
+        Automatically expanded library node "LogSoftmax_5" with implementation "onnxruntime".
         Automatically expanded library node "ONNXExp" with implementation "onnxruntime".
         Automatically expanded library node "ONNXReduceSum" with implementation "onnxruntime".
         Automatically expanded library node "ONNXSub" with implementation "onnxruntime".

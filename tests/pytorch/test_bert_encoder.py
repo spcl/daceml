@@ -18,7 +18,7 @@ def test_bert_encoder(gpu, default_implementation, sdfg_name):
     pt_outputs = ptmodel(input.clone())
 
     dace_model = DaceModule(ptmodel,
-                            train=False,
+                            training=False,
                             sdfg_name=sdfg_name,
                             apply_strict=True)
 
