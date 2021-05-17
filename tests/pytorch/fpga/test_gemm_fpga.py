@@ -63,7 +63,7 @@ def run(vec_width,
     ptmodel = Model(input_to_constant,
                     in_features=input_features,
                     out_features=output_features)
-    dace_model = DaceModule(ptmodel, dummy_inputs=x, auto_optimize=False)
+    dace_model = DaceModule(ptmodel, dummy_inputs=(x, ), auto_optimize=False)
 
     torch_output = ptmodel(x)
     import daceml.onnx as donnx

@@ -56,7 +56,7 @@ def evaluate(in_channels,
     torch_output = ptmodel(x)
 
     #create dace model
-    dace_model = DaceModule(ptmodel, dummy_inputs=x, auto_optimize=False)
+    dace_model = DaceModule(ptmodel, dummy_inputs=(x, ), auto_optimize=False)
 
     if execute_cpu_dace:
         dace_output = dace_model(x)
@@ -104,7 +104,7 @@ def run(input_to_constant):
     :return:
     '''
     # Example: second convolutional layer in Lenet
-    evaluate(1, 6, 5, 1, (100, 1, 28, 28), input_to_constant, False)
+    evaluate(1, 6, 5, (100, 1, 28, 28), input_to_constant, False)
 
 
 @pytest.mark.fpga

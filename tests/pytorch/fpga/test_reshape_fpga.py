@@ -35,7 +35,7 @@ def run(data_shape: tuple, reshaped_shape: tuple, vec_width=1, queue=None):
 
     torch_output = ptmodel(x)
 
-    dace_model = DaceModule(ptmodel, auto_optimize=False)
+    dace_model = DaceModule(ptmodel, auto_optimize=False, dummy_inputs=(x,))
 
     import daceml.onnx as donnx
     with dace.library.change_default(donnx.ONNXReshape, "pure"):

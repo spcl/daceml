@@ -57,7 +57,7 @@ def evaluate(in_channels,
     torch_output = ptmodel(x)
 
     #create dace model
-    dace_model = DaceModule(ptmodel, dummy_inputs=x, auto_optimize=False)
+    dace_model = DaceModule(ptmodel, dummy_inputs=(x, ), auto_optimize=False)
 
     import daceml.onnx as donnx
     if execute_cpu_dace:

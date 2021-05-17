@@ -45,13 +45,13 @@ def run(data_shape: tuple, vec_width=1, queue=None):
     # Transform to FPGA
 
     sdfg = dace_model.sdfg
-
+    sdfg.save('/tmp/out.sdfg')
     ##################################
     # Vectorize container
 
     # find the input node
     vec_type = dace.vector(dace.float32, vec_width)
-    utils.vectorize_array_and_memlet(sdfg, "ONNX_x", vec_type)
+    utils.vectorize_array_and_memlet(sdfg, "x", vec_type)
     utils.vectorize_array_and_memlet(sdfg, "ONNX_1", vec_type)
 
     ##########################################
