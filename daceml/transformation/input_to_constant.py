@@ -229,7 +229,17 @@ class InputToConstant(xf.Transformation):
 
                 # wipe the memlets off the tree
                 state.remove_memlet_path(root_edge)
-
+            
+            # remove in parent SDFGs
+            for sub_tree in tree.traverse_children(include_self=True):
+                edge = sub_tree.edge
+                if isinstance(edge.dst, nodes.NestedSDFG):
+                    del edge.dst.sdfg.arrays[edge.dst_conn]
+                    try:
+                        sub_tree.state.remove_memlet_path(edge)
+                    except KeyError:
+                        pass  # memlet path was already removed
+                    
         # if this was the last node, remove the array from the sdfg and the OnnxModel
         if not any(True for n, parent in sdfg.all_nodes_recursive()
                    if isinstance(n, nodes.AccessNode) and n.data == node.data):
