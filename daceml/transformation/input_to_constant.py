@@ -218,46 +218,17 @@ class InputToConstant(xf.Transformation):
                 root_edge.dst_conn = None
 
                 # add the constant access to the top of the tasklet
-                access_str = "{}[{}]".format(data_name, root_edge.data.subset)
+                if len(data.shape) > 0:
+                    access_str = "{}[{}]".format(data_name,
+                                                 root_edge.data.subset)
+                else:  # scalar
+                    access_str = "{}".format(data_name)
                 tasklet.code = properties.CodeBlock(
                     "{} = {}\n".format(conn_name, access_str) +
                     tasklet.code.as_string, tasklet.language)
 
-            # wipe the memlets off the tree
-
-            for sub_tree in tree.traverse_children(include_self=True):
-                edge = sub_tree.edge
-                if isinstance(edge.src, nodes.EntryNode):
-                    edge.src.remove_out_connector(edge.src_conn)
-                    edge.src_conn = None
-
-                if isinstance(edge.dst, nodes.NestedSDFG):
-                    access_nodes = [
-                        (n, parent)
-                        for n, parent in edge.dst.sdfg.all_nodes_recursive()
-                        if isinstance(n, nodes.AccessNode)
-                        and n.data == edge.dst_conn
-                    ]
-                    for n, parent_state in access_nodes:
-                        parent_state.remove_node(n)
-                    del edge.dst.sdfg.arrays[edge.dst_conn]
-                    edge.dst.remove_in_connector(edge.dst_conn)
-
-                if isinstance(edge.dst, nodes.EntryNode):
-                    edge.dst.remove_in_connector(edge.dst_conn)
-                    edge.dst_conn = None
-
-                if isinstance(edge.src, nodes.AccessNode):
-                    if edge.src in sub_tree.state.nodes():
-                        # could have been deleted by the NestedSDFG case
-                        sub_tree.state.remove_node(edge.src)
-
-                if isinstance(edge.dst, nodes.AccessNode):
-                    if edge.dst in sub_tree.state.nodes():
-                        # could have been deleted by the NestedSDFG case
-                        sub_tree.state.remove_node(edge.dst)
-
-                edge.data = dace.Memlet()
+                # wipe the memlets off the tree
+                state.remove_memlet_path(root_edge)
 
         # if this was the last node, remove the array from the sdfg and the OnnxModel
         if not any(True for n, parent in sdfg.all_nodes_recursive()
