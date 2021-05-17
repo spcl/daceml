@@ -108,18 +108,18 @@ def argument_codegen(sdfg: dace.SDFG, clean_weights: Dict[str, torch.Tensor],
     arglist = sdfg.arglist()
 
     # initialize the inputs and outputs
-    ptr_init_code = "\n    // setup input and output pointers\n    "
+    ptr_init_code = "\n// setup input and output pointers\n    "
     # inputs: make these contiguous if they're not
-    ptr_init_code += '\n    '.join(
+    ptr_init_code += '\n'.join(
         f"{arglist[name].dtype.ctype} *{name}_ptr = {name}_.contiguous().data_ptr<{arglist[name].dtype.ctype}>();"
         for name in input_names)
-    ptr_init_code += '\n    '
+    ptr_init_code += '\n'
 
     # outputs and bwd arrays
-    ptr_init_code += '\n    '.join(
+    ptr_init_code += '\n'.join(
         f"{arglist[name].dtype.ctype} *{name}_ptr = {name}_.data_ptr<{arglist[name].dtype.ctype}>();"
         for name in output_names)
-    ptr_init_code += "\n    // setup constant arguments\n"
+    ptr_init_code += "\n// setup constant arguments\n"
 
     # initialize all remaining parameters
     remaining = set(arglist).difference(
@@ -136,7 +136,7 @@ def argument_codegen(sdfg: dace.SDFG, clean_weights: Dict[str, torch.Tensor],
                 f" of the PyTorch Module, and is too large.")
 
         value = clean_weights[name]
-        ptr_init_code += f"    {constant_initializer_code(name + '_ptr', arglist[name], value)}\n"
+        ptr_init_code += f"{constant_initializer_code(name + '_ptr', arglist[name], value)}\n"
 
     arguments = ", ".join(f"{n}_ptr" for n in arglist)
     init_arguments = ", ".join(f"{n}_ptr" for n, desc in arglist.items()
@@ -417,6 +417,7 @@ def compile_and_get_function(module: 'daceml.pytorch.DaceModule',
         ptrs = [handle_ptr]
         code = code_for_module(module, compiled)
     environments.add(get_env_for_sdfg(compiled).full_class_path())
+    code = indent_code(code)
 
     # build the PyTorch module
     libname = f"torch_{module.sdfg.name}"
@@ -539,3 +540,9 @@ def get_env_for_sdfg(compiled: CompiledSDFG):
     SDFGEnvironment.__name__ = compiled.sdfg.name
     dace.library.environment(SDFGEnvironment)
     return SDFGEnvironment
+
+
+def indent_code(code: str) -> str:
+    stream = CodeIOStream()
+    stream.write(code)
+    return stream.getvalue()
