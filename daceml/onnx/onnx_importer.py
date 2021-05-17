@@ -224,7 +224,7 @@ class ONNXModel:
                     raise ValueError(
                         "Could not find array with name '{}'".format(
                             node.output[0]))
-                self._add_value_info(self.value_infos[node.output[0]])
+                self._add_value_info(self.value_infos[node.output[0]], storage=storage)
                 self.sdfg.arrays[clean_onnx_name(
                     node.output[0])].transient = False
 

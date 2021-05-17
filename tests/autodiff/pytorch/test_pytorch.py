@@ -187,3 +187,15 @@ def test_batched_matmul(sdfg_name, gpu):
             return self.fc1 @ x
 
     run_pytorch_module(Module(), sdfg_name, gpu, use_max=False)
+
+
+def test_scalar_forwarding(sdfg_name, gpu):
+    class Module(torch.nn.Module):
+        def __init__(self):
+            super(Module, self).__init__()
+            self.factor = nn.Parameter(torch.ones(()))
+
+        def forward(self, x):
+            return self.factor * x
+
+    run_pytorch_module(Module(), sdfg_name, gpu, use_max=False)
