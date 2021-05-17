@@ -4,7 +4,7 @@ import dataclasses
 import os
 import operator
 import itertools
-from typing import List, Tuple, Callable
+from typing import List, Tuple, Callable, Dict
 
 import numpy as np
 import torch
@@ -88,15 +88,18 @@ def initialize_outputs_code(module: 'daceml.pytorch.DaceModule',
     return code
 
 
-def argument_codegen(module: 'daceml.pytorch.DaceModule',
+def argument_codegen(sdfg: dace.SDFG, clean_weights: Dict[str, torch.Tensor],
                      input_names: List[str],
                      output_names: List[str]) -> Tuple[str, str, str]:
     """ Generate the code that grabs the pointers of inputs and outputs.
 
         :param module: the module
+        :param clean_weights: the constant weights of the SDFG.
+        :param input_names: names of inputs to the torch function.
+        :param output_names: names of outputs to the torch function.
         :return: the code for initializing the argument, the sdfg arguments in order, and the init call arguments
     """
-    arglist = module.sdfg.arglist()
+    arglist = sdfg.arglist()
 
     # initialize the inputs and outputs
     ptr_init_code = "\n    // setup input and output pointers\n    "
@@ -116,7 +119,7 @@ def argument_codegen(module: 'daceml.pytorch.DaceModule',
     for name in remaining:
 
         # remaining args must be constants
-        if name not in module.dace_model.clean_weights:
+        if name not in clean_weights:
             raise ValueError(
                 f"Cannot generate PyTorch module C++ code: SDFG argument {name} is not an input or output"
                 f" of the PyTorch Module, and not a constant.")
@@ -125,7 +128,7 @@ def argument_codegen(module: 'daceml.pytorch.DaceModule',
                 f"Cannot generate PyTorch module C++ code: SDFG argument {name} is not an input or output"
                 f" of the PyTorch Module, and is too large.")
 
-        value = module.dace_model.clean_weights[name]
+        value = clean_weights[name]
         ptr_init_code += f"    {constant_initializer_code(name + '_ptr', arglist[name], value)}\n"
 
     arguments = ", ".join(f"{n}_ptr" for n in arglist)
@@ -162,10 +165,12 @@ def code_for_backward_function(module: 'daceml.pytorch.DaceModule',
     pass
 
 
-def code_for_module(module: 'daceml.pytorch.DaceModule') -> str:
+def code_for_module(module: 'daceml.pytorch.DaceModule',
+                    compiled_sdfg: CompiledSDFG) -> str:
     """ Generate the code for an operator that calls the sdfgs in the module.
 
-        :param module: the module
+        :param module: the module.
+        :param compiled_sdfg: the compiled SDFG.
     """
 
     inputs, outputs = get_arglist(module)
@@ -175,7 +180,8 @@ def code_for_module(module: 'daceml.pytorch.DaceModule') -> str:
         raise NotImplemented("todo")
     else:
         ptr_init_code, sdfg_call_arguments, init_arguments = argument_codegen(
-            module, inputs, outputs)
+            compiled_sdfg.sdfg, module.dace_model.clean_weights, inputs,
+            outputs)
         return f"""
 #include <torch/torch.h>
 #include <torch/script.h>
@@ -278,7 +284,7 @@ def compile_and_get_function(module: 'daceml.pytorch.DaceModule',
     dace.library.environment(SDFGEnvironment)
 
     # build the PyTorch module
-    code = code_for_module(module)
+    code = code_for_module(module, compiled)
     libname = f"torch_{module.sdfg.name}"
     program = CodeObject(libname,
                          code,
