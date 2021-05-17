@@ -428,10 +428,12 @@ class ONNXModel:
     def compile_and_init(self) -> compiled_sdfg.CompiledSDFG:
         """ Compile the SDFG and load parameters into GPU memory. """
 
+        compiled_sdfg = self.sdfg.compile()
+
         # copy all parameters to the device
         self.initialized_parameters = {}
         for name, arr in self.weights.items():
-            if clean_onnx_name(name) in self.sdfg.arrays:
+            if clean_onnx_name(name) in compiled_sdfg.sdfg.arrays:
                 desc = self.sdfg.arrays[clean_onnx_name(name)]
                 if type(desc) is dt.Scalar:
                     self.initialized_parameters[clean_onnx_name(
@@ -441,7 +443,6 @@ class ONNXModel:
                     self.initialized_parameters[clean_onnx_name(
                         name)] = arr.cuda() if cuda else arr
 
-        compiled_sdfg = self.sdfg.compile()
         return compiled_sdfg
 
     def __call__(
