@@ -1,6 +1,6 @@
 """
 Lenet FPGA
-========================
+==========
 
 This example demonstrates using PyTorch Models and FPGA backend to run
 a Lenet inference model on FPGA.
@@ -12,12 +12,10 @@ Example adapted from https://github.com/pytorch/examples/blob/master/mnist/main.
 # %%
 # To run a PyTorch module through DaceML we will need to create the corresponding `DaceModule`
 
-
 from daceml.pytorch import DaceModule
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
 
 # %%
 # We first define the PyTorch Module, that, in this case, will implement Lenet-5
@@ -42,11 +40,35 @@ class TestLeNet(nn.Module):
         x = F.softmax(x, dim=1)
         return x
 
+
 # %%
 # We can build the corresponding `DaceModule` by passing an instance of the PyTorch Module
 # (Note: we disable auto_optimization here to allow execution on FPGA)
+
 torch_module = TestLeNet()
 daceml_module = DaceModule(torch_module, auto_optimize=False)
+
+# %%
+# To run the model on FPGA, we first specify that FPGA specific ONNX node implementations
+# should be used.
+
+import daceml.onnx as donnx
+donnx.default_implementation = "fpga"
+
+# %%
+# Then, we need to transform the model SDFG to run on FPGA.
+# We do this by registering a few DaCe transformations as transformation hooks
+
+from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
+
+daceml_module.append_post_onnx_hook(
+    "fpga_transform",
+    lambda module: module.sdfg.apply_transformations([FPGATransformSDFG]))
+daceml_module.append_post_onnx_hook(
+    "expand_nodes", lambda module: module.sdfg.expand_library_nodes())
+daceml_module.append_post_onnx_hook(
+    "inline_nodes",
+    lambda module: module.sdfg.apply_transformations_repeated([InlineSDFG]))
 
 # %%
 # We can now execute the program with some example inputs, for example a batch of
@@ -59,28 +81,11 @@ daceml_result = daceml_module(x)
 # Let's check the correctness vs. PyTorch
 
 torch_result = torch_module(x)
-assert np.allclose(torch_result.detach().numpy(), daceml_result)
+assert torch.allclose(torch_result, daceml_result)
+torch.linalg.norm(torch_result - daceml_result)
 
 # %%
-# At this point, we want to run the same Model on FPGA
-# First, we impose to DaceML to use FPGA specific ONNX node implementations
-import daceml.onnx as donnx
-donnx.default_implementation = "fpga"
+# Let's take a look at the model SDFG. We can see that it has been specialized for
+# execution on FPGAs.
 
-# %%
-# Then, we need to transform the underlying SDFG representation to run on FPGA
-# For doing this we resort to DaCe transformations
-
-from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
-daceml_module.sdfg.apply_transformations([FPGATransformSDFG])
-daceml_module.sdfg.expand_library_nodes()
-daceml_module.sdfg.apply_transformations_repeated([InlineSDFG])
-
-# %%
-# Finally, we can compute and execute the DaceML module once, again. At this point
-# it will automatically run on the FPGA
-
-daceml_module.sdfg.compile()
-daceml_fpga_result = daceml_module(x)
-
-assert np.allclose(torch_result.detach().numpy(), daceml_fpga_result)
+daceml_module.sdfg
