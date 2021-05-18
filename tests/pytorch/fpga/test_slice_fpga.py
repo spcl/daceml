@@ -24,8 +24,7 @@ class Model(nn.Module):
         return x
 
 
-
-def run(data_shape: tuple, start:int, stop:int, queue=None):
+def run(data_shape: tuple, start: int, stop: int, queue=None):
     '''
     Evaluates a specific configuration
     '''
@@ -35,7 +34,11 @@ def run(data_shape: tuple, start:int, stop:int, queue=None):
     torch_output = ptmodel(torch.clone(x))
     import daceml.onnx as donnx
     with dace.library.change_default(donnx.ONNXSlice, "pure"):
-        dace_model = DaceModule(ptmodel, auto_optimize=False, dummy_inputs=(x,),)
+        dace_model = DaceModule(
+            ptmodel,
+            auto_optimize=False,
+            dummy_inputs=(x, ),
+        )
         dace_output = dace_model(x)
     assert np.allclose(torch_output.detach().numpy(), dace_output)
 
@@ -52,7 +55,7 @@ def run(data_shape: tuple, start:int, stop:int, queue=None):
 
     diff = np.linalg.norm(torch_output.detach().numpy() -
                           dace_output_fpga) / np.linalg.norm(
-        torch_output.detach().numpy())
+                              torch_output.detach().numpy())
     print("Difference: ", diff)
     if queue is not None:
         # we are testing
@@ -68,23 +71,26 @@ def test():
         Evaluates multiple combination of input size/start/stop
         '''
     print("----------- Testing Slice ---------------")
-    data_shapes = [(96,32), (96, 32), (96,32)]
+    data_shapes = [(96, 32), (96, 32), (96, 32)]
     starts = [0, 32, 64]
     stops = [32, 64, -1]
     for i in range(0, len(starts)):
         print(
             "###############################################################")
         print(
-            f"# Configuration: data_shape={data_shapes[i]}, start={starts[i]}, stop={stops[i]}")
+            f"# Configuration: data_shape={data_shapes[i]}, start={starts[i]}, stop={stops[i]}"
+        )
         print(
             "###############################################################")
         queue = Queue()
-        p = Process(target=run, args=(data_shapes[i], starts[i], stops[i], queue))
+        p = Process(target=run,
+                    args=(data_shapes[i], starts[i], stops[i], queue))
         p.start()
         p.join()
         assert (queue.get() < 1e-6)
     print("Success!")
     pass
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -99,11 +105,4 @@ if __name__ == "__main__":
     if t:
         test()
     else:
-        run((96,32), 0,32)
-
-
-
-
-
-
-
+        run((96, 32), 0, 32)

@@ -164,8 +164,9 @@ def evaluate(batch_size=1,
                     donnx.ONNXReshape, "fpga"), dace.library.change_default(
                         donnx.ONNXSoftmax,
                         "fpga"), dace.library.change_default(
-                            donnx.ONNXReduceSum, "fpga"), dace.library.change_default(
-                            donnx.ONNXSlice, "fpga"):
+                            donnx.ONNXReduceSum,
+                            "fpga"), dace.library.change_default(
+                                donnx.ONNXSlice, "fpga"):
 
             sdfg.apply_transformations([FPGATransformSDFG], validate=False)
             sdfg.expand_library_nodes()
@@ -173,17 +174,17 @@ def evaluate(batch_size=1,
             sdfg.apply_transformations_repeated([InlineSDFG])
             sdfg.apply_transformations_repeated(PruneConnectors)
 
-        # Streaming composition (Prov. disabled)
-        # sdfg.apply_transformations_repeated([InlineSDFG, sm.StreamingMemory],
-        #                                     [{}, {
-        #                                         "storage": StorageType.FPGA_Local
-        #                                     }],
-        #                                     print_report=True)
-        # sdfg.apply_transformations_repeated([InlineSDFG, sm.StreamingComposition],
-        #                                     [{}, {
-        #                                         "storage": StorageType.FPGA_Local
-        #                                     }],
-        #                                     print_report=True)
+            # Streaming composition (Prov. disabled)
+            # sdfg.apply_transformations_repeated([InlineSDFG, sm.StreamingMemory],
+            #                                     [{}, {
+            #                                         "storage": StorageType.FPGA_Local
+            #                                     }],
+            #                                     print_report=True)
+            # sdfg.apply_transformations_repeated([InlineSDFG, sm.StreamingComposition],
+            #                                     [{}, {
+            #                                         "storage": StorageType.FPGA_Local
+            #                                     }],
+            #                                     print_report=True)
             sdfg.compile()
         dace_output_fpga = dace_model(Q, K, V)
 

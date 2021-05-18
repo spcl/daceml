@@ -37,7 +37,9 @@ def run(data_shape: tuple, reshaped_shape: tuple, vec_width=1, queue=None):
 
     import daceml.onnx as donnx
     with dace.library.change_default(donnx.ONNXReshape, "pure"):
-        dace_model = DaceModule(ptmodel, auto_optimize=False, dummy_inputs=(x,))
+        dace_model = DaceModule(ptmodel,
+                                auto_optimize=False,
+                                dummy_inputs=(x, ))
         out = dace_model(x)
     sdfg = dace_model.sdfg
     sdfg.apply_transformations([FPGATransformSDFG])

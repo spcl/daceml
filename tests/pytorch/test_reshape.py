@@ -16,7 +16,6 @@ class Model(nn.Module):
         return x
 
 
-
 @pytest.mark.pure
 def test_reshape_module(sdfg_name):
 
@@ -25,7 +24,10 @@ def test_reshape_module(sdfg_name):
 
     torch_output = ptmodel(torch.clone(x))
 
-    dace_model = DaceModule(ptmodel, auto_optimize=False, dummy_inputs=(x,), sdfg_name=sdfg_name)
+    dace_model = DaceModule(ptmodel,
+                            auto_optimize=False,
+                            dummy_inputs=(x, ),
+                            sdfg_name=sdfg_name)
 
     dace_output = dace_model(x)
 

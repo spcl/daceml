@@ -34,7 +34,7 @@ def search_fpga_name_in_weights(fpga_name: str, sdfg: SDFG) -> list:
     found = []
     for k in sdfg._parent_onnx_model.clean_weights:
         # After transforming for FPGA, containers have `_in`/`_out` as prefix
-        if k+"_" in fpga_name:
+        if k + "_" in fpga_name:
             found.append(k)
     return found
 
@@ -3033,10 +3033,14 @@ class PureSlice(ONNXForward):
             return False
 
         # Current constraints: axis must be zero and steps must be 1
-        step = sdfg._parent_onnx_model.clean_weights[search_fpga_name_in_weights(in_edge_with_name(
-                node, state, "steps").src.data, sdfg)[0]].numpy()[0]
-        axis = sdfg._parent_onnx_model.clean_weights[search_fpga_name_in_weights(
-            in_edge_with_name(node, state, "axes").src.data, sdfg)[0]].numpy()[0]
+        step = sdfg._parent_onnx_model.clean_weights[
+            search_fpga_name_in_weights(
+                in_edge_with_name(node, state, "steps").src.data,
+                sdfg)[0]].numpy()[0]
+        axis = sdfg._parent_onnx_model.clean_weights[
+            search_fpga_name_in_weights(
+                in_edge_with_name(node, state, "axes").src.data,
+                sdfg)[0]].numpy()[0]
         if step != 1 or axis != 0:
             return False
 
@@ -3046,10 +3050,14 @@ class PureSlice(ONNXForward):
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
-        start = sdfg._parent_onnx_model.clean_weights[search_fpga_name_in_weights(in_edge_with_name(
-            node, state, "starts").src.data, sdfg)[0]].numpy()[0]
-        end = sdfg._parent_onnx_model.clean_weights[search_fpga_name_in_weights(in_edge_with_name(
-            node, state, "ends").src.data, sdfg)[0]].numpy()[0]
+        start = sdfg._parent_onnx_model.clean_weights[
+            search_fpga_name_in_weights(
+                in_edge_with_name(node, state, "starts").src.data,
+                sdfg)[0]].numpy()[0]
+        end = sdfg._parent_onnx_model.clean_weights[
+            search_fpga_name_in_weights(
+                in_edge_with_name(node, state, "ends").src.data,
+                sdfg)[0]].numpy()[0]
 
         # Step is 1 and axis is 0
 
