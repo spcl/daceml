@@ -69,6 +69,7 @@ def run(x_shape: tuple, y_shape: tuple, vec_width=1, queue=None):
         sdfg.apply_transformations([FPGATransformSDFG])
         sdfg.expand_library_nodes()
         sdfg.apply_transformations_repeated([InlineSDFG])
+        sdfg.compile()
 
     ###################################################
     dace_output_fpga = dace_model(x, y)

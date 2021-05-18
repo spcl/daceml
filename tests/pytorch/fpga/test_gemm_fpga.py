@@ -90,13 +90,14 @@ def run(vec_width,
     ###################################################
     # Transform for FPGA and Inline
     with dace.library.change_default(donnx.ONNXGemm, "fpga"):
+        if input_to_constant:
+            sdfg.apply_transformations_repeated([InputToConstant],
+                                                print_report=True)
         sdfg.apply_transformations([FPGATransformSDFG])
         sdfg.expand_library_nodes()
         sdfg.apply_transformations_repeated([InlineSDFG])
 
-        if input_to_constant:
-            sdfg.apply_transformations_repeated([InputToConstant],
-                                                print_report=True)
+        sdfg.compile()
 
     dace_output_fpga = dace_model(torch.clone(x))
     # reshape if vec_width is different than 1

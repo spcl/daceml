@@ -35,10 +35,9 @@ def run(data_shape: tuple, reshaped_shape: tuple, vec_width=1, queue=None):
 
     torch_output = ptmodel(x)
 
-    dace_model = DaceModule(ptmodel, auto_optimize=False, dummy_inputs=(x,))
-
     import daceml.onnx as donnx
     with dace.library.change_default(donnx.ONNXReshape, "pure"):
+        dace_model = DaceModule(ptmodel, auto_optimize=False, dummy_inputs=(x,))
         out = dace_model(x)
     sdfg = dace_model.sdfg
     sdfg.apply_transformations([FPGATransformSDFG])
@@ -46,6 +45,7 @@ def run(data_shape: tuple, reshaped_shape: tuple, vec_width=1, queue=None):
     with dace.library.change_default(donnx.ONNXReshape, "fpga"):
         sdfg.expand_library_nodes()
         sdfg.apply_transformations_repeated([InlineSDFG])
+        sdfg.compile()
 
     dace_output_fpga = dace_model(x)
     dace_output_fpga = dace_output_fpga.reshape(

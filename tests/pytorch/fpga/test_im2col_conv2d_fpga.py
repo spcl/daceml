@@ -85,6 +85,7 @@ def evaluate(in_channels,
         if input_to_constant:
             sdfg.apply_transformations_repeated([InputToConstant],
                                                 print_report=True)
+        sdfg.compile()
 
     #################################
     # Execute

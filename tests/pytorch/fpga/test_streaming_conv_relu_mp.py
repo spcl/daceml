@@ -80,9 +80,10 @@ def run(data_shape, vec_width=1, input_to_constant=False, queue=None):
         sdfg.expand_library_nodes()
         sdfg.apply_transformations_repeated([InlineSDFG])
 
-    if input_to_constant:
-        sdfg.apply_transformations_repeated([InputToConstant],
-                                            print_report=True)
+        if input_to_constant:
+            sdfg.apply_transformations_repeated([InputToConstant],
+                                                print_report=True)
+        sdfg.compile()
     #######################################################################
     # Streaming Composition
     sdfg.apply_transformations_repeated(

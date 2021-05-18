@@ -45,7 +45,6 @@ def run(data_shape: tuple, vec_width=1, queue=None):
     # Transform to FPGA
 
     sdfg = dace_model.sdfg
-    sdfg.save('/tmp/out.sdfg')
     ##################################
     # Vectorize container
 
@@ -60,6 +59,7 @@ def run(data_shape: tuple, vec_width=1, queue=None):
     with dace.library.change_default(donnx.ONNXRelu, "fpga"):
         sdfg.expand_library_nodes()
         sdfg.apply_transformations_repeated([InlineSDFG])
+        sdfg.compile()
 
     dace_output_fpga = dace_model(x)
     dace_output_fpga = dace_output_fpga.reshape(data_shape)
