@@ -21,7 +21,7 @@ def check_op(sdfg, state, node, cuda=False) -> Tuple[List[bool], List[bool]]:
     log.debug(f"Checking node {node}")
 
     with ORTCAPIInterface() as api,\
-            KernelSession(api) as session,\
+            KernelSession(api, cuda=cuda) as session,\
             ExecutableKernelContext(api, session, node.name, node.schema.name) as context:
 
         for attribute, onnx_attribute in node.schema.attributes.items():
