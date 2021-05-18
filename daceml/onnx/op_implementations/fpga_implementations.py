@@ -22,6 +22,23 @@ def _2d_sliding_window_index_expr(x_or_y, stride, kernel_size):
     return index_expression.format(x_or_y=x_or_y, stride=stride)
 
 
+def search_fpga_name_in_weights(fpga_name: str, sdfg: SDFG) -> list:
+    '''
+    Searches among the model weights, and returns a list comprising weights W such that
+    W is a substring of the given fpga_name.
+    Can be used to relate containers name after FPGA Transform
+    :param fpga_name:
+    :param sdfg: the sdfg to search into
+    :return: a list with all the occurences
+    '''
+    found = []
+    for k in sdfg._parent_onnx_model.clean_weights:
+        # After transforming for FPGA, containers have `_in`/`_out` as prefix
+        if k+"_" in fpga_name:
+            found.append(k)
+    return found
+
+
 @op_implementation(op="Conv", name="naive_fpga")
 class FPGAConv2D(ONNXForward):
     """
@@ -2978,3 +2995,73 @@ class FPGAReduceSum(ONNXForward):
         new_sdfg.fill_scope_connectors()
         new_sdfg.validate()
         return new_sdfg
+
+
+@op_implementation(op="Slice", name="fpga")
+class PureSlice(ONNXForward):
+    '''
+        Slice expansion
+    '''
+    @staticmethod
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
+        # check that all the inputs (even the optional ones) are present and constant
+
+        if not hasattr(sdfg, "_parent_onnx_model"):
+            return False
+
+        if len(
+                search_fpga_name_in_weights(
+                    in_edge_with_name(node, state, "axes").src.data,
+                    sdfg)) != 1:
+            return False
+        if len(
+                search_fpga_name_in_weights(
+                    in_edge_with_name(node, state, "starts").src.data,
+                    sdfg)) != 1:
+            return False
+
+        if len(
+                search_fpga_name_in_weights(
+                    in_edge_with_name(node, state, "ends").src.data,
+                    sdfg)) != 1:
+            return False
+        if len(
+                search_fpga_name_in_weights(
+                    in_edge_with_name(node, state, "steps").src.data,
+                    sdfg)) != 1:
+            return False
+
+        # Current constraints: axis must be zero and steps must be 1
+        step = sdfg._parent_onnx_model.clean_weights[search_fpga_name_in_weights(in_edge_with_name(
+                node, state, "steps").src.data, sdfg)[0]].numpy()[0]
+        axis = sdfg._parent_onnx_model.clean_weights[search_fpga_name_in_weights(
+            in_edge_with_name(node, state, "axes").src.data, sdfg)[0]].numpy()[0]
+        if step != 1 or axis != 0:
+            return False
+
+        return True
+
+    @staticmethod
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+
+        start = sdfg._parent_onnx_model.clean_weights[search_fpga_name_in_weights(in_edge_with_name(
+            node, state, "starts").src.data, sdfg)[0]].numpy()[0]
+        end = sdfg._parent_onnx_model.clean_weights[search_fpga_name_in_weights(in_edge_with_name(
+            node, state, "ends").src.data, sdfg)[0]].numpy()[0]
+
+        # Step is 1 and axis is 0
+
+        output_shape = out_desc_with_name(node, state, sdfg, "output").shape
+        if end == end == np.iinfo(np.int64).max:
+            # Pytorch exporter artifact
+            end = start + output_shape[0]
+
+        def prog(data, output):
+            tmp = data[start:end, :]
+            # We need reshape to avoid Invalid Edge errors
+
+            output[:] = np.reshape(tmp, output.shape)
+
+        return program_for_node(prog, sdfg, state, node)

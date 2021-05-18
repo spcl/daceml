@@ -158,6 +158,7 @@ def eval_model(args, test_dataloader, model, device, single=False):
         ######################################
         # Prune connectors
         sdfg.apply_transformations_repeated(PruneConnectors)
+        sdfg.compile()
         device = 'cpu'
     else:
         model.to(device)

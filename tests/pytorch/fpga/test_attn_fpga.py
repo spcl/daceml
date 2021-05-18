@@ -136,25 +136,25 @@ def evaluate(batch_size=1,
         sdfg = dace_model.sdfg
         ##################################
         # Vectorize
-        # TODO: this is still partial
-        vec_width = 4  # we can not go further in this because of the systolic organization
-        vec_type = dace.vector(dace.float32, vec_width)
+        # TODO:
+        # vec_width = 4  # we can not go further in this because of the systolic organization
+        # vec_type = dace.vector(dace.float32, vec_width)
+        # #
+        # # #vectorize input B matmul, output not vectorized
+        # input_data_name = "ONNX_26"
+        # utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
+        # print("Applying vectorization {} to Array {}".format(
+        #     vec_width, input_data_name))
         #
-        # #vectorize input B matmul, output not vectorized
-        input_data_name = "ONNX___tmp43"
-        utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
-        print("Applying vectorization {} to Array {}".format(
-            vec_width, input_data_name))
-
-        # vectorize input B matmul, output not vectorized
-        input_data_name = "ONNX___tmp46"
-        utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
-        print("Applying vectorization {} to Array {}".format(
-            vec_width, input_data_name))
-
-        # vectorize input B matmul, output not vectorized
-        input_data_name = "ONNX___tmp47"
-        utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
+        # # vectorize input B matmul, output not vectorized
+        # input_data_name = "ONNX_36"
+        # utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
+        # print("Applying vectorization {} to Array {}".format(
+        #     vec_width, input_data_name))
+        #
+        # # vectorize input B matmul, output not vectorized
+        # input_data_name = "ONNX_47"
+        # utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
         # ##################################
 
         ###################################################
@@ -164,7 +164,8 @@ def evaluate(batch_size=1,
                     donnx.ONNXReshape, "fpga"), dace.library.change_default(
                         donnx.ONNXSoftmax,
                         "fpga"), dace.library.change_default(
-                            donnx.ONNXReduceSum, "fpga"):
+                            donnx.ONNXReduceSum, "fpga"), dace.library.change_default(
+                            donnx.ONNXSlice, "fpga"):
 
             sdfg.apply_transformations([FPGATransformSDFG], validate=False)
             sdfg.expand_library_nodes()
@@ -183,7 +184,7 @@ def evaluate(batch_size=1,
         #                                         "storage": StorageType.FPGA_Local
         #                                     }],
         #                                     print_report=True)
-
+            sdfg.compile()
         dace_output_fpga = dace_model(Q, K, V)
 
     finally:
