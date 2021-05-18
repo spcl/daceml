@@ -104,6 +104,10 @@ def eval_model(args, test_dataloader, model, device, single=False):
         # transform to FPGA, for pytorch the device is always 'cpu'
         model.to('cpu')
         dummy_input = next(iter(test_dataloader))
+
+        model = DaceModule(model,
+                           dummy_inputs=(dummy_input[0], ),
+                           auto_optimize=False)
         donnx.ONNXRelu.default_implementation = "fpga"
         donnx.ONNXMaxPool.default_implementation = "fpga"
         donnx.ONNXGemm.default_implementation = "fpga"
@@ -111,7 +115,6 @@ def eval_model(args, test_dataloader, model, device, single=False):
         donnx.ONNXReshape.default_implementation = 'fpga'
         donnx.ONNXSoftmax.default_implementation = 'fpga'
 
-        model = DaceModule(model, dummy_inputs=dummy_input[0])
         sdfg = model.sdfg
 
         ##################################
@@ -287,7 +290,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     donnx.default_implementation = 'pure'
-    donnx.ONNXConv.default_implementation = 'im2col'
 
     train_loader = get_dataloader(False, args.batch_size)
     test_loader = get_dataloader(True, args.test_batch_size)
