@@ -1,1 +1,1 @@
-from .pytorch_env import PyTorch
+from .pytorch_env import PyTorch, PyTorchCUDA

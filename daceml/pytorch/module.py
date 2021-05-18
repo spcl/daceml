@@ -3,7 +3,7 @@ import logging
 import os
 import tempfile
 from functools import wraps
-from typing import Optional, Tuple, Callable, OrderedDict
+from typing import Optional, Tuple, Callable, OrderedDict, Type
 
 import dace
 import onnx
@@ -283,7 +283,7 @@ def dace_module(moduleclass,
                 backward=False,
                 apply_strict: bool = True,
                 auto_optimize: bool = True,
-                sdfg_name: Optional[str] = None):
+                sdfg_name: Optional[str] = None) -> Type[DaceModule]:
     """ Decorator to apply on a definition of a ``torch.nn.Module`` to
         convert it to a data-centric module upon construction.
 
