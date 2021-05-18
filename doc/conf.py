@@ -54,7 +54,12 @@ typehints_fully_qualified = False
 add_module_names = False
 autoclass_content = 'both'
 
-sphinx_gallery_conf = {'default_thumb_file': 'dace.png'}
+build_fpga_docs = "DACEML_DOC_BUILD_FPGA" in os.environ and os.environ[
+    "DACEML_DOC_BUILD_FPGA"] == 'True'
+sphinx_gallery_conf = {
+    'default_thumb_file': 'dace.png',
+    'filename_pattern': '/plot_' if build_fpga_docs else '/plot_(?!fpga)'
+}
 
 
 def linkcode_resolve(domain, info):

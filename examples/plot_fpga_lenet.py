@@ -53,6 +53,7 @@ daceml_module = DaceModule(torch_module, auto_optimize=False)
 # should be used.
 
 import daceml.onnx as donnx
+
 donnx.default_implementation = "fpga"
 
 # %%

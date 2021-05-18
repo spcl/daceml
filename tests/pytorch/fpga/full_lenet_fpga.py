@@ -234,7 +234,6 @@ def run_batch_inference():
     torch_output = net(torch.clone(input))
     dace_output = dace_net(torch.clone(input))
     dace_net.sdfg.expand_library_nodes()
-    dace_net.sdfg.view()
     assert np.allclose(torch_output.detach().numpy(), dace_output)
 
 
