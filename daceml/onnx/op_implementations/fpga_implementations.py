@@ -3012,11 +3012,6 @@ class PureSlice(ONNXForward):
 
         if len(
                 search_fpga_name_in_weights(
-                    in_edge_with_name(node, state, "axes").src.data,
-                    sdfg)) != 1:
-            return False
-        if len(
-                search_fpga_name_in_weights(
                     in_edge_with_name(node, state, "starts").src.data,
                     sdfg)) != 1:
             return False
@@ -3026,10 +3021,30 @@ class PureSlice(ONNXForward):
                     in_edge_with_name(node, state, "ends").src.data,
                     sdfg)) != 1:
             return False
-        if len(
-                search_fpga_name_in_weights(
-                    in_edge_with_name(node, state, "steps").src.data,
-                    sdfg)) != 1:
+
+        # optional inputs
+        is_axes_present = True
+        try:
+            if len(
+                    search_fpga_name_in_weights(
+                        in_edge_with_name(node, state, "axes").src.data,
+                        sdfg)) != 1:
+                return False
+        except ValueError:
+            is_axes_present = False
+
+        is_steps_present = True
+        try:
+            if len(
+                    search_fpga_name_in_weights(
+                        in_edge_with_name(node, state, "steps").src.data,
+                        sdfg)) != 1:
+                return False
+        except ValueError:
+            is_steps_present = False
+
+        # Current constraints: axes and steps must be explict. Axes must be zero and steps must be 1
+        if not is_axes_present or not is_steps_present:
             return False
 
         # Current constraints: axis must be zero and steps must be 1

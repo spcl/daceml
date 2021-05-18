@@ -668,10 +668,7 @@ class PureSlice(ONNXForward):
 
         if not hasattr(sdfg, "_parent_onnx_model"):
             return False
-        if in_edge_with_name(
-                node, state,
-                "axes").src.data not in sdfg._parent_onnx_model.clean_weights:
-            return False
+
         if in_edge_with_name(
                 node, state, "starts"
         ).src.data not in sdfg._parent_onnx_model.clean_weights:
@@ -680,16 +677,35 @@ class PureSlice(ONNXForward):
                 node, state,
                 "ends").src.data not in sdfg._parent_onnx_model.clean_weights:
             return False
-        if in_edge_with_name(
-                node, state,
-                "steps").src.data not in sdfg._parent_onnx_model.clean_weights:
+
+        # optional inputs
+        is_axes_present = True
+        try:
+            if in_edge_with_name(
+                    node, state, "axes"
+            ).src.data not in sdfg._parent_onnx_model.clean_weights:
+                return False
+        except ValueError:
+            is_axes_present = False
+
+        is_steps_present = True
+        try:
+            if in_edge_with_name(
+                    node, state, "steps"
+            ).src.data not in sdfg._parent_onnx_model.clean_weights:
+                return False
+        except ValueError:
+            is_steps_present = False
+
+        # Current constraints: axes and steps must be explict. Axes must be zero and steps must be 1
+        if not is_axes_present or not is_steps_present:
             return False
 
-        # Current constraints: axis must be zero and steps must be 1
         step = sdfg._parent_onnx_model.clean_weights[in_edge_with_name(
             node, state, "steps").src.data].numpy()[0]
         axis = sdfg._parent_onnx_model.clean_weights[in_edge_with_name(
             node, state, "axes").src.data].numpy()[0]
+
         if step != 1 or axis != 0:
             return False
 
@@ -703,10 +719,6 @@ class PureSlice(ONNXForward):
             node, state, "starts").src.data].numpy()[0]
         end = sdfg._parent_onnx_model.clean_weights[in_edge_with_name(
             node, state, "ends").src.data].numpy()[0]
-        step = sdfg._parent_onnx_model.clean_weights[in_edge_with_name(
-            node, state, "steps").src.data].numpy()[0]
-        axis = sdfg._parent_onnx_model.clean_weights[in_edge_with_name(
-            node, state, "axes").src.data].numpy()[0]
 
         output_shape = out_desc_with_name(node, state, sdfg, "output").shape
         if end == end == np.iinfo(np.int64).max:
