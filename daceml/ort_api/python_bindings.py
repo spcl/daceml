@@ -94,7 +94,7 @@ class SessionOptions:
 
 
 class KernelSession:
-    def __init__(self, api, cuda):
+    def __init__(self, api, cuda=False):
         self.api = api
         self.session_options = SessionOptions(api, cuda=cuda)
 
