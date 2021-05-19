@@ -65,8 +65,6 @@ def run(data_shape: tuple, start: int, stop: int, queue=None):
 
     # Execute Module with FPGA expansion
     with dace.library.change_default(donnx.ONNXSlice, "fpga"):
-        import pdb
-        pdb.set_trace()
         dace_output_fpga = dace_model(torch.clone(x)).numpy()
 
     diff = np.linalg.norm(torch_output.detach().numpy() -
