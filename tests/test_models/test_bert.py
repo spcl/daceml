@@ -34,10 +34,9 @@ def test_bert_full(gpu, default_implementation, sdfg_name):
     os.makedirs(data_directory, exist_ok=True)
 
     bert_path = os.path.join(data_directory, "bert-tiny.onnx")
-    if not os.path.exists(bert_path):
-        urllib.request.urlretrieve(
-            'http://spclstorage.inf.ethz.ch/~rauscho/bert-tiny.onnx',
-            bert_path)
+    urllib.request.urlretrieve(
+        'http://spclstorage.inf.ethz.ch/~rauscho/bert-tiny.onnx',
+        bert_path)
     model = onnx.load(bert_path)
 
     dace_model = donnx.ONNXModel(
