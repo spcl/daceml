@@ -50,29 +50,43 @@ def run(x_shape: tuple, y_shape: tuple, vec_width=1, queue=None):
         dace_output = dace_model(x, y)
 
     assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
-    sdfg = dace_model.sdfg
 
-    ##################################
-    # Vectorize
-    if vec_width != 1:
-        vec_type = dace.vector(dace.float32, vec_width)
-        input_data_name = sdfg.states()[0].source_nodes()[1].data
-        output_data_name = sdfg.states()[0].sink_nodes()[0].data
-        # vectorize input B
-        utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
-        # vectorize output B
-        utils.vectorize_array_and_memlet(sdfg, output_data_name, vec_type)
-    # ##################################
+    ##########################################
     # Transform to FPGA
 
-    with dace.library.change_default(donnx.ONNXMatMul, "fpga"):
-        sdfg.apply_transformations([FPGATransformSDFG])
+    def TransformToFPGA(dace_module):
+        '''
+        Transforms the given module to run on FPGA.
+        This includes vectorization and library node expansions.
+        :param dace_module:
+        :return:
+        '''
+        sdfg = dace_module.sdfg
+        sdfg.apply_transformations([FPGATransformSDFG, InlineSDFG])
+
+        # Vectorize container (if needed)
+        if vec_width > 1:
+            vec_type = dace.vector(dace.float32, vec_width)
+            input_data_name = sdfg.states()[0].source_nodes()[1].data
+            output_data_name = sdfg.states()[0].sink_nodes()[0].data
+            # vectorize input B
+            utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
+            # vectorize output B
+            utils.vectorize_array_and_memlet(sdfg, output_data_name, vec_type)
+
         sdfg.expand_library_nodes()
         sdfg.apply_transformations_repeated([InlineSDFG])
-        sdfg.compile()
 
-    ###################################################
-    dace_output_fpga = dace_model(x, y)
+    # Reset the SDFG
+    dace_model.reset_sdfg()
+
+    # Append transformation hook
+    dace_model.append_post_onnx_hook("TransformToFPGA", TransformToFPGA)
+
+    # Execute Module with FPGA expansion
+    with dace.library.change_default(donnx.ONNXMatMul, "fpga"):
+        dace_output_fpga = dace_model(x, y)
+
     dace_output_fpga_reshaped = dace_output_fpga.numpy().reshape(
         torch_output.detach().numpy().shape)
     diff = np.linalg.norm(torch_output.detach().numpy() -
@@ -98,6 +112,7 @@ def test():
     Evaluates multiple combination of Matmul/input size
     :return:
     '''
+
     print("----------- Testing Batched Matmul (3Dx3D tensor) ---------------")
 
     # Run FPGA tests in a different process to avoid issues with Intel OpenCL tools

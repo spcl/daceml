@@ -61,28 +61,35 @@ def evaluate(in_channels,
     if execute_cpu_dace:
         dace_output = dace_model(x)
 
-    sdfg = dace_model.sdfg
+    ##########################################
+    # Transform to FPGA
 
-    ###################################################
-    # Transform for FPGA and Inline
-    import daceml.onnx as donnx
-    with dace.library.change_default(donnx.ONNXConv, "naive_fpga"):
-        sdfg.apply_transformations([FPGATransformSDFG])
+    def TransformToFPGA(dace_module):
+        '''
+        Transforms the given module to run on FPGA.
+        This includes vectorization and library node expansions.
+        :param dace_module:
+        :return:
+        '''
+        sdfg = dace_module.sdfg
+        sdfg.apply_transformations([FPGATransformSDFG, InlineSDFG])
 
-        ###################################
-        sdfg.expand_library_nodes()
-        sdfg.apply_transformations_repeated([InlineSDFG])
-
-        # ###################################################################
-        # # Input to constant
         if input_to_constant:
             sdfg.apply_transformations_repeated([InputToConstant],
                                                 print_report=True)
-        sdfg.compile()
 
-    #################################
+        sdfg.expand_library_nodes()
+        sdfg.apply_transformations_repeated([InlineSDFG])
+
+    # Reset the SDFG
+    dace_model.reset_sdfg()
+    # Append transformation hook
+    dace_model.append_post_onnx_hook("TransformToFPGA", TransformToFPGA)
+
     # Execute
-    dace_output_fpga = dace_model(torch.clone(x))
+    import daceml.onnx as donnx
+    with dace.library.change_default(donnx.ONNXConv, "naive_fpga"):
+        dace_output_fpga = dace_model(torch.clone(x))
     dace_output_fpga = dace_output_fpga.detach().numpy().reshape(
         torch_output.shape)
 

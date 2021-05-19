@@ -28,7 +28,6 @@ class Model(nn.Module):
 
 
 def run(data_shape: tuple, reshaped_shape: tuple, vec_width=1, queue=None):
-    # dace_output = dace_model(x)
 
     ptmodel = Model(reshaped_shape)
     x = torch.rand(data_shape)
@@ -41,15 +40,39 @@ def run(data_shape: tuple, reshaped_shape: tuple, vec_width=1, queue=None):
                                 auto_optimize=False,
                                 dummy_inputs=(x, ))
         out = dace_model(x)
-    sdfg = dace_model.sdfg
-    sdfg.apply_transformations([FPGATransformSDFG])
 
-    with dace.library.change_default(donnx.ONNXReshape, "fpga"):
+    ##########################################
+    # Transform to FPGA
+
+    def TransformToFPGA(dace_module):
+        '''
+        Transforms the given module to run on FPGA.
+        This includes vectorization and library node expansions.
+        :param dace_module:
+        :return:
+        '''
+        sdfg = dace_module.sdfg
+        sdfg.apply_transformations([FPGATransformSDFG, InlineSDFG])
+
+        # Vectorize container (if needed)
+        if vec_width > 1:
+            vec_type = dace.vector(dace.float32, vec_width)
+            # input
+            utils.vectorize_array_and_memlet(sdfg, "fpga_ONNX_0", vec_type)
+            # output
+            utils.vectorize_array_and_memlet(sdfg, "fpga_ONNX_2", vec_type)
         sdfg.expand_library_nodes()
         sdfg.apply_transformations_repeated([InlineSDFG])
-        sdfg.compile()
 
-    dace_output_fpga = dace_model(x)
+    # Reset the SDFG
+    dace_model.reset_sdfg()
+
+    # Append transformation hook
+    dace_model.append_post_onnx_hook("TransformToFPGA", TransformToFPGA)
+
+    # Execute Module with FPGA expansion
+    with dace.library.change_default(donnx.ONNXReshape, "fpga"):
+        dace_output_fpga = dace_model(x)
     dace_output_fpga = dace_output_fpga.reshape(
         torch_output.detach().numpy().shape).detach().numpy()
 

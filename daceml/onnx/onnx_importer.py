@@ -615,8 +615,6 @@ def create_output_array(
         shape = [
             eval_dim(d) if type(d) is dace.symbol else d for d in desc.shape
         ]
-        if desc.dtype.veclen > 1:
-            shape.append(desc.dtype.veclen)
 
     if use_torch:
         # torch functions don't accept the empty shape, so create shape [1] then reshape to ()

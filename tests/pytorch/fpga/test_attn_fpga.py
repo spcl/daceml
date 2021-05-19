@@ -132,33 +132,53 @@ def evaluate(batch_size=1,
                                dace_outputs_1[1],
                                atol=1e-06)
 
-        # Get the SDFG
-        sdfg = dace_model.sdfg
-        ##################################
-        # Vectorize
-        # TODO:
-        # vec_width = 4  # we can not go further in this because of the systolic organization
-        # vec_type = dace.vector(dace.float32, vec_width)
-        # #
-        # # #vectorize input B matmul, output not vectorized
-        # input_data_name = "ONNX_26"
-        # utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
-        # print("Applying vectorization {} to Array {}".format(
-        #     vec_width, input_data_name))
-        #
-        # # vectorize input B matmul, output not vectorized
-        # input_data_name = "ONNX_36"
-        # utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
-        # print("Applying vectorization {} to Array {}".format(
-        #     vec_width, input_data_name))
-        #
-        # # vectorize input B matmul, output not vectorized
-        # input_data_name = "ONNX_47"
-        # utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
-        # ##################################
-
-        ###################################################
+        ##########################################
         # Transform to FPGA
+
+        def TransformToFPGA(dace_module):
+            '''
+            Transforms the given module to run on FPGA.
+            This includes (vectorization and) library node expansions.
+            :param dace_module:
+            :return:
+            '''
+            sdfg = dace_module.sdfg
+            sdfg.apply_transformations([FPGATransformSDFG])
+
+            # Vectorize container (if needed)
+            # TODO:
+            # vec_width = 4  # we can not go further in this because of the systolic organization
+            # vec_type = dace.vector(dace.float32, vec_width)
+            # #
+            # # #vectorize input B matmul, output not vectorized
+            # input_data_name = "ONNX_26"
+            # utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
+            # print("Applying vectorization {} to Array {}".format(
+            #     vec_width, input_data_name))
+            #
+            # # vectorize input B matmul, output not vectorized
+            # input_data_name = "ONNX_36"
+            # utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
+            # print("Applying vectorization {} to Array {}".format(
+            #     vec_width, input_data_name))
+            #
+            # # vectorize input B matmul, output not vectorized
+            # input_data_name = "ONNX_47"
+            # utils.vectorize_array_and_memlet(sdfg, input_data_name, vec_type)
+            # ##################################
+
+            sdfg.expand_library_nodes()
+            sdfg.apply_transformations_repeated([InlineSDFG])
+            sdfg.apply_transformations_repeated(PruneConnectors)
+
+        # Reset the SDFG
+        dace_model.reset_sdfg()
+
+        # Append transformation hook
+        dace_model.append_post_onnx_hook("TransformToFPGA", TransformToFPGA)
+
+        # Execute Module with FPGA expansion
+
         with dace.library.change_default(
                 donnx.ONNXMatMul, "fpga"), dace.library.change_default(
                     donnx.ONNXReshape, "fpga"), dace.library.change_default(
@@ -167,26 +187,7 @@ def evaluate(batch_size=1,
                             donnx.ONNXReduceSum,
                             "fpga"), dace.library.change_default(
                                 donnx.ONNXSlice, "fpga"):
-
-            sdfg.apply_transformations([FPGATransformSDFG], validate=False)
-            sdfg.expand_library_nodes()
-
-            sdfg.apply_transformations_repeated([InlineSDFG])
-            sdfg.apply_transformations_repeated(PruneConnectors)
-
-            # Streaming composition (Prov. disabled)
-            # sdfg.apply_transformations_repeated([InlineSDFG, sm.StreamingMemory],
-            #                                     [{}, {
-            #                                         "storage": StorageType.FPGA_Local
-            #                                     }],
-            #                                     print_report=True)
-            # sdfg.apply_transformations_repeated([InlineSDFG, sm.StreamingComposition],
-            #                                     [{}, {
-            #                                         "storage": StorageType.FPGA_Local
-            #                                     }],
-            #                                     print_report=True)
-            sdfg.compile()
-        dace_output_fpga = dace_model(Q, K, V)
+            dace_output_fpga = dace_model(Q, K, V)
 
     finally:
         donnx.default_implementation = old_default

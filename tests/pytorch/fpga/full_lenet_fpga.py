@@ -115,53 +115,59 @@ def eval_model(args, test_dataloader, model, device, single=False):
         donnx.ONNXReshape.default_implementation = 'fpga'
         donnx.ONNXSoftmax.default_implementation = 'fpga'
 
-        sdfg = model.sdfg
+        ##########################################
+        # Transform to FPGA
 
-        ##################################
-        # Vectorize input and output container
-        vec_width = 8
+        def TransformToFPGA(dace_module):
+            '''
+            Transforms the given module to run on FPGA.
+            This includes vectorization and library node expansions.
+            :param dace_module:
+            :return:
+            '''
+            sdfg = dace_module.sdfg
+            sdfg.apply_transformations([FPGATransformSDFG, InlineSDFG])
 
-        vec_type = dace.vector(dace.float32, vec_width)
+            ##################################
+            # Vectorize input and output container
+            vec_width = 8
 
-        # vectorize output of Conv0
-        utils.vectorize_array_and_memlet(sdfg, "ONNX_11", vec_type)
-        # vectorize output of Relu1
-        utils.vectorize_array_and_memlet(sdfg, "ONNX_12", vec_type)
-        # vectorize output of Conv3
-        utils.vectorize_array_and_memlet(sdfg, "ONNX_14", vec_type)
-        # vectorize output of Relu4
-        utils.vectorize_array_and_memlet(sdfg, "ONNX_15", vec_type)
+            vec_type = dace.vector(dace.float32, vec_width)
 
-        # Also the first GEMM can be vect by 8
-        # but the corresponding BIAS is not vectorized to not break input to constant
-        utils.vectorize_array_and_memlet(sdfg, "ONNX_19", vec_type)
+            # vectorize output of Conv0
+            utils.vectorize_array_and_memlet(sdfg, "ONNX_11", vec_type)
+            # vectorize output of Relu1
+            utils.vectorize_array_and_memlet(sdfg, "ONNX_12", vec_type)
+            # vectorize output of Conv3
+            utils.vectorize_array_and_memlet(sdfg, "ONNX_14", vec_type)
+            # vectorize output of Relu4
+            utils.vectorize_array_and_memlet(sdfg, "ONNX_15", vec_type)
 
-        # GEMM 10 is instead vectorized by 4
-        vec_type4 = dace.vector(dace.float32, 4)
-        utils.vectorize_array_and_memlet(sdfg, "ONNX_21", vec_type4)
+            # Also the first GEMM can be vect by 8
+            # but the corresponding BIAS is not vectorized to not break input to constant
+            utils.vectorize_array_and_memlet(sdfg, "ONNX_19", vec_type)
 
-        ############################################
-        # Transform for FPGA and Inline
-        sdfg.apply_transformations([FPGATransformSDFG])
-        sdfg.expand_library_nodes()
-        sdfg.apply_transformations_repeated([InlineSDFG])
+            # GEMM 10 is instead vectorized by 4
+            vec_type4 = dace.vector(dace.float32, 4)
+            utils.vectorize_array_and_memlet(sdfg, "ONNX_21", vec_type4)
 
-        # ###################################################################
-        # # Input to constant
-        sdfg.apply_transformations_repeated([InputToConstant],
-                                            print_report=True)
+            sdfg.expand_library_nodes()
+            sdfg.apply_transformations_repeated([InlineSDFG])
+            sdfg.apply_transformations_repeated([InputToConstant],
+                                                print_report=True)
+            sdfg.apply_transformations_repeated(
+                [InlineSDFG, sm.StreamingComposition],
+                [{}, {
+                    "storage": dace.StorageType.FPGA_Local
+                }])
+            ######################################
+            # Prune connectors
+            sdfg.apply_transformations_repeated(PruneConnectors)
 
-        #######################################################################
-        # Streaming Composition
-        sdfg.apply_transformations_repeated(
-            [InlineSDFG, sm.StreamingComposition],
-            [{}, {
-                "storage": dace.StorageType.FPGA_Local
-            }])
-        ######################################
-        # Prune connectors
-        sdfg.apply_transformations_repeated(PruneConnectors)
-        sdfg.compile()
+        # Reset the SDFG
+        model.reset_sdfg()
+        # Append transformation hook
+        model.append_post_onnx_hook("TransformToFPGA", TransformToFPGA)
         device = 'cpu'
     else:
         model.to(device)

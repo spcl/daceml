@@ -55,44 +55,51 @@ def run(data_shape, vec_width=1, input_to_constant=False, queue=None):
 
     assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
 
-    sdfg = dace_model.sdfg
-    ##################################
-    # Vectorize input and output container
-    vec_width = vec_width
-    vec_type = dace.vector(dace.float32, vec_width)
-
-    # vectorize output of Conv
-    utils.vectorize_array_and_memlet(sdfg, "ONNX_3", vec_type)
-    # vectorize output of Relu
-    utils.vectorize_array_and_memlet(sdfg, "ONNX_4", vec_type)
-
-    ############################################################
+    ##########################################
     # Transform to FPGA
-    sdfg.apply_transformations([FPGATransformSDFG])
 
-    with dace.library.change_default(donnx.ONNXConv,
-                                     "fpga"), dace.library.change_default(
-                                         donnx.ONNXRelu,
-                                         "fpga"), dace.library.change_default(
-                                             donnx.ONNXMaxPool, "fpga"):
+    def TransformToFPGA(dace_module):
+        '''
+        Transforms the given module to run on FPGA.
+        This includes vectorization and library node expansions.
+        :param dace_module:
+        :return:
+        '''
+        sdfg = dace_module.sdfg
+        sdfg.apply_transformations([FPGATransformSDFG, InlineSDFG])
 
-        # Apply transformations
+        # Vectorize container (if needed)
+        if vec_width > 1:
+            vec_type = dace.vector(dace.float32, vec_width)
+            utils.vectorize_array_and_memlet(sdfg, "ONNX_3", vec_type)
+            utils.vectorize_array_and_memlet(sdfg, "ONNX_4", vec_type)
+
         sdfg.expand_library_nodes()
         sdfg.apply_transformations_repeated([InlineSDFG])
 
         if input_to_constant:
             sdfg.apply_transformations_repeated([InputToConstant],
                                                 print_report=True)
-        sdfg.compile()
-    #######################################################################
-    # Streaming Composition
-    sdfg.apply_transformations_repeated(
-        [InlineSDFG, sm.StreamingComposition],
-        [{}, {
-            "storage": dace.StorageType.FPGA_Local
-        }])
+        sdfg.apply_transformations_repeated(
+            [InlineSDFG, sm.StreamingComposition],
+            [{}, {
+                "storage": dace.StorageType.FPGA_Local
+            }])
 
-    dace_output_fpga = dace_model(torch.clone(x))
+    # Reset the SDFG
+    dace_model.reset_sdfg()
+
+    # Append transformation hook
+    dace_model.append_post_onnx_hook("TransformToFPGA", TransformToFPGA)
+
+    # Execute Module with FPGA expansion
+    with dace.library.change_default(donnx.ONNXConv,
+                                     "fpga"), dace.library.change_default(
+                                         donnx.ONNXRelu,
+                                         "fpga"), dace.library.change_default(
+                                             donnx.ONNXMaxPool, "fpga"):
+
+        dace_output_fpga = dace_model(torch.clone(x))
 
     dace_output_fpga = dace_output_fpga.reshape(dace_output.shape)
 

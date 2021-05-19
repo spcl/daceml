@@ -79,27 +79,40 @@ def run(vec_width,
                            dace_output,
                            atol=1e-06)
 
-    sdfg = dace_model.sdfg
+    ##########################################
+    # Transform to FPGA
 
-    ##################################
-    # Vectorize output container (in Lenet the input is not vectorized)
-    vec_type = dace.vector(dace.float32, vec_width)
-    output_data_name = sdfg.states()[0].sink_nodes()[0].data
-    utils.vectorize_array_and_memlet(sdfg, output_data_name, vec_type)
+    def TransformToFPGA(dace_module):
+        '''
+        Transforms the given module to run on FPGA.
+        This includes vectorization and library node expansions.
+        :param dace_module:
+        :return:
+        '''
+        sdfg = dace_module.sdfg
+        sdfg.apply_transformations([FPGATransformSDFG, InlineSDFG])
 
-    ###################################################
-    # Transform for FPGA and Inline
-    with dace.library.change_default(donnx.ONNXGemm, "fpga"):
+        # Vectorize container (if needed)
+        if vec_width > 1:
+            vec_type = dace.vector(dace.float32, vec_width)
+            output_data_name = sdfg.states()[0].sink_nodes()[0].data
+            utils.vectorize_array_and_memlet(sdfg, output_data_name, vec_type)
+
         if input_to_constant:
             sdfg.apply_transformations_repeated([InputToConstant],
                                                 print_report=True)
-        sdfg.apply_transformations([FPGATransformSDFG])
+
         sdfg.expand_library_nodes()
         sdfg.apply_transformations_repeated([InlineSDFG])
 
-        sdfg.compile()
+    # Reset the SDFG
+    dace_model.reset_sdfg()
+    # Append transformation hook
+    dace_model.append_post_onnx_hook("TransformToFPGA", TransformToFPGA)
 
-    dace_output_fpga = dace_model(torch.clone(x))
+    # Execute Module with FPGA expansion
+    with dace.library.change_default(donnx.ONNXGemm, "fpga"):
+        dace_output_fpga = dace_model(torch.clone(x))
     # reshape if vec_width is different than 1
     dace_output_fpga = dace_output_fpga.detach().numpy().reshape(
         torch_output.shape)

@@ -43,16 +43,31 @@ def run(data_shape: tuple, axis, queue=None):
 
     assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
 
+    ##########################################
     # Transform to FPGA
-    sdfg = dace_model.sdfg
 
-    with dace.library.change_default(donnx.ONNXSoftmax, "fpga"):
-        sdfg.apply_transformations([FPGATransformSDFG])
+    def TransformToFPGA(dace_module):
+        '''
+        Transforms the given module to run on FPGA.
+        This includes library node expansions.
+        :param dace_module:
+        :return:
+        '''
+        sdfg = dace_module.sdfg
+        sdfg.apply_transformations([FPGATransformSDFG, InlineSDFG])
+
         sdfg.expand_library_nodes()
         sdfg.apply_transformations_repeated([InlineSDFG])
-        sdfg.compile()
 
-    dace_output_fpga = dace_model(torch.clone(x)).numpy()
+    # Reset the SDFG
+    dace_model.reset_sdfg()
+
+    # Append transformation hook
+    dace_model.append_post_onnx_hook("TransformToFPGA", TransformToFPGA)
+
+    # Execute Module with FPGA expansion
+    with dace.library.change_default(donnx.ONNXSoftmax, "fpga"):
+        dace_output_fpga = dace_model(torch.clone(x)).numpy()
 
     diff = np.linalg.norm(torch_output.detach().numpy() -
                           dace_output_fpga) / dace_output_fpga.size
