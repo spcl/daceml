@@ -47,17 +47,8 @@ class TestLeNet(nn.Module):
 
 torch_module = TestLeNet()
 daceml_module = DaceModule(torch_module, auto_optimize=False)
-
 # %%
-# To run the model on FPGA, we first specify that FPGA specific ONNX node implementations
-# should be used.
-
-import daceml.onnx as donnx
-
-donnx.default_implementation = "fpga"
-
-# %%
-# Then, we need to transform the model SDFG to run on FPGA.
+# We need to transform the model SDFG to run on FPGA.
 # We do this by registering a few DaCe transformations as transformation hooks
 
 from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
@@ -73,10 +64,16 @@ daceml_module.append_post_onnx_hook(
 
 # %%
 # We can now execute the program with some example inputs, for example a batch of
-# 10, 28x28 images
+# 10, 28x28 images.
+# To run the model on FPGA, we also specify that FPGA specific ONNX node implementations
+# should be used.
 
-x = torch.rand((10, 1, 28, 28))
-daceml_result = daceml_module(x)
+import daceml.onnx as donnx
+from dace.library import change_default
+
+with change_default(donnx, "fpga"):
+    x = torch.rand((10, 1, 28, 28))
+    daceml_result = daceml_module(x)
 
 # %%
 # Let's check the correctness vs. PyTorch
