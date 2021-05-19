@@ -107,23 +107,30 @@ def run(x_shape: tuple, y_shape: tuple, vec_width=1, queue=None):
 
 
 @pytest.mark.fpga
-def test():
+def test(extensive=False):
     '''
     Evaluates multiple combination of Matmul/input size
     :return:
     '''
 
-    print("----------- Testing Batched Matmul (3Dx3D tensor) ---------------")
+    print(
+        f"----------- Testing Batched Matmul (3Dx3D tensor) (extensive: {extensive}) ---------------"
+    )
 
     # Run FPGA tests in a different process to avoid issues with Intel OpenCL tools
     # (But not in parallel)
 
     # each position of this lists contains a test configuration
-    vec_width = [1, 1, 1, 1, 2, 4]
-    x_shapes = [(4, 8, 16), (8, 16, 32), (8, 16, 16), (8, 16, 8), (8, 16, 32),
-                (8, 32, 64)]
-    y_shapes = [(4, 16, 4), (8, 32, 64), (8, 16, 8), (8, 8, 16), (8, 32, 64),
-                (8, 64, 16)]
+    if extensive:
+        vec_width = [1, 1, 1, 1, 2, 4]
+        x_shapes = [(4, 8, 16), (8, 16, 32), (8, 16, 16), (8, 16, 8),
+                    (8, 16, 32), (8, 32, 64)]
+        y_shapes = [(4, 16, 4), (8, 32, 64), (8, 16, 8), (8, 8, 16),
+                    (8, 32, 64), (8, 64, 16)]
+    else:
+        vec_width = [1, 1, 4]
+        x_shapes = [(4, 8, 16), (8, 16, 32), (8, 32, 64)]
+        y_shapes = [(4, 16, 4), (8, 32, 64), (8, 64, 16)]
 
     for i in range(0, len(vec_width)):
         print("##########################################################")
@@ -138,12 +145,20 @@ def test():
         p.join()
         assert (queue.get() < 1e-6)
 
-    print("----------- Testing Matmul (3Dx2D tensor) ---------------")
+    print(
+        f"----------- Testing Matmul (3Dx2D tensor) (extensive: {extensive}) ---------------"
+    )
 
-    vec_width = [1, 1, 1, 2, 4]
-    x_shapes = [(4, 8, 16), (8, 16, 32), (2, 16, 32), (16, 2, 32), (16, 2, 32),
-                (16, 2, 32)]
-    y_shapes = [(4, 16, 4), (32, 64), (32, 16), (32, 32), (32, 64), (32, 16)]
+    if extensive:
+        vec_width = [1, 1, 1, 2, 4]
+        x_shapes = [(4, 8, 16), (8, 16, 32), (2, 16, 32), (16, 2, 32),
+                    (16, 2, 32), (16, 2, 32)]
+        y_shapes = [(4, 16, 4), (32, 64), (32, 16), (32, 32), (32, 64),
+                    (32, 16)]
+    else:
+        vec_width = [1, 1, 4]
+        x_shapes = [(4, 8, 16), (8, 16, 32), (16, 2, 32)]
+        y_shapes = [(4, 16, 4), (32, 64), (32, 64)]
 
     for i in range(0, len(vec_width)):
         print("##########################################################")
@@ -176,7 +191,7 @@ if __name__ == "__main__":
     t = args["test"]
 
     if t:
-        test()
+        test(extensive=True)
     else:
         data_shape_1 = (16, 2, 32)
         data_shape_2 = (32, 32)

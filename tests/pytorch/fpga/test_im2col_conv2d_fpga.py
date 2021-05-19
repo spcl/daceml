@@ -124,12 +124,15 @@ def run(input_to_constant):
 
 
 @pytest.mark.fpga
-def test(input_to_constant=False):
+def test(input_to_constant=False, extensive=False):
     '''
     Evaluates multiple combination of Convolution/input size
+    :param extensive: True for extensive tests
     :return:
     '''
-    print("----------- Testing Convolution ---------------")
+    print(
+        f"----------- Testing Convolution (extensive: {extensive}) ---------------"
+    )
 
     # Run FPGA tests in a different process to avoid issues with Intel OpenCL tools
     # (But not in parallel)
@@ -144,19 +147,20 @@ def test(input_to_constant=False):
     p.join()
     assert (queue.get() < 1e-6)
 
-    p = Process(target=evaluate,
-                args=(10, 1, 5, 1, (100, 10, 20, 20), input_to_constant, False,
-                      queue))
-    p.start()
-    p.join()
-    assert (queue.get() < 1e-6)
+    if extensive:
+        p = Process(target=evaluate,
+                    args=(10, 1, 5, 1, (100, 10, 20, 20), input_to_constant,
+                          False, queue))
+        p.start()
+        p.join()
+        assert (queue.get() < 1e-6)
 
-    p = Process(target=evaluate,
-                args=(14, 8, 3, 1, (100, 14, 20, 20), input_to_constant, False,
-                      queue))
-    p.start()
-    p.join()
-    assert (queue.get() < 1e-6)
+        p = Process(target=evaluate,
+                    args=(14, 8, 3, 1, (100, 14, 20, 20), input_to_constant,
+                          False, queue))
+        p.start()
+        p.join()
+        assert (queue.get() < 1e-6)
 
     # With Vectorization
     # The first two are from Lenet
@@ -174,19 +178,21 @@ def test(input_to_constant=False):
     p.join()
     assert (queue.get() < 1e-6)
 
-    p = Process(target=evaluate,
-                args=(6, 4, 5, 4, (100, 6, 12, 12), input_to_constant, False,
-                      queue))
-    p.start()
-    p.join()
-    assert (queue.get() < 1e-6)
+    if extensive:
 
-    p = Process(target=evaluate,
-                args=(3, 3, 3, 16, (100, 3, 34, 34), input_to_constant, False,
-                      queue))
-    p.start()
-    p.join()
-    assert (queue.get() < 1e-6)
+        p = Process(target=evaluate,
+                    args=(6, 4, 5, 4, (100, 6, 12, 12), input_to_constant,
+                          False, queue))
+        p.start()
+        p.join()
+        assert (queue.get() < 1e-6)
+
+        p = Process(target=evaluate,
+                    args=(3, 3, 3, 16, (100, 3, 34, 34), input_to_constant,
+                          False, queue))
+        p.start()
+        p.join()
+        assert (queue.get() < 1e-6)
 
     print("----------- Success! ---------------")
 
@@ -208,6 +214,6 @@ if __name__ == "__main__":
     t = args["test"]
 
     if t:
-        test(input_to_constant)
+        test(input_to_constant, extensive=True)
     else:
         run(input_to_constant)

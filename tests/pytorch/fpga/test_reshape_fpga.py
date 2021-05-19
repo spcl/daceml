@@ -94,20 +94,28 @@ def run(data_shape: tuple, reshaped_shape: tuple, vec_width=1, queue=None):
 
 
 @pytest.mark.fpga
-def test():
+def test(extensive=False):
     '''
     Evaluates multiple combination of Reshape
     :return:
     '''
-    print("----------- Testing Reshape ---------------")
+    print(
+        f"----------- Testing Reshape (extensive: {extensive}) ---------------"
+    )
 
     # Run FPGA tests in a different process to avoid issues with Intel OpenCL tools
     # (But not in parallel)
 
     # each position of this lists contains a test configuration
-    vec_width = [1, 1, 1, 1]
-    x_shapes = [(16, 4, 4, 4), (16, 2, 32), (16, 8, 8), (8, 16, 16)]
-    y_shapes = [(16, 64), (16, 8, 8), (16, 2, 32), (2, 4, 16, 16)]  # reshpaed
+    if extensive:
+        vec_width = [1, 1, 1, 1]
+        x_shapes = [(16, 4, 4, 4), (16, 2, 32), (16, 8, 8), (8, 16, 16)]
+        y_shapes = [(16, 64), (16, 8, 8), (16, 2, 32),
+                    (2, 4, 16, 16)]  # reshaped
+    else:
+        vec_width = [1, 1, 1]
+        x_shapes = [(16, 4, 4, 4), (16, 2, 32), (8, 16, 16)]
+        y_shapes = [(16, 64), (16, 8, 8), (2, 4, 16, 16)]  # reshaped
 
     for i in range(0, len(vec_width)):
         print("##########################################################")
@@ -141,7 +149,7 @@ if __name__ == "__main__":
     t = args["test"]
 
     if t:
-        test()
+        test(extensive=True)
     else:
         data_shape = (16, 4, 4, 4)
         reshaped_shape = (16, 64)

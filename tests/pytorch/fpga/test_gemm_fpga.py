@@ -134,21 +134,28 @@ def run(vec_width,
 
 
 @pytest.mark.fpga
-def test(input_to_constant=False):
+def test(input_to_constant=False, extensive=False):
     '''
     Evaluates multiple combination of Convolution/input size
+    :param extensive: True for extensive tests
     :return:
     '''
-    print("----------- Testing GEMM ---------------")
+    print(f"----------- Testing GEMM (extensive: {extensive}) ---------------")
 
     # Run FPGA tests in a different process to avoid issues with Intel OpenCL tools
     # (But not in parallel)
 
     # each position of this lists contains a test configuration
-    vec_width = [1, 4, 8]
-    batch_size = [1000, 1000, 400]
-    in_features = [120, 120, 256]
-    out_features = [84, 84, 120]
+    if extensive:
+        vec_width = [1, 4, 8]
+        batch_size = [1000, 1000, 400]
+        in_features = [120, 120, 256]
+        out_features = [84, 84, 120]
+    else:
+        vec_width = [4]
+        batch_size = [1000]
+        in_features = [120]
+        out_features = [84]
 
     for i in range(0, len(vec_width)):
         print("##########################################################")
@@ -186,6 +193,6 @@ if __name__ == "__main__":
     input_to_constant = args["input_to_constant"]
     t = args["test"]
     if t:
-        test(input_to_constant)
+        test(input_to_constant, extensive=True)
     else:
         run(vec_width, input_to_constant=input_to_constant)

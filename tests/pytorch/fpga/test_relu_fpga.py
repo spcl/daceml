@@ -88,14 +88,19 @@ def run(data_shape: tuple, vec_width=1, queue=None):
 
 
 @pytest.mark.fpga
-def test():
+def test(extensive=False):
     '''
     Evaluates multiple combination of input size/vecwidth
     '''
-    print("----------- Testing Relu ---------------")
-    vec_width = [1, 1, 2, 4]
-    data_shapes = [(4, 8, 16), (100, 4, 16, 32), (8, 16, 16),
-                   (1000, 4, 32, 32)]
+
+    print(f"----------- Testing Relu (extensive: {extensive} ---------------")
+    if extensive:
+        vec_width = [1, 1, 2, 4]
+        data_shapes = [(4, 8, 16), (100, 4, 16, 32), (8, 16, 16),
+                       (1000, 4, 32, 32)]
+    else:
+        vec_width = [1, 4]
+        data_shapes = [(4, 8, 16), (1000, 4, 32, 32)]
     for i in range(0, len(vec_width)):
         print(
             "###############################################################")
@@ -128,6 +133,6 @@ if __name__ == "__main__":
     vec_width = args["W"]
     t = args["test"]
     if t:
-        test()
+        test(extensive=True)
     else:
         run((1000, 4, 32, 32), vec_width)
