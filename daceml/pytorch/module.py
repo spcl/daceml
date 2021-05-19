@@ -68,7 +68,7 @@ class DaceModule(nn.Module):
         self.dace_model: Optional[ONNXModel] = None
         self.training = training
         self.sdfg: Optional[dace.SDFG] = None
-        self.cuda = cuda
+        self.use_cuda = cuda
         self.sdfg_name = sdfg_name or type(module).__name__
         self.auto_optimize = auto_optimize
         self.apply_strict = apply_strict
@@ -158,18 +158,22 @@ class DaceModule(nn.Module):
     def _initialize_sdfg(self, dummy_inputs):
 
         # determine whether we are using CUDA
-        module_is_cuda = next(iter(dummy_inputs)).is_cuda
-        if not module_is_cuda:
-            # check the parameters
+        if self.use_cuda is None:
             try:
-                module_is_cuda = next(self.model.parameters()).is_cuda
+                module_is_cuda = next(iter(dummy_inputs)).is_cuda
             except StopIteration:
                 module_is_cuda = False
 
-        if module_is_cuda and self.cuda is False:
-            log.warning("Received a CUDA module, but cuda was set to False.")
-        if self.cuda is None:
-            self.cuda = module_is_cuda
+            if not module_is_cuda:
+                # check the parameters
+                try:
+                    module_is_cuda = next(self.model.parameters()).is_cuda
+                except StopIteration:
+                    module_is_cuda = False
+            self.use_cuda = module_is_cuda
+
+        if self.use_cuda:
+            self.model = self.model.cuda()
 
         # setup optimization hooks
         if self.auto_optimize:
@@ -177,10 +181,10 @@ class DaceModule(nn.Module):
 
                 def auto_optimize_backward(fwd_sdfg, bwd_sdfg):
                     utils.auto_optimize(fwd_sdfg,
-                                        self.cuda,
+                                        self.use_cuda,
                                         apply_strict=self.apply_strict)
                     utils.auto_optimize(bwd_sdfg,
-                                        self.cuda,
+                                        self.use_cuda,
                                         apply_strict=self.apply_strict)
 
                 self.prepend_post_autodiff_hook("auto_optimize",
@@ -189,7 +193,7 @@ class DaceModule(nn.Module):
                 self.prepend_post_onnx_hook(
                     "auto_optimize", lambda dace_module: utils.auto_optimize(
                         dace_module.dace_model.sdfg,
-                        self.cuda,
+                        self.use_cuda,
                         apply_strict=self.apply_strict))
         elif self.apply_strict:
             if self.backward:
@@ -230,7 +234,7 @@ class DaceModule(nn.Module):
             dace_model = ONNXModel(self.sdfg_name,
                                    onnx_model,
                                    infer_shapes=False,
-                                   cuda=self.cuda,
+                                   cuda=self.use_cuda,
                                    parent_pytorch_module=self.model,
                                    auto_optimize=self.auto_optimize)
             self.sdfg = dace_model.sdfg

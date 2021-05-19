@@ -217,7 +217,7 @@ TORCH_LIBRARY(daceml_{sdfg_name}, m) {{
         else f"{{{', '.join(o + '_' for o in outputs)}}}"};
 }}
 
-TORCH_LIBRARY_IMPL(daceml_{sdfg_name}, {'CUDA' if module.cuda else 'CPU'}, m) {{
+TORCH_LIBRARY_IMPL(daceml_{sdfg_name}, {'CUDA' if module.use_cuda else 'CPU'}, m) {{
     m.impl("{sdfg_name}", {sdfg_name});
 }}
         """
