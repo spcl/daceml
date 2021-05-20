@@ -29,7 +29,8 @@ class CompiledTorchFunction:
     function: Callable  #: the torch callable function
     compiled_sdfgs: List[
         CompiledSDFG]  #: the compiled SDFGs holding their states
-    ptr: List[torch.Tensor]  #: the state ptrs to use when calling the function
+    #: the pointers to the initialized SDFG state handles. Must be passed as the first arguments to function.
+    ptr: List[torch.Tensor]
 
 
 def get_arglist(
