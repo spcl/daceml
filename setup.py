@@ -8,10 +8,10 @@ import os
 # trimming the absolute path of the resulting files.
 daceml_path = os.path.dirname(os.path.abspath(__file__)) + '/daceml/'
 runtime_files = [
-    f[len(daceml_path):]
-    for f in itertools.chain(glob.glob(daceml_path + '**/*.h', recursive=True),
-                             glob.glob(daceml_path + '**/*.cuh', recursive=True),
-                             glob.glob(daceml_path + '**/*.cu', recursive=True))
+    f[len(daceml_path):] for f in itertools.chain(
+        glob.glob(daceml_path + '**/*.h', recursive=True),
+        glob.glob(daceml_path + '**/*.cuh', recursive=True),
+        glob.glob(daceml_path + '**/*.cu', recursive=True))
 ]
 
 with open("README.md", "r") as fp:
