@@ -1,5 +1,18 @@
 import os
-from setuptools import setup
+from setuptools import setup, find_packages
+import itertools
+import glob
+import os
+
+# Find runtime and external library files by obtaining the module path and
+# trimming the absolute path of the resulting files.
+daceml_path = os.path.dirname(os.path.abspath(__file__)) + '/daceml/'
+runtime_files = [
+    f[len(daceml_path):] for f in itertools.chain(
+        glob.glob(daceml_path + '**/*.h', recursive=True),
+        glob.glob(daceml_path + '**/*.cuh', recursive=True),
+        glob.glob(daceml_path + '**/*.cu', recursive=True))
+]
 
 with open("README.md", "r") as fp:
     long_description = fp.read()
@@ -19,9 +32,10 @@ setup(
         "License :: OSI Approved :: BSD License",
         "Operating System :: OS Independent",
     ],
-    python_requires='>=3.6',
-    packages=['daceml'],
-    package_data={'': ['*.cpp']},
+    python_requires='>=3.6, <3.10',
+    packages=find_packages(
+        exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
+    package_data={'': (['*.cpp'] + runtime_files)},
     install_requires=[
         'dace@git+https://github.com/spcl/dace.git@f9e585c', 'onnx == 1.7.0',
         'torch', 'dataclasses; python_version < "3.7"'

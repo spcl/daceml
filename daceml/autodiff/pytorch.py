@@ -128,7 +128,8 @@ def make_backward_function(model: ONNXModel,
                 if inp not in inputs and inp not in outputs and inp not in params:
                     inputs[inp] = create_output_array(symbols,
                                                       forward_sdfg.arrays[inp],
-                                                      use_torch=True)
+                                                      use_torch=True,
+                                                      zeros=True)
 
             DaceFunction._forward_model.sdfg(**inputs, **symbols, **params,
                                              **outputs)
