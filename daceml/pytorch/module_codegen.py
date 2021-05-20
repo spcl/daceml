@@ -14,6 +14,7 @@ from dace.codegen import targets, compiler
 from dace.codegen.codeobject import CodeObject
 from dace.codegen.compiled_sdfg import CompiledSDFG
 from dace.codegen.prettycode import CodeIOStream
+from dace.codegen.targets.common import sym2cpp
 
 from daceml.autodiff import BackwardResult
 from daceml.onnx.converters import clean_onnx_name
@@ -189,8 +190,8 @@ def constant_initializer_code(name: str, desc: data.Data, value) -> str:
         iterator = np.nditer(value.cpu().numpy(), order="C")
         gpu_copy_code = f"""
         {desc.dtype.ctype} *{name}_ptr;
-        cudaMalloc(&{name}_ptr, 1 * sizeof(float));
-        cudaMemcpyAsync({name}_ptr, {name}_ptr_cpu, {desc.total_size} * sizeof(float), cudaMemcpyHostToDevice, nullptr);
+        cudaMalloc(&{name}_ptr, ({sym2cpp(desc.total_size)}) * sizeof(float));
+        cudaMemcpyAsync({name}_ptr, {name}_ptr_cpu, ({sym2cpp(desc.total_size)}) * sizeof(float), cudaMemcpyHostToDevice, nullptr);
         """
         return f"""
         {desc.dtype.ctype} {name}_ptr{'_cpu' if gpu_storage else ''}[{desc.total_size}] =
@@ -213,9 +214,11 @@ def save_non_inputs_outputs(names: List[str]):
 
 def recover_saved_inputs_outputs(saved_inputs_outputs: List[str],
                                  other_saved: List[str]):
-    code = "auto saved = ctx->get_saved_variables();\n"
-    for i, n in enumerate(saved_inputs_outputs):
-        code += f"\nauto {n} = saved[{i}];"
+    code = ""
+    if saved_inputs_outputs:
+        code += "auto saved = ctx->get_saved_variables();\n"
+        for i, n in enumerate(saved_inputs_outputs):
+            code += f"\nauto {n} = saved[{i}];"
 
     for n in other_saved:
         code += f'\nauto {n} = ctx->saved_data["{n}"].toTensor();'
@@ -250,8 +253,8 @@ def code_for_backward_function(module: 'daceml.pytorch.DaceModule',
     ret_str = return_type_str(outputs)
 
     outputs_with_forwarded_outputs = copy.deepcopy(outputs)
-    outputs_with_forwarded_outputs.extend(n for n in forwarded_arrays
-                                          if n not in inputs)
+    outputs_with_forwarded_outputs.extend(
+        n for n in forwarded_arrays if n not in inputs and n not in outputs)
 
     fwd_ptr_init_code, fwd_sdfg_call_arguments, _ = argument_codegen(
         forward_sdfg, module.dace_model.clean_weights, inputs,
@@ -298,13 +301,15 @@ class {sdfg_name}Function : public torch::autograd::Function<{sdfg_name}Function
             // get SDFG state handle
             {forward_sdfg.name}Handle_t handle = reinterpret_cast<{forward_sdfg.name}Handle_t>(fwd_handle_ptr);
 
+
             // call SDFG
             __program_{forward_sdfg.name}(handle, {fwd_sdfg_call_arguments});
 
             // save inputs/outputs for backward
-            ctx->save_for_backward({{
-                {', '.join(f'{n}' for n in saved_io_for_backward)}
-            }});
+            {
+                f"ctx->save_for_backward({{{', '.join(f'{n}' for n in saved_io_for_backward)}}});" 
+                if saved_io_for_backward else ""
+            }
 
             // save non-inputs/outputs
             {save_non_inputs_outputs(other_saved_for_backward)}
@@ -325,10 +330,9 @@ class {sdfg_name}Function : public torch::autograd::Function<{sdfg_name}Function
             {recover_saved_inputs_outputs(saved_io_for_backward, other_saved_for_backward)}
 
             // create grad values
-            // TODO take these from .grad()?
+            // NOTE, it might make sense take these from .grad()
             {setup_grad_values(backward_result, backward_sdfg, outputs)}
             
-            // setup pointers for values in the arglist
             {bwd_ptr_init_code}
 
             // get SDFG state handle

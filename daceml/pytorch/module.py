@@ -258,7 +258,7 @@ class DaceModule(nn.Module):
                     self, dummy_inputs)
 
             parameters_to_pass = tuple(
-                p.data for n, p in self.model.named_parameters()
+                p for n, p in self.model.named_parameters()
                 if n in self.dace_model.inputs)
 
             def forward(*args):
