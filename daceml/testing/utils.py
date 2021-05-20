@@ -15,8 +15,8 @@ def torch_tensors_close(name, torch_v, dace_v):
         print("dace value: ", dace_v)
         print("diff: ", torch.abs(dace_v - torch_v))
 
-        failed_mask = np.abs(torch_v.cpu().numpy() - dace_v.cpu().numpy()
-                             ) > atol + rtol * np.abs(dace_v.cpu().numpy())
+        failed_mask = np.abs(torch_v.detach().cpu().numpy() - dace_v.detach(
+        ).cpu().numpy()) > atol + rtol * np.abs(dace_v.detach().cpu().numpy())
         print(f"wrong elements torch: {torch_v[failed_mask]}")
         print(f"wrong elements dace: {dace_v[failed_mask]}")
 
