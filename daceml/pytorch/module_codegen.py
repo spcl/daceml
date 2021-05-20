@@ -190,8 +190,8 @@ def constant_initializer_code(name: str, desc: data.Data, value) -> str:
         iterator = np.nditer(value.cpu().numpy(), order="C")
         gpu_copy_code = f"""
         {desc.dtype.ctype} *{name}_ptr;
-        cudaMalloc(&{name}_ptr, ({sym2cpp(desc.total_size)}) * sizeof(float));
-        cudaMemcpyAsync({name}_ptr, {name}_ptr_cpu, ({sym2cpp(desc.total_size)}) * sizeof(float), cudaMemcpyHostToDevice, nullptr);
+        cudaMalloc(&{name}_ptr, ({sym2cpp(desc.total_size)}) * sizeof({desc.dtype.ctype}));
+        cudaMemcpyAsync({name}_ptr, {name}_ptr_cpu, ({sym2cpp(desc.total_size)}) * sizeof({desc.dtype.ctype}), cudaMemcpyHostToDevice, nullptr);
         """
         return f"""
         {desc.dtype.ctype} {name}_ptr{'_cpu' if gpu_storage else ''}[{desc.total_size}] =
@@ -371,7 +371,7 @@ def code_for_module(module: 'daceml.pytorch.DaceModule',
     """
 
     inputs, outputs = get_arglist(module)
-    sdfg_name = compiled_sdfg.name
+    sdfg_name = compiled_sdfg.sdfg.name
 
     ret_str = return_type_str(outputs)
     if module.backward:
