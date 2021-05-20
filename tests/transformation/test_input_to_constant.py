@@ -36,6 +36,7 @@ def test_input_to_constant(sdfg_name):
     dace_net.append_post_onnx_hook("ApplyInputToConst", ApplyInputToConst)
 
     torch_result = net(torch.clone(inp))
-    dace_result = dace_net(torch.clone(inp))
+    with dace.library.change_default(donnx.ONNXAdd, "pure"):
+        dace_result = dace_net(torch.clone(inp))
 
     assert np.allclose(torch_result.detach().numpy(), dace_result)
