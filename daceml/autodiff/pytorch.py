@@ -21,12 +21,13 @@ def make_backward_function(
     model: ONNXModel,
     apply_strict=False
 ) -> Tuple[dace.SDFG, dace.SDFG, BackwardResult, Dict[str, dt.Data]]:
-    """ Convert an ONNXModel to a PyTorch differentiable function. This method should not be used on it's own.
+    """ Convert an ONNXModel to a PyTorch differentiable function. This method should not be used on its own.
         Instead use the ``backward=True`` parameter of :class:`daceml.pytorch.DaceModule`.
 
         :param model: the model to convert.
         :param apply_strict: whether to apply strict transformations before creating the backward pass.
-        :return: the PyTorch compatible :class:`torch.autograd.Function`. TODO Update
+        :return: A 4-tuple of forward SDFG, backward SDFG, backward result, and input arrays for 
+                 backward pass (as mapping of names to DaCe data descriptors).
     """
 
     if len(model.sdfg.nodes()) != 1:

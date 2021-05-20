@@ -194,7 +194,7 @@ def constant_initializer_code(name: str, desc: data.Data, value) -> str:
         cudaMemcpyAsync({name}_ptr, {name}_ptr_cpu, ({sym2cpp(desc.total_size)}) * sizeof({desc.dtype.ctype}), cudaMemcpyHostToDevice, nullptr);
         """
         return f"""
-        {desc.dtype.ctype} {name}_ptr{'_cpu' if gpu_storage else ''}[{desc.total_size}] =
+        {desc.dtype.ctype} {name}_ptr{'_cpu' if gpu_storage else ''}[{sym2cpp(desc.total_size)}] =
             {{{', '.join(item_to_cpp_literal(e) for e in iterator)}}};
         {gpu_copy_code if gpu_storage else ""}
         """
@@ -434,7 +434,7 @@ def compile_and_get_function(module: 'daceml.pytorch.DaceModule',
     """ Get a torch callable for the module. This will compile the sdfg, compile a PyTorch C++ operator, register it
         with PyTorch and return the function that calls it.
 
-        This function handles both the forward and backward pass codegen.
+        This function handles code generation for both the forward and backward pass.
 
         :param module: the module.
         :param dummy_inputs: dummy inputs to initialize the model with.
