@@ -7,6 +7,7 @@ YAPF ?= yapf
 TORCH_VERSION ?= torch==1.8.1 torchvision==0.9.1 torchaudio==0.8.1
 DACE_VERSION ?=
 UPDATE_PIP ?= python -m pip install --upgrade pip
+SOURCE_FILES = daceml tests setup.py examples doc
 
 ifeq ($(VENV_PATH),)
 ACTIVATE = 
@@ -39,6 +40,7 @@ doc:
 	| grep -v ".*daceml\/daceml\/onnx\/nodes\/onnx_op\.py:docstring of daceml\.onnx\.nodes\.onnx_op\.ONNX.*:[0-9]*: WARNING:"
 
 
+doctest: export DACE_debugprint=False
 doctest:
 	$(ACTIVATE) cd doc && make doctest
 
@@ -62,7 +64,7 @@ check-formatting:
 		--parallel \
 		--diff \
 		--recursive \
-		daceml tests setup.py \
+		$(SOURCE_FILES) \
 		--exclude daceml/onnx/shape_inference/symbolic_shape_infer.py
 	# check for sdfg.view()
 	! git grep '\.view()' -- tests/** daceml/**
@@ -72,7 +74,7 @@ check-formatting-names:
 		--parallel \
 		--diff \
 		--recursive \
-		daceml tests setup.py \
+		$(SOURCE_FILES) \
 		--exclude daceml/onnx/shape_inference/symbolic_shape_infer.py |  grep "+++" || echo "All good!"
 	# check for sdfg.view()
 	! git grep '\.view()' -- tests/** daceml/**

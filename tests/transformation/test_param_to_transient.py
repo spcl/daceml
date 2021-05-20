@@ -7,7 +7,7 @@ from daceml.transformation import parameter_to_transient
 
 
 @pytest.mark.gpu
-def test_pytorch_from_dlpack():
+def test_pytorch_from_dlpack(sdfg_name):
     class Module(nn.Module):
         def __init__(self):
             super().__init__()
@@ -22,14 +22,16 @@ def test_pytorch_from_dlpack():
 
     input = torch.rand(2, 10).cuda()
 
-    dace_module = DaceModule(dace_module)
+    dace_module_wrapped = DaceModule(dace_module, sdfg_name=sdfg_name)
 
-    assert torch.allclose(dace_module(input), pt_module(input))
-    dace_module.reset_sdfg()
+    assert torch.allclose(dace_module_wrapped(input), pt_module(input))
+    dace_module_wrapped = DaceModule(dace_module,
+                                     sdfg_name=sdfg_name + "_after")
 
     def param_to_trans(model):
         parameter_to_transient(model, "fc1.weight")
 
-    dace_module.append_post_onnx_hook("param_to_transient", param_to_trans)
+    dace_module_wrapped.append_post_onnx_hook("param_to_transient",
+                                              param_to_trans)
 
-    assert torch.allclose(dace_module(input), pt_module(input))
+    assert torch.allclose(dace_module_wrapped(input), pt_module(input))

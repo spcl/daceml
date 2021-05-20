@@ -3,14 +3,16 @@ import logging
 import os
 import tempfile
 from functools import wraps
-from typing import Optional, Tuple, Callable, OrderedDict
+from typing import Optional, Tuple, Callable, OrderedDict, Type
 
 import dace
 import onnx
 import torch
 import torch.nn as nn
+from dace.codegen import compiled_sdfg
 from torch.onnx import TrainingMode
 
+from daceml.pytorch.module_codegen import compile_and_get_function
 from daceml.autodiff.pytorch import make_backward_function
 from daceml.onnx import ONNXModel
 from daceml.onnx.shape_inference import infer_shapes
@@ -26,7 +28,7 @@ class DaceModule(nn.Module):
         :param dummy_inputs: a tuple of tensors to use as input when tracing ``model``.
         :param cuda: if ``True``, the module will execute using CUDA. If ``None``, it will be detected from the
                      ``module``.
-        :param train: whether to use train mode when tracing ``model``.
+        :param training: whether to use train mode when tracing ``model``.
         :param backward: whether to enable the backward pass.
         :param apply_strict: whether to apply strict transforms after conversion (this generally improves performance,
                              but can be slow).
@@ -46,15 +48,15 @@ class DaceModule(nn.Module):
             tensor([0., 0.])
             >>> dace_module = DaceModule(module)
             >>> dace_module(torch.ones(2))
-            Automatically expanded library node "ONNX_Log_0" with implementation "onnxruntime".
-            Automatically expanded library node "ONNX_Sqrt_1" with implementation "onnxruntime".
+            Automatically expanded library node "Log_0" with implementation "onnxruntime".
+            Automatically expanded library node "Sqrt_1" with implementation "onnxruntime".
             tensor([0., 0.])
     """
     def __init__(self,
                  module: nn.Module,
                  dummy_inputs: Optional[Tuple[torch.Tensor]] = None,
                  cuda: Optional[bool] = None,
-                 train: bool = False,
+                 training: bool = False,
                  backward=False,
                  apply_strict: bool = True,
                  auto_optimize: bool = True,
@@ -64,10 +66,10 @@ class DaceModule(nn.Module):
         self.backward = backward
         self.model = module
         self.dace_model: Optional[ONNXModel] = None
-        self.train = train
+        self.training = training
         self.sdfg: Optional[dace.SDFG] = None
-        self.cuda = cuda
-        self.sdfg_name = sdfg_name or "dace_model"
+        self.use_cuda = cuda
+        self.sdfg_name = sdfg_name or type(module).__name__
         self.auto_optimize = auto_optimize
         self.apply_strict = apply_strict
 
@@ -80,6 +82,10 @@ class DaceModule(nn.Module):
         #: hooks that are executed after the backpropagation sdfg has been created
         self.post_autodiff_hooks: OrderedDict[str, Callable[
             [dace.SDFG, dace.SDFG], None]] = collections.OrderedDict()
+
+        #: hooks that are executed after the sdfg is compiled
+        self.post_compile_hooks: OrderedDict[str, Callable[
+            [compiled_sdfg.CompiledSDFG], None]] = collections.OrderedDict()
 
         if dummy_inputs is not None:
             self.function = self._initialize_sdfg(dummy_inputs)
@@ -128,21 +134,46 @@ class DaceModule(nn.Module):
         name = find_str_not_in_set(set(self.post_autodiff_hooks), name)
         self.post_autodiff_hooks[name] = func
 
+    def prepend_post_compile_hook(self, name: str,
+                                  func: Callable[[compiled_sdfg.CompiledSDFG],
+                                                 None]):
+        if self.function is not None:
+            log.warning(
+                f"Added a hook after the model was already initialized. This hook "
+                f"(with name {name}) will not be executed!")
+        name = find_str_not_in_set(set(self.post_compile_hooks), name)
+        self.post_compile_hooks[name] = func
+        self.post_compile_hooks.move_to_end(name, last=False)
+
+    def append_post_compile_hook(self, name: str,
+                                 func: Callable[[compiled_sdfg.CompiledSDFG],
+                                                None]):
+        if self.function is not None:
+            log.warning(
+                f"Added a hook after the model was already initialized. This hook "
+                f"(with name {name}) will not be executed!")
+        name = find_str_not_in_set(set(self.post_compile_hooks), name)
+        self.post_compile_hooks[name] = func
+
     def _initialize_sdfg(self, dummy_inputs):
 
         # determine whether we are using CUDA
-        module_is_cuda = next(iter(dummy_inputs)).is_cuda
-        if not module_is_cuda:
-            # check the parameters
+        if self.use_cuda is None:
             try:
-                module_is_cuda = next(self.model.parameters()).is_cuda
+                module_is_cuda = next(iter(dummy_inputs)).is_cuda
             except StopIteration:
                 module_is_cuda = False
 
-        if module_is_cuda and self.cuda is False:
-            log.warning("Received a CUDA module, but cuda was set to False.")
-        if self.cuda is None:
-            self.cuda = module_is_cuda
+            if not module_is_cuda:
+                # check the parameters
+                try:
+                    module_is_cuda = next(self.model.parameters()).is_cuda
+                except StopIteration:
+                    module_is_cuda = False
+            self.use_cuda = module_is_cuda
+
+        if self.use_cuda:
+            self.model = self.model.cuda()
 
         # setup optimization hooks
         if self.auto_optimize:
@@ -150,10 +181,10 @@ class DaceModule(nn.Module):
 
                 def auto_optimize_backward(fwd_sdfg, bwd_sdfg):
                     utils.auto_optimize(fwd_sdfg,
-                                        self.cuda,
+                                        self.use_cuda,
                                         apply_strict=self.apply_strict)
                     utils.auto_optimize(bwd_sdfg,
-                                        self.cuda,
+                                        self.use_cuda,
                                         apply_strict=self.apply_strict)
 
                 self.prepend_post_autodiff_hook("auto_optimize",
@@ -162,7 +193,7 @@ class DaceModule(nn.Module):
                 self.prepend_post_onnx_hook(
                     "auto_optimize", lambda dace_module: utils.auto_optimize(
                         dace_module.dace_model.sdfg,
-                        self.cuda,
+                        self.use_cuda,
                         apply_strict=self.apply_strict))
         elif self.apply_strict:
             if self.backward:
@@ -186,14 +217,16 @@ class DaceModule(nn.Module):
                 dummy_inputs,
                 export_name,
                 verbose=logging.root.level <= logging.DEBUG,
-                training=TrainingMode.TRAINING,
+                training=(TrainingMode.TRAINING
+                          if self.training else TrainingMode.EVAL),
                 opset_version=12,
                 strip_doc_string=False,
                 export_params=not self.backward,
                 # pytorch constant folding will add new unnamed inputs to the graph and remove some of the
                 # named parameters of the model: this means that we can't match with the state dict
                 # anymore, so we disable this. Our CF is more flexible.
-                do_constant_folding=False)
+                do_constant_folding=False,
+                keep_initializers_as_inputs=True)
 
             onnx_model = infer_shapes(onnx.load(export_name))
             self.onnx_model = onnx_model
@@ -201,7 +234,7 @@ class DaceModule(nn.Module):
             dace_model = ONNXModel(self.sdfg_name,
                                    onnx_model,
                                    infer_shapes=False,
-                                   cuda=self.cuda,
+                                   cuda=self.use_cuda,
                                    parent_pytorch_module=self.model)
             self.sdfg = dace_model.sdfg
             self.dace_model = dace_model
@@ -226,8 +259,16 @@ class DaceModule(nn.Module):
 
                 return forward
             else:
+                self.fwd_func = compile_and_get_function(self, dummy_inputs)
+                parameters_to_pass = tuple(
+                    p.data for n, p in self.model.named_parameters()
+                    if n in self.dace_model.inputs)
 
-                return dace_model
+                def forward(*args):
+                    return self.fwd_func.function(self.fwd_func.ptr, *args,
+                                                  *parameters_to_pass)
+
+                return forward
 
     def forward(self, *actual_inputs):
         """ Execute the forward pass using the traced ``module``."""
@@ -241,11 +282,11 @@ class DaceModule(nn.Module):
 def dace_module(moduleclass,
                 dummy_inputs: Optional[Tuple[torch.Tensor]] = None,
                 cuda: Optional[bool] = None,
-                train: bool = False,
+                training: bool = False,
                 backward=False,
                 apply_strict: bool = True,
                 auto_optimize: bool = True,
-                sdfg_name: Optional[str] = None):
+                sdfg_name: Optional[str] = None) -> Type[DaceModule]:
     """ Decorator to apply on a definition of a ``torch.nn.Module`` to
         convert it to a data-centric module upon construction.
 
@@ -253,22 +294,22 @@ def dace_module(moduleclass,
 
             >>> from daceml.pytorch import dace_module
             >>> @dace_module
-            ... class MyModule(nn.Module):
+            ... class MyDecoratedModule(nn.Module):
             ...     def forward(self, x):
             ...        x = torch.log(x)
             ...        x = torch.sqrt(x)
             ...        return x
-            >>> module = MyModule()
+            >>> module = MyDecoratedModule()
             >>> module(torch.ones(2))
-            Automatically expanded library node "ONNX_Log_0" with implementation "onnxruntime".
-            Automatically expanded library node "ONNX_Sqrt_1" with implementation "onnxruntime".
+            Automatically expanded library node "Log_0" with implementation "onnxruntime".
+            Automatically expanded library node "Sqrt_1" with implementation "onnxruntime".
             tensor([0., 0.])
 
         :param moduleclass: the model to wrap.
         :param dummy_inputs: a tuple of tensors to use as input when tracing ``model``.
         :param cuda: if ``True``, the module will execute using CUDA. If ``None``, it will be detected from the
                      ``module``.
-        :param train: whether to use train mode when tracing ``model``.
+        :param training: whether to use train mode when tracing ``model``.
         :param backward: whether to enable the backward pass.
         :param apply_strict: whether to apply strict transforms after conversion (this generally improves performance,
                              but can be slow).
@@ -280,7 +321,7 @@ def dace_module(moduleclass,
         return DaceModule(moduleclass(*args, **kwargs),
                           dummy_inputs=dummy_inputs,
                           cuda=cuda,
-                          train=train,
+                          training=training,
                           backward=backward,
                           apply_strict=apply_strict,
                           auto_optimize=auto_optimize,

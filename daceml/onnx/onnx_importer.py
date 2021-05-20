@@ -14,12 +14,14 @@ import dace
 from dace import data as dt, dtypes, nodes, SDFG, SDFGState
 from dace.frontend.python.parser import infer_symbols_from_shapes
 from dace.symbolic import pystr_to_symbolic
+from dace.transformation import dataflow
 
+from daceml import transformation
 from daceml.onnx.shape_inference import shape_inference
 from daceml.onnx.converters import convert_attribute_proto, onnx_tensor_type_to_typeclass, clean_onnx_name
 from daceml.onnx.schema import ONNXParameterType
 from daceml.onnx.nodes.onnx_op import get_onnx_node, has_onnx_node, ONNXOp
-from daceml.util import utils
+from daceml.util import utils, is_cuda
 from dace.transformation import dataflow
 from daceml import transformation
 
@@ -154,11 +156,6 @@ class ONNXModel:
         self.inputs: List[str] = []  #: the inputs to the model
         self.outputs: List[str] = []  #: the outputs of the model
 
-        #: hooks that are executed after the sdfg is compiled
-        self.post_compile_hooks: Dict[str,
-                                      Callable[[compiled_sdfg.CompiledSDFG],
-                                               None]] = {}
-
         if storage is None:
             storage = dtypes.StorageType.GPU_Global if self.cuda else dtypes.StorageType.Default
 
@@ -255,7 +252,6 @@ class ONNXModel:
                         raise ValueError(
                             "Could not find array with name '{}'".format(name))
                     self._add_value_info(self.value_infos[name])
-
                 # get the access node
                 if name in access_nodes:
                     access = access_nodes[name]
@@ -307,6 +303,7 @@ class ONNXModel:
                         op_node, conn_name, access, None,
                         dace.Memlet.from_array(clean_onnx_name(name),
                                                data_desc))
+
         if self.fold_constants:
             log.debug("Applying constant folding")
             self.sdfg.apply_transformations_repeated([
@@ -314,6 +311,7 @@ class ONNXModel:
             ],
                                                      validate_all=True,
                                                      strict=True)
+
         if self.cuda:
             self.sdfg.apply_gpu_transformations()
 
@@ -332,6 +330,10 @@ class ONNXModel:
         if not tensor.HasField("data_type"):
             raise ValueError("Initializer tensor '{}' has no type".format(
                 tensor.name))
+
+        if tensor.name in self.inputs:
+            # do not duplicate a weight if it is already an input
+            return
 
         name = clean_onnx_name(tensor.name)
 
@@ -431,18 +433,17 @@ class ONNXModel:
         # copy all parameters to the device
         self.initialized_parameters = {}
         for name, arr in self.weights.items():
-            desc = self.sdfg.arrays[clean_onnx_name(name)]
-            if type(desc) is dt.Scalar:
-                self.initialized_parameters[clean_onnx_name(
-                    name)] = arr.cpu().numpy()[()]
-            else:
-                cuda = is_cuda(desc.storage)
-                self.initialized_parameters[clean_onnx_name(
-                    name)] = arr.cuda() if cuda else arr
+            if clean_onnx_name(name) in self.sdfg.arrays:
+                desc = self.sdfg.arrays[clean_onnx_name(name)]
+                if type(desc) is dt.Scalar:
+                    self.initialized_parameters[clean_onnx_name(
+                        name)] = arr.cpu().numpy()[()]
+                else:
+                    cuda = is_cuda(desc.storage)
+                    self.initialized_parameters[clean_onnx_name(
+                        name)] = arr.cuda() if cuda else arr
 
         compiled_sdfg = self.sdfg.compile()
-        for _, hook in self.post_compile_hooks.items():
-            hook(compiled_sdfg)
         return compiled_sdfg
 
     def __call__(
@@ -459,10 +460,11 @@ class ONNXModel:
 
         transient_kwargs = {}
         if self.save_transients is not None:
+
             for node, parent in self.sdfg.all_nodes_recursive():
                 if isinstance(node, nodes.AccessNode):
                     desc = self.sdfg.arrays[node.data]
-                    if desc.transient:
+                    if not isinstance(desc, dt.View) and desc.transient:
                         desc.transient = False
                         transient_kwargs[node.data] = desc
 
@@ -579,20 +581,12 @@ class ONNXModel:
         utils.expand_onnx_nodes(self.sdfg)
 
     def auto_optimize(self):
-        utils.auto_optimize(self.sdfg,
-                            self.cuda,
-                            apply_strict=self.apply_strict,
-                            fold_constants=self.fold_constants)
-
-
-def is_cuda(storage: dtypes.StorageType) -> bool:
-    """ Check if a descriptor storage type is a GPU array """
-    if dtypes.can_access(dtypes.ScheduleType.CPU_Multicore, storage):
-        return False
-    elif dtypes.can_access(dtypes.ScheduleType.GPU_Default, storage):
-        return True
-    else:
-        raise ValueError(f"Unsupported storage {storage}")
+        utils.auto_optimize(
+            self.sdfg,
+            self.cuda,
+            apply_strict=self.apply_strict,
+            # constants have been folded before GPU transforms
+            fold_constants=False)
 
 
 def create_output_array(

@@ -37,19 +37,20 @@ setup(
         exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
     package_data={'': (['*.cpp'] + runtime_files)},
     install_requires=[
-        'dace@git+https://github.com/spcl/dace.git@dml_misc_fixes2',
-        'onnx == 1.7.0', 'torch', 'dataclasses; python_version < "3.7"'
+        'dace@git+https://github.com/spcl/dace.git@f9e585c', 'onnx == 1.7.0',
+        'torch', 'dataclasses; python_version < "3.7"'
     ],
     # install with pip and --find-links (see Makefile)
     # See https://github.com/pypa/pip/issues/5898
     extras_require={
         'testing': [
             'coverage', 'pytest', 'yapf', 'pytest-cov', 'transformers',
-            'pytest-xdist', 'torchvision'
+            'pytest-xdist', 'torchvision', 'tabulate'
         ],
         'docs': [
-            'sphinx==3.2.1', 'sphinx_rtd_theme==0.5.0',
-            'sphinx-autodoc-typehints==1.11.1'
+            'sphinx==3.2.1', 'sphinx_rtd_theme==0.5.2',
+            'sphinx-autodoc-typehints==1.11.1', 'sphinx-gallery==0.9.0',
+            'matplotlib==3.4.2'
         ],
         'debug': ['onnxruntime']
     })

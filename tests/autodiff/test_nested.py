@@ -142,10 +142,10 @@ def test_view_forwarding():
     # Prepare the outer SDFG
 
     @dace.program
-    def inner_view_forwarding(inp: dace.float64[9], bias: dace.float64[3],
-                              target_shape: dace.int64[2]):
+    def inner_view_forwarding(inp: dace.float64[9], bias: dace.float64[3]):
         result = dace.define_local_scalar(dace.float64)
-        sdfg(inp=inp, bias=bias, target_shape=target_shape, result=result)
+        # target shape gets removed by the pure reshape expansion
+        sdfg(inp=inp, bias=bias, result=result)
         return result + 1
 
     outer_sdfg = inner_view_forwarding.to_sdfg(strict=False)
