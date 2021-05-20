@@ -1,15 +1,17 @@
 import itertools
 import logging
 import collections
+import types
 from typing import Iterator, Tuple, List, Dict, Type
 
 import dace
+import dace.library
 import dace.sdfg.nodes as nd
 import dace.frontend.common.op_repository as dace_op_repo
 from dace.frontend.python.newast import ProgramVisitor
 import onnx
 from dace import SDFG, SDFGState, dtypes, data
-from dace.properties import Property, ListProperty
+from dace.properties import Property, ListProperty, make_properties
 from dace.sdfg.graph import MultiConnectorEdge
 from dace.transformation.transformation import ExpandTransformation
 
@@ -78,6 +80,7 @@ def get_missing_arguments_message(function_name, missing_arguments,
         arglist=arglist)
 
 
+@make_properties
 class ONNXOp(nd.LibraryNode):
     """ Abstract superclass for all ONNX ops. Do not use this class, use the concrete subclasses
         (e.g. :class:`~daceml.onnx.nodes.onnx_op.ONNXConv`) instead.
@@ -87,11 +90,19 @@ class ONNXOp(nd.LibraryNode):
     # these two are filled out in the generated constructor
     implementations = {}
     default_implementation = None
+    default_backward_implementation = None
 
     # Object fields
     schema = Property(dtype=ONNXSchema,
                       desc="The operator's ONNX OpSchema",
                       allow_none=True)
+
+    backward_implementation = Property(
+        dtype=str,
+        allow_none=True,
+        desc=
+        "Which implementation this library node will expand into in the backward pass."
+    )
 
     def iter_outputs_in_onnx_order(
             self, state: SDFGState) -> List[MultiConnectorEdge]:
@@ -547,6 +558,7 @@ for schema in _get_schemas_from_version(12):
                 for out in self.schema.outputs
                 if out.param_type == ONNXParameterType.Single
             })
+        self.backward_implementation = None
 
         if len(args) > 0:
             raise TypeError(

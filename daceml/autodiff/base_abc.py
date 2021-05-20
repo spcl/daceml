@@ -3,6 +3,7 @@ Abstract Base Classes for Autodiff
 """
 import abc
 import dataclasses
+import logging
 import typing
 
 from dace import SDFG, SDFGState
@@ -10,6 +11,8 @@ import dace.registry
 import dace.sdfg.nodes as nd
 
 from daceml.onnx.nodes.onnx_op import ONNXOp
+
+log = logging.getLogger(__name__)
 
 
 class AutoDiffException(Exception):
@@ -54,6 +57,8 @@ class BackwardImplementation(abc.ABC):
         backward implementation supports.
         It can also take an argument ``op=node_name`` where ``node_name`` is the string of the ONNX op it supports,
         e.g. ``"Conv"``.
+
+        It also expects a ``name`` argument that names the implementation.
     """
     @staticmethod
     def backward_can_be_applied(node: nd.Node, state: SDFGState,
@@ -106,11 +111,39 @@ def find_backward_implementation(
         :node: the node to find the implementation for.
         :return: the BackwardImplementation for node if one is registered and can be applied, else node.
     """
+
+    valid_impls = []
     for impl, args in BackwardImplementation.extensions().items():
+        if "name" not in args:
+            raise ValueError(
+                f"Expected name in arguments of implementation {impl}.")
+
         if "node_type" in args and isinstance(node, args["node_type"]) or (
                 isinstance(node, ONNXOp) and "op" in args
                 and node.schema.name == args["op"]):
 
             if impl.backward_can_be_applied(node, forward_state, forward_sdfg):
-                return impl
-    return None
+                valid_impls.append((args["name"], impl))
+
+    if isinstance(node, ONNXOp) and node.backward_implementation:
+
+        implementation = node.backward_implementation
+    elif isinstance(node, ONNXOp) and node.default_backward_implementation:
+        implementation = node.default_backward_implementation
+    else:
+        implementation = None
+
+    if implementation:
+        filtered_impls = [
+            i for name, i in valid_impls if name == implementation
+        ]
+        if filtered_impls:
+            return filtered_impls[0]
+
+        log.warning(
+            f"Set backward_implementation {node.backward_implementation} on {node}, but it could not be"
+            f" applied. Falling back to default selection.")
+    if valid_impls:
+        return valid_impls[0][1]
+    else:
+        return None

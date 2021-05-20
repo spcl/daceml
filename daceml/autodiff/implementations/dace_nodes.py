@@ -10,7 +10,8 @@ from daceml.autodiff.base_abc import BackwardImplementation, BackwardContext, Ba
 from daceml.util.utils import in_edge_with_name, in_desc_with_name, out_desc_with_name, out_edge_with_name
 
 
-@autoregister_params(node_type=dace.libraries.standard.nodes.Reduce)
+@autoregister_params(node_type=dace.libraries.standard.nodes.Reduce,
+                     name="pure")
 class ReverseReduce(BackwardImplementation):
     @staticmethod
     def backward_can_be_applied(node: Node, state: SDFGState,
