@@ -142,7 +142,6 @@ def vectorize_array_and_memlet(sdfg, array_name, type: dtypes.typeclass):
                 start, stop, skip = edge.data.subset.ranges[-1]
 
                 # Let's be conservative for the moment
-
                 if start != 0 or skip != 1 or (stop + 1) % vec_width != 0:
                     raise ValueError(
                         "Memlet {} not able to convert its range".format(

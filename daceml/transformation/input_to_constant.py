@@ -201,8 +201,6 @@ class InputToConstant(xf.Transformation):
             while tree.parent is not None:
                 tree = tree.parent
 
-            print(print_tree(tree))
-
             for child in tree.traverse_children(include_self=True):
                 if child.children != []:
                     continue

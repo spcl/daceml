@@ -721,7 +721,7 @@ class PureSlice(ONNXForward):
             node, state, "ends").src.data].numpy()[0]
 
         output_shape = out_desc_with_name(node, state, sdfg, "output").shape
-        if end == end == np.iinfo(np.int64).max:
+        if end == np.iinfo(np.int64).max:
             # Pytorch exporter artifact
             end = start + output_shape[0]
 
