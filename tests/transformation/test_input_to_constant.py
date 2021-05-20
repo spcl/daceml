@@ -15,21 +15,25 @@ class TestModule(nn.Module):
         self.fc1 = nn.Linear(5, 3)
 
     def forward(self, x):
-        return self.fc1(x)
+        return x + 2
 
 
-@pytest.mark.ort
-def test_input_to_constant():
-    donnx.ONNXGemm.default_implementation = "pure"
+@pytest.mark.pure
+def test_input_to_constant(sdfg_name):
 
     net = TestModule()
-    dace_net = DaceModule(net, dummy_inputs=(torch.rand(10, 5), ))
+    dace_net = DaceModule(net, sdfg_name=sdfg_name)
 
     inp = torch.rand((10, 5))
-    #
-    sdfg: dace.SDFG = dace_net.sdfg
-    sdfg.expand_library_nodes()
-    sdfg.apply_transformations_repeated([InputToConstant], print_report=True)
+
+    def ApplyInputToConst(dace_module):
+        sdfg = dace_module.sdfg
+        sdfg.expand_library_nodes()
+        applied = sdfg.apply_transformations_repeated([InputToConstant],
+                                                      print_report=True)
+        assert applied == 1
+
+    dace_net.append_post_onnx_hook("ApplyInputToConst", ApplyInputToConst)
 
     torch_result = net(torch.clone(inp))
     dace_result = dace_net(torch.clone(inp))
