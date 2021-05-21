@@ -145,9 +145,9 @@ def argument_codegen(
 
         elif isinstance(arglist[name], data.Scalar):
             if name in guard_contiguous:
-                ptr_init_code += '\n' + f"{dctype} {name}_ptr = reinterpret_cast<{dctype}*>({name}_.item().to<{tctype}>());"
+                ptr_init_code += '\n' + f"{dctype} {name}_ptr = static_cast<{dctype}>({name}_.item().to<{tctype}>());"
             else:
-                ptr_init_code += '\n' + f"{dctype} {name}_ptr = reinterpret_cast<{dctype}*>({name}.item().to<{tctype}>());"
+                ptr_init_code += '\n' + f"{dctype} {name}_ptr = static_cast<{dctype}>({name}.item().to<{tctype}>());"
         else:
             raise ValueError(
                 f"Unsupported data type {type(arglist[name])} for descriptor {name}"
