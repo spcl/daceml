@@ -224,7 +224,8 @@ class ONNXModel:
                     raise ValueError(
                         "Could not find array with name '{}'".format(
                             node.output[0]))
-                self._add_value_info(self.value_infos[node.output[0]])
+                self._add_value_info(self.value_infos[node.output[0]],
+                                     storage=storage)
                 self.sdfg.arrays[clean_onnx_name(
                     node.output[0])].transient = False
 
@@ -435,11 +436,11 @@ class ONNXModel:
         for name, arr in self.weights.items():
             if clean_onnx_name(name) in compiled_sdfg.sdfg.arrays:
                 desc = self.sdfg.arrays[clean_onnx_name(name)]
+                cuda = is_cuda(desc.storage)
                 if type(desc) is dt.Scalar:
                     self.initialized_parameters[clean_onnx_name(
-                        name)] = arr.cpu().numpy()[()]
+                        name)] = arr.cuda() if cuda else arr.cpu().numpy()[()]
                 else:
-                    cuda = is_cuda(desc.storage)
                     self.initialized_parameters[clean_onnx_name(
                         name)] = arr.cuda() if cuda else arr
 

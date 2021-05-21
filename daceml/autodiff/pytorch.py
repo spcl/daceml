@@ -1,5 +1,5 @@
 import logging
-from typing import Type
+from typing import Type, Tuple, Dict
 import itertools
 from collections import OrderedDict
 
@@ -9,7 +9,7 @@ import dace
 from dace import data as dt
 
 from daceml.autodiff.backward_pass_generator import BackwardPassGenerator
-from daceml.autodiff.base_abc import AutoDiffException
+from daceml.autodiff.base_abc import AutoDiffException, BackwardResult
 from daceml.onnx.converters import clean_onnx_name
 from daceml.onnx.onnx_importer import create_output_array, ONNXModel
 from daceml import transformation
@@ -17,15 +17,17 @@ from daceml import transformation
 log = logging.getLogger(__name__)
 
 
-def make_backward_function(model: ONNXModel,
-                           apply_strict=False
-                           ) -> Type[torch.autograd.Function]:
-    """ Convert an ONNXModel to a PyTorch differentiable function. This method should not be used on it's own.
+def make_backward_function(
+    model: ONNXModel,
+    apply_strict=False
+) -> Tuple[dace.SDFG, dace.SDFG, BackwardResult, Dict[str, dt.Data]]:
+    """ Convert an ONNXModel to a PyTorch differentiable function. This method should not be used on its own.
         Instead use the ``backward=True`` parameter of :class:`daceml.pytorch.DaceModule`.
 
         :param model: the model to convert.
         :param apply_strict: whether to apply strict transformations before creating the backward pass.
-        :return: the PyTorch compatible :class:`torch.autograd.Function`.
+        :return: A 4-tuple of forward SDFG, backward SDFG, backward result, and input arrays for 
+                 backward pass (as mapping of names to DaCe data descriptors).
     """
 
     if len(model.sdfg.nodes()) != 1:
@@ -72,7 +74,7 @@ def make_backward_function(model: ONNXModel,
                 transient=False,
                 storage=forward_desc.storage,
                 find_new_name=True)
-            bwd_arr_name, _ = backward_sdfg.add_array(
+            bwd_arr_name, bwd_desc = backward_sdfg.add_array(
                 name + "_array", [1],
                 forward_desc.dtype,
                 transient=False,
@@ -93,119 +95,32 @@ def make_backward_function(model: ONNXModel,
             bwd_copy_state.add_edge(bwd_copy_state.add_read(bwd_arr_name),
                                     None, bwd_copy_state.add_write(name), None,
                                     dace.Memlet(name + "[0]"))
-            replaced_scalars[name] = fwd_arr_name
+            replaced_scalars[name] = (bwd_arr_name, bwd_desc)
         else:
             forward_sdfg.arrays[name].transient = False
 
+    for orig_name, (replaced_name, replaced_desc) in replaced_scalars.items():
+        del backward_input_arrays[orig_name]
+        backward_input_arrays[replaced_name] = replaced_desc
+
+    for fwd_name, bwd_name in backward_result.required_grad_names.items():
+        desc = backward_sdfg.arrays[bwd_name]
+        if isinstance(desc, dt.Scalar):
+            arr_name, arr_desc = backward_sdfg.add_array(bwd_name + "_array",
+                                                         [1],
+                                                         desc.dtype,
+                                                         transient=False,
+                                                         storage=desc.storage,
+                                                         find_new_name=True)
+            desc.transient = True
+            bwd_copy_state = backward_sdfg.add_state_after(backward_state,
+                                                           label="copy_out_" +
+                                                           bwd_name)
+            bwd_copy_state.add_edge(bwd_copy_state.add_read(bwd_name), None,
+                                    bwd_copy_state.add_write(arr_name), None,
+                                    dace.Memlet(bwd_name + "[0]"))
+            backward_result.required_grad_names[fwd_name] = arr_name
+
     backward_sdfg.validate()
 
-    class DaceFunction(torch.autograd.Function):
-        _backward_sdfg = backward_sdfg
-        _forward_model = model
-        _backward_result = backward_result
-
-        @staticmethod
-        def forward(ctx, *inputs):
-            # setup the intermediate buffers
-
-            if any(not inp.is_contiguous() for inp in inputs):
-                log.warning("forced to copy input since it was not contiguous")
-
-            copied_inputs = tuple(
-                inp if inp.is_contiguous else inp.contiguous()
-                for inp in inputs)
-
-            # prepare the arguments
-            inputs, symbols, outputs = model._call_args(args=copied_inputs,
-                                                        kwargs={})
-
-            params = DaceFunction._forward_model.initialized_parameters
-            # create the empty tensors we need for the intermediate values
-            for inp, val in backward_input_arrays.items():
-                if isinstance(val, dt.Scalar):
-                    # the value we need is actually in an array
-                    inp = replaced_scalars[inp]
-                if inp not in inputs and inp not in outputs and inp not in params:
-                    inputs[inp] = create_output_array(symbols,
-                                                      forward_sdfg.arrays[inp],
-                                                      use_torch=True,
-                                                      zeros=True)
-
-            DaceFunction._forward_model.sdfg(**inputs, **symbols, **params,
-                                             **outputs)
-
-            def _get_arr(name, desc):
-                if isinstance(desc, dt.Scalar):
-                    name = replaced_scalars[name]
-                if name in inputs:
-                    value = inputs[name]
-                elif name in outputs:
-                    value = outputs[name]
-                elif name in params:
-                    value = params[name]
-                else:
-                    raise AutoDiffException(
-                        f"Could not get value of array {name}")
-
-                return value
-
-            # save the arrays we need for the backward pass
-            backward_inputs = {
-                name: _get_arr(name, desc)
-                for name, desc in backward_input_arrays.items()
-            }
-            for name in replaced_scalars:
-                backward_inputs[replaced_scalars[name]] = backward_inputs[name]
-                del backward_inputs[name]
-            ctx.dace_backward_inputs = backward_inputs
-            ctx.dace_symbols = symbols
-
-            if len(outputs) == 1:
-                return next(iter(outputs.values()))
-
-            return tuple(outputs.values())
-
-        @staticmethod
-        def backward(ctx, *grads):
-            backward_inputs = ctx.dace_backward_inputs
-
-            if len(grads) != len(model.outputs):
-                raise ValueError("Expected to receive {} grads, got {}".format(
-                    len(model.outputs), len(grads)))
-
-            given_grads = dict(
-                zip((DaceFunction._backward_result.given_grad_names[
-                    clean_onnx_name(outp)] for outp in model.outputs), grads))
-            for name, value in given_grads.items():
-                if not isinstance(value, torch.Tensor):
-                    raise ValueError(
-                        "Unsupported input with type {};"
-                        " currently only tensor inputs are supported".format(
-                            type(value)))
-                if not value.is_contiguous():
-                    log.warning(
-                        "forced to copy input since it was not contiguous")
-                    given_grads[name] = value.contiguous()
-
-            # these are the grads we will calculate
-            input_grad_names = [
-                DaceFunction._backward_result.required_grad_names[
-                    clean_onnx_name(inp)]
-                for inp in itertools.chain(model.inputs)
-            ]
-
-            # init the grads we will calculate with zeros
-            grad_values = OrderedDict()
-            for name in input_grad_names:
-                grad_values[name] = create_output_array(
-                    ctx.dace_symbols,
-                    backward_grad_arrays[name],
-                    use_torch=True,
-                    zeros=True)
-
-            DaceFunction._backward_sdfg(**grad_values, **backward_inputs,
-                                        **given_grads)
-
-            return tuple(grad_values.values())
-
-    return DaceFunction
+    return forward_sdfg, backward_sdfg, backward_result, backward_input_arrays

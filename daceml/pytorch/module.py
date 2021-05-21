@@ -246,30 +246,27 @@ class DaceModule(nn.Module):
                 hook(self)
 
             if self.backward:
-                function = make_backward_function(dace_model)
+                self.forward_sdfg, self.backward_sdfg, self._ad_result, self._ad_inp_arrs = make_backward_function(
+                    dace_model)
 
                 for _, hook in self.post_autodiff_hooks.items():
-                    hook(function._forward_model.sdfg, function._backward_sdfg)
+                    hook(self.forward_sdfg, self.backward_sdfg)
 
-                function._forward_model.compile_and_init()
-
-                def forward(*args):
-                    args_and_params = list(args)
-                    args_and_params.extend(self.parameters())
-                    return function.apply(*args_and_params)
-
-                return forward
+                self.compiled_function = compile_and_get_function(
+                    self, dummy_inputs)
             else:
-                self.fwd_func = compile_and_get_function(self, dummy_inputs)
-                parameters_to_pass = tuple(
-                    p.data for n, p in self.model.named_parameters()
-                    if n in self.dace_model.inputs)
+                self.compiled_function = compile_and_get_function(
+                    self, dummy_inputs)
 
-                def forward(*args):
-                    return self.fwd_func.function(self.fwd_func.ptr, *args,
-                                                  *parameters_to_pass)
+            parameters_to_pass = tuple(
+                p for n, p in self.model.named_parameters()
+                if n in self.dace_model.inputs)
 
-                return forward
+            def forward(*args):
+                return self.compiled_function.function(
+                    *self.compiled_function.ptr, *args, *parameters_to_pass)
+
+            return forward
 
     def forward(self, *actual_inputs):
         """ Execute the forward pass using the traced ``module``."""

@@ -596,7 +596,7 @@ class BackwardPassGenerator:
         else:
             raise ValueError(f"Unsupported storage {arr.storage}")
 
-        if type(arr) is dt.Array:
+        if type(arr) is dt.Array or type(arr) is dt.Scalar:
             state.add_mapped_tasklet(
                 "_init_" + data + "_", {
                     "i{}".format(i): "0:{}".format(shape)
@@ -611,12 +611,6 @@ class BackwardPassGenerator:
                 schedule=dtypes.ScheduleType.GPU_Device
                 if cuda else dtypes.ScheduleType.Default,
                 external_edges=True)
-        elif type(arr) is dt.Scalar:
-            tasklet = state.add_tasklet("_init_" + data + "_", {}, {"__out"},
-                                        "__out = {}".format(scalar))
-            write = state.add_write(data)
-            state.add_edge(tasklet, "__out", write, None,
-                           Memlet.simple(data, "0"))
         elif type(arr) is dt.View:
             # not need to initialize: the viewed array will always be visited
             # (since a view can never be a required grad), and thus the viewed array will be initialized.
