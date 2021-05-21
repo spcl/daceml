@@ -190,9 +190,10 @@ def constant_initializer_code(name: str, desc: data.Data, value) -> str:
     if isinstance(desc, data.Array) or gpu_storage:
         iterator = np.nditer(value.cpu().numpy(), order="C")
         gpu_copy_code = f"""
-        {desc.dtype.ctype} *{name}_ptr;
-        cudaMalloc(&{name}_ptr, ({sym2cpp(desc.total_size)}) * sizeof({desc.dtype.ctype}));
-        cudaMemcpyAsync({name}_ptr, {name}_ptr_cpu, ({sym2cpp(desc.total_size)}) * sizeof({desc.dtype.ctype}), cudaMemcpyHostToDevice, nullptr);
+        Tensor {name} = torch::from_blob({name}_ptr_cpu, {{{', '.join(sym2cpp(s) for s in desc.shape)}}},
+            {{{', '.join(sym2cpp(s) for s in desc.strides)}}}, torch::{_TYPECLASS_TO_TORCH_DTYPE_STR[desc.dtype]})
+            .to(torch::kCUDA);
+        {desc.dtype.ctype} *{name}_ptr = {name}.data_ptr<{desc.dtype.ctype}>();
         """
         return f"""
         {desc.dtype.ctype} {name}_ptr{'_cpu' if gpu_storage else ''}[{sym2cpp(desc.total_size)}] =
@@ -416,7 +417,6 @@ def get_header(fwd_sdfg: dace.SDFG, bwd_sdfg: Optional[dace.SDFG], inputs,
 #include <torch/torch.h>
 #include <torch/script.h>
 #include "{fwd_sdfg.name}.h"
-{'#include "cuda_runtime.h"' if use_cuda else ""}
 {"" if bwd_sdfg is None else f'#include "{bwd_sdfg.name}.h"'}
 using torch::Tensor;
 using torch::DeviceType;
