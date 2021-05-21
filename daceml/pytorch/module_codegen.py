@@ -1,15 +1,15 @@
 """ Code generation for PyTorch C++ dispatched operators. """
 import copy
 import dataclasses
-import os
-import operator
 import itertools
-from typing import List, Tuple, Callable, Optional, Set, Dict, Union
+import operator
+import os
+from typing import List, Tuple, Callable, Optional, Dict, Union
 
+import dace.library
 import numpy as np
 import torch
-from dace import dtypes as dt, data, ctypes, data
-import dace.library
+from dace import dtypes as dt, data
 from dace.codegen import targets, compiler
 from dace.codegen.codeobject import CodeObject
 from dace.codegen.compiled_sdfg import CompiledSDFG
@@ -31,6 +31,17 @@ class CompiledTorchFunction:
         CompiledSDFG]  #: the compiled SDFGs holding their states
     #: the pointers to the initialized SDFG state handles. Must be passed as the first arguments to function.
     ptr: List[torch.Tensor]
+
+
+_REPLACED_CTYPES = {dace.int64: "int64_t", dace.uint64: "int64_t"}
+
+
+def torch_ctype(dtype: dace.typeclass) -> str:
+    if dtype in _REPLACED_CTYPES:
+        ctype = _REPLACED_CTYPES[dtype]
+    else:
+        ctype = dtype.ctype
+    return ctype
 
 
 def get_arglist(
@@ -124,18 +135,19 @@ def argument_codegen(
     # initialize the inputs and outputs
     ptr_init_code = "\n// setup input and output pointers\n"
     for name in input_names:
-        ctype = arglist[name].dtype.ctype
+        tctype = torch_ctype(arglist[name].dtype)
+        dctype = arglist[name].dtype
         if isinstance(arglist[name], data.Array) or dt.can_access(
                 dt.ScheduleType.GPU_Device, arglist[name].storage):
             if name in guard_contiguous:
                 ptr_init_code += '\n' + f"Tensor {name} = {name}_.contiguous();"
-            ptr_init_code += '\n' + f"{ctype} *{name}_ptr = {name}.data_ptr<{ctype}>();"
+            ptr_init_code += '\n' + f"{dctype} *{name}_ptr = reinterpret_cast<{dctype}*>({name}.data_ptr<{tctype}>());"
 
         elif isinstance(arglist[name], data.Scalar):
             if name in guard_contiguous:
-                ptr_init_code += '\n' + f"{ctype} {name}_ptr = {name}_.item().to<{ctype}>();"
+                ptr_init_code += '\n' + f"{dctype} {name}_ptr = reinterpret_cast<{dctype}*>({name}_.item().to<{tctype}>());"
             else:
-                ptr_init_code += '\n' + f"{ctype} {name}_ptr = {name}.item().to<{ctype}>();"
+                ptr_init_code += '\n' + f"{dctype} {name}_ptr = reinterpret_cast<{dctype}*>({name}.item().to<{tctype}>());"
         else:
             raise ValueError(
                 f"Unsupported data type {type(arglist[name])} for descriptor {name}"
@@ -145,7 +157,8 @@ def argument_codegen(
 
     # outputs and bwd arrays
     ptr_init_code += '\n'.join(
-        f"{arglist[name].dtype.ctype} *{name}_ptr = {name}.data_ptr<{arglist[name].dtype.ctype}>();"
+        f"{arglist[name].dtype.ctype} *{name}_ptr = reinterpret_cast<{arglist[name].dtype.ctype}*>"
+        f"({name}.data_ptr<{torch_ctype(arglist[name].dtype)}>());"
         for name in output_names)
     ptr_init_code += "\n// setup constant arguments\n"
 
@@ -187,13 +200,14 @@ def item_to_cpp_literal(item) -> str:
 
 def constant_initializer_code(name: str, desc: data.Data, value) -> str:
     gpu_storage = dt.can_access(dt.ScheduleType.GPU_Device, desc.storage)
+
     if isinstance(desc, data.Array) or gpu_storage:
         iterator = np.nditer(value.cpu().numpy(), order="C")
         gpu_copy_code = f"""
         Tensor {name} = torch::from_blob({name}_ptr_cpu, {{{', '.join(sym2cpp(s) for s in desc.shape)}}},
             {{{', '.join(sym2cpp(s) for s in desc.strides)}}}, torch::{_TYPECLASS_TO_TORCH_DTYPE_STR[desc.dtype]})
             .to(torch::kCUDA);
-        {desc.dtype.ctype} *{name}_ptr = {name}.data_ptr<{desc.dtype.ctype}>();
+        {desc.dtype.ctype} *{name}_ptr = reinterpret_cast<{desc.dtype.ctype}*>({name}.data_ptr<{torch_ctype(desc.dtype)}>());
         """
         return f"""
         {desc.dtype.ctype} {name}_ptr{'_cpu' if gpu_storage else ''}[{sym2cpp(desc.total_size)}] =
