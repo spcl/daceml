@@ -232,6 +232,8 @@ def is_cuda(storage: dtypes.StorageType) -> bool:
     """ Check if a descriptor storage type is a GPU array """
     if dtypes.can_access(dtypes.ScheduleType.CPU_Multicore, storage):
         return False
+    elif dtypes.can_access(dtypes.ScheduleType.FPGA_Device, storage):
+        return False
     elif dtypes.can_access(dtypes.ScheduleType.GPU_Default, storage):
         return True
     else:
