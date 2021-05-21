@@ -89,7 +89,7 @@ def time_funcs(funcs,
                func_names=None,
                num_iters=100,
                warmups=5,
-               launch_wait=True):
+               launch_wait=False):
     """ Run and time funcs.
 
         :param funcs: a list of functions that do GPU work.
