@@ -124,6 +124,7 @@ def empty_sdfg_for_node(
 
     return nsdfg, nstate, input_nodes, output_nodes
 
+
 def python_pure_op_implementation(func):
     """ A decorator that registers an python op implementation. The name of the function will be the name of the op
         that is being replaced.
@@ -134,4 +135,5 @@ def python_pure_op_implementation(func):
         def forward(node: onnx_op.ONNXOp, state: SDFGState,
                     sdfg: SDFG) -> typing.Union[nodes.Node, SDFG]:
             return program_for_node(func, sdfg, state, node)
+
     return PureImpl
