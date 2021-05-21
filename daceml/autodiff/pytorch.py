@@ -103,7 +103,6 @@ def make_backward_function(
         del backward_input_arrays[orig_name]
         backward_input_arrays[replaced_name] = replaced_desc
 
-    replaced_scalars = {}
     for fwd_name, bwd_name in backward_result.required_grad_names.items():
         desc = backward_sdfg.arrays[bwd_name]
         if isinstance(desc, dt.Scalar):
@@ -114,9 +113,9 @@ def make_backward_function(
                                                          storage=desc.storage,
                                                          find_new_name=True)
             desc.transient = True
-            bwd_copy_state = backward_sdfg.add_state_before(backward_state,
-                                                            label="copy_out_" +
-                                                            bwd_name)
+            bwd_copy_state = backward_sdfg.add_state_after(backward_state,
+                                                           label="copy_out_" +
+                                                           bwd_name)
             bwd_copy_state.add_edge(bwd_copy_state.add_read(bwd_name), None,
                                     bwd_copy_state.add_write(arr_name), None,
                                     dace.Memlet(bwd_name + "[0]"))
