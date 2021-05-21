@@ -6,7 +6,7 @@ import dace
 from dace import registry, properties, subsets
 from dace.sdfg import nodes, utils as sdfg_utils
 from dace.transformation import transformation as xf
-
+from dace import Config
 import daceml.onnx as donnx
 from daceml.util import utils
 
@@ -22,9 +22,10 @@ def expand_library_nodes_except_reshape(self, recursive=True):
             elif isinstance(node, nodes.LibraryNode) and not isinstance(
                     node, donnx.ONNXReshape):
                 impl_name = node.expand(self, state)
-                print(
-                    "Automatically expanded library node \"{}\" with implementation \"{}\"."
-                    .format(str(node), impl_name))
+                if Config.get_bool("debugprint"):
+                    print(
+                        "Automatically expanded library node \"{}\" with implementation \"{}\"."
+                        .format(str(node), impl_name))
                 # We made a copy of the original list of nodes, so we keep
                 # iterating even though this list has now changed
                 if recursive:
