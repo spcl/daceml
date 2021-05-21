@@ -33,7 +33,7 @@ class CompiledTorchFunction:
     ptr: List[torch.Tensor]
 
 
-_REPLACED_CTYPES = {dace.int64: "int64_t", dace.uint64: "int64_t"}
+_REPLACED_CTYPES = {dace.int64: "int64_t", dace.uint64: "uint64_t"}
 
 
 def torch_ctype(dtype: dace.typeclass) -> str:
