@@ -483,7 +483,7 @@ def compile_and_get_function(module: 'daceml.pytorch.DaceModule',
     code = indent_code(code)
 
     # build the PyTorch module
-    libname = f"torch_{module.sdfg.name}"
+    libname = f"torch_{compiled.sdfg.name}"
     program = CodeObject(libname,
                          code,
                          "cpp",
@@ -501,7 +501,7 @@ def compile_and_get_function(module: 'daceml.pytorch.DaceModule',
                      platform_library_name(libname)))
 
     torch_function = operator.attrgetter(
-        f"daceml_{module.sdfg.name}.{module.sdfg.name}")(torch.ops)
+        f"daceml_{compiled.sdfg.name}.{compiled.sdfg.name}")(torch.ops)
 
     result = CompiledTorchFunction(function=torch_function,
                                    compiled_sdfgs=compiled_sdfgs,
