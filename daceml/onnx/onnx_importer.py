@@ -224,7 +224,8 @@ class ONNXModel:
                     raise ValueError(
                         "Could not find array with name '{}'".format(
                             node.output[0]))
-                self._add_value_info(self.value_infos[node.output[0]])
+                self._add_value_info(self.value_infos[node.output[0]],
+                                     storage=storage)
                 self.sdfg.arrays[clean_onnx_name(
                     node.output[0])].transient = False
 
@@ -428,20 +429,21 @@ class ONNXModel:
     def compile_and_init(self) -> compiled_sdfg.CompiledSDFG:
         """ Compile the SDFG and load parameters into GPU memory. """
 
+        compiled_sdfg = self.sdfg.compile()
+
         # copy all parameters to the device
         self.initialized_parameters = {}
         for name, arr in self.weights.items():
-            if clean_onnx_name(name) in self.sdfg.arrays:
+            if clean_onnx_name(name) in compiled_sdfg.sdfg.arrays:
                 desc = self.sdfg.arrays[clean_onnx_name(name)]
+                cuda = is_cuda(desc.storage)
                 if type(desc) is dt.Scalar:
                     self.initialized_parameters[clean_onnx_name(
-                        name)] = arr.cpu().numpy()[()]
+                        name)] = arr.cuda() if cuda else arr.cpu().numpy()[()]
                 else:
-                    cuda = is_cuda(desc.storage)
                     self.initialized_parameters[clean_onnx_name(
                         name)] = arr.cuda() if cuda else arr
 
-        compiled_sdfg = self.sdfg.compile()
         return compiled_sdfg
 
     def __call__(
