@@ -26,6 +26,8 @@ jobs:
 
       - name: Build docs
         run: make doc
+        env:
+          DACEML_DOC_BUILD_CUDA: 'True'
 
       - uses: actions/upload-artifact@v2
         with:

@@ -54,7 +54,26 @@ typehints_fully_qualified = False
 add_module_names = False
 autoclass_content = 'both'
 
-sphinx_gallery_conf = {'default_thumb_file': 'dace.png'}
+build_fpga_docs = "DACEML_DOC_BUILD_FPGA" in os.environ and os.environ[
+    "DACEML_DOC_BUILD_FPGA"] == 'True'
+build_cuda_docs = "DACEML_DOC_BUILD_CUDA" in os.environ and os.environ[
+    "DACEML_DOC_BUILD_CUDA"] == 'True'
+if build_cuda_docs and build_fpga_docs:
+    pattern = "/plot_"
+elif not build_cuda_docs and build_fpga_docs:
+    pattern = "/plot(?!_cuda)_"
+elif build_cuda_docs and not build_fpga_docs:
+    pattern = "/plot(?!_fpga)_"
+else:
+    pattern = "/plot(?!(_fpga)|(_cuda))_"
+
+print()
+print(pattern)
+
+sphinx_gallery_conf = {
+    'default_thumb_file': 'dace.png',
+    'filename_pattern': pattern
+}
 
 
 def linkcode_resolve(domain, info):
