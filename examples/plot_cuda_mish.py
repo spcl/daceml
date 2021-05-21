@@ -4,7 +4,7 @@ Optimizing the Mish Operator
 
 DaCeML allows users to optimize DNN modules at all levels of granularity, from operators to full models. In this
 example, we optimize the Mish operator [1]_, a relatively novel activation function that,
-among other uses, has been applied successfully in image segmentation. [2]_
+among other uses, has been applied successfully in object detection. [2]_
 
 Due to its novelty, it has, at the time of writing, not been implemented in PyTorch, ONNX or ONNX Runtime. We
 demonstrate how DaCeML can be used to optimize this operator.
@@ -126,10 +126,10 @@ dace_mish.backward_sdfg
 # Optimization
 # ------------
 #
-# To improve the runtime, we'll apply 3 transformations.
+# To improve the runtime, we'll apply three transformations.
 #
 # Firstly, we'll use ``SubgraphFusion`` to fuse all the maps into a single kernel.
-# To tackle the second issue, we'll use the :class:`~daceml.transformation.TaskletFusion` transformation. By fusing the
+# To tackle the issue of forwarding intermediate values in backprop, we'll use the :class:`~daceml.transformation.TaskletFusion` transformation. By fusing the
 # tasklets into a single tasklet before running automatic differentiation, the engine will differentiate the whole
 # expression at once, eliminating the need to access the intermediate values. This is an easy way to tune recomputation
 # vs. storage in automatic differentiation.
