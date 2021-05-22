@@ -165,7 +165,7 @@ def argument_codegen(
     # initialize all remaining parameters
     remaining = set(arglist).difference(
         itertools.chain(input_names, output_names))
-    for name in remaining:
+    for name in sorted(remaining):
         # remaining args must be constants
         if name not in clean_weights:
             raise ValueError(
