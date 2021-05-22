@@ -1,4 +1,5 @@
 import collections
+import copy
 import logging
 import itertools
 import os
@@ -234,11 +235,16 @@ class DaceModule(nn.Module):
         with tempfile.TemporaryDirectory() as dir_name:
             export_name = os.path.join(dir_name, "export.onnx")
 
+            # save the state of the model, and restore it after tracing
+            state = copy.deepcopy(self.state_dict())
             torch.onnx.export(
                 self.model,
                 dummy_inputs,
                 export_name,
                 verbose=logging.root.level <= logging.DEBUG,
+                # Some models will require training even when we don't want to train:
+                # when training is set to EVAL, pytorch currently performs an optimization pass ("onnx_eval_peephole")
+                # that renames weights and thus breaks the model in some settings.
                 training=(TrainingMode.TRAINING
                           if self.training else TrainingMode.EVAL),
                 opset_version=12,
@@ -249,6 +255,7 @@ class DaceModule(nn.Module):
                 # anymore, so we disable this. Our CF is more flexible.
                 do_constant_folding=False,
                 keep_initializers_as_inputs=True)
+            self.load_state_dict(state)
 
             onnx_model = infer_shapes(onnx.load(export_name))
             self.onnx_model = onnx_model
