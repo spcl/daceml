@@ -6,6 +6,7 @@ from functools import wraps
 from typing import Optional, Tuple, Callable, OrderedDict, Type
 
 import dace
+from dace import nodes, data
 import onnx
 import torch
 import torch.nn as nn
@@ -34,6 +35,7 @@ class DaceModule(nn.Module):
                              but can be slow).
         :param sdfg_name: the name to give to the sdfg (defaults to ``dace_model``).
         :param auto_optimize: whether to apply automatic optimizations.
+        :param debug_transients: if True, the module will have all transients as outputs.
 
         :Example:
 
@@ -60,6 +62,7 @@ class DaceModule(nn.Module):
                  backward=False,
                  apply_strict: bool = True,
                  auto_optimize: bool = True,
+                 debug_transients: bool = False,
                  sdfg_name: Optional[str] = None):
         super(DaceModule, self).__init__()
 
@@ -72,6 +75,7 @@ class DaceModule(nn.Module):
         self.sdfg_name = sdfg_name or type(module).__name__
         self.auto_optimize = auto_optimize
         self.apply_strict = apply_strict
+        self.debug_transients = debug_transients
 
         self.function = None
 
@@ -174,6 +178,22 @@ class DaceModule(nn.Module):
 
         if self.use_cuda:
             self.model = self.model.cuda()
+
+        # setup debug hook
+        if self.debug_transients:
+
+            def transients_outputs(module):
+                for state in module.sdfg.nodes():
+                    for node in state.nodes():
+                        if (isinstance(node, nodes.AccessNode)
+                                and node.desc(module.sdfg).transient
+                                and not isinstance(node.desc(module.sdfg),
+                                                   data.Scalar)):
+                            module.dace_model.outputs.append(node.data)
+                            node.desc(module.sdfg).transient = False
+
+            self.prepend_post_onnx_hook("make_transients_outputs",
+                                        transients_outputs)
 
         # setup optimization hooks
         if self.auto_optimize:
@@ -283,7 +303,8 @@ def dace_module(moduleclass,
                 backward=False,
                 apply_strict: bool = True,
                 auto_optimize: bool = True,
-                sdfg_name: Optional[str] = None) -> Type[DaceModule]:
+                sdfg_name: Optional[str] = None,
+                debug_transients: bool = False) -> Type[DaceModule]:
     """ Decorator to apply on a definition of a ``torch.nn.Module`` to
         convert it to a data-centric module upon construction.
 
@@ -312,6 +333,7 @@ def dace_module(moduleclass,
                              but can be slow).
         :param auto_optimize: whether to apply automatic optimizations.
         :param sdfg_name: the name to give to the sdfg (defaults to ``dace_model``).
+        :param debug_transients: if True, the module will have all transients as outputs.
     """
     @wraps(moduleclass)
     def _create(*args, **kwargs):
@@ -322,6 +344,7 @@ def dace_module(moduleclass,
                           backward=backward,
                           apply_strict=apply_strict,
                           auto_optimize=auto_optimize,
-                          sdfg_name=sdfg_name)
+                          sdfg_name=sdfg_name,
+                          debug_transients=debug_transients)
 
     return _create
