@@ -12,9 +12,10 @@ from daceml.testing import torch_tensors_close
 
 @pytest.mark.pure
 @pytest.mark.gpu
-def test_mbconv():
+@pytest.mark.parametrize("bn_impl", ["cuDNN", "pure"])
+def test_mbconv(bn_impl):
     with change_default(donnx.ONNXConv, "cuDNN"),\
-        change_default(donnx.ONNXBatchNormalization, "cuDNN"):
+        change_default(donnx.ONNXBatchNormalization, bn_impl):
 
         with torch.no_grad():
             dace_inputs = torch.rand(8, 32, 224, 224).cuda()
