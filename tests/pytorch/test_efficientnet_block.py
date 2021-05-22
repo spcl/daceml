@@ -40,10 +40,13 @@ def test_mbconv(bn_impl):
         CudnnConvolution.default_algorithm = "gemm"
 
         dace_output = dace_model(dace_inputs)
-        torch.transients = dict(zip(dace_model.dace_model.outputs,
-                                    dace_output))
+
         torch_output = torch_model(torch_inputs)
-        torch_tensors_close("output", torch_output, dace_output)
+        torch_tensors_close("output",
+                            torch_output,
+                            dace_output,
+                            rtol=1e-3,
+                            atol=1e-3)
 
         # check that the batch norm running means and so on are written out correctly
         for (dace_name,
