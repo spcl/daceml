@@ -1,9 +1,10 @@
 import collections
 import logging
+import itertools
 import os
 import tempfile
 from functools import wraps
-from typing import Optional, Tuple, Callable, OrderedDict, Type
+from typing import Optional, Tuple, Callable, OrderedDict, Type, Dict, Union
 
 import dace
 from dace import nodes, data
@@ -11,6 +12,7 @@ import onnx
 import torch
 import torch.nn as nn
 from dace.codegen import compiled_sdfg
+from torch import Tensor
 from torch.onnx import TrainingMode
 
 from daceml.pytorch.module_codegen import compile_and_get_function
@@ -277,15 +279,32 @@ class DaceModule(nn.Module):
                 self.compiled_function = compile_and_get_function(
                     self, dummy_inputs)
 
-            parameters_to_pass = tuple(
-                p for n, p in self.model.named_parameters()
-                if n in self.dace_model.inputs)
+            # order the parameters
+            parameters_to_pass = self._call_params()
 
             def forward(*args):
                 return self.compiled_function.function(
                     *self.compiled_function.ptr, *args, *parameters_to_pass)
 
             return forward
+
+    def _call_params(self) -> Tuple[Union[Tensor, nn.Parameter]]:
+        """ Get the parameters that we need to pass to the model, in the correct order. """
+
+        named_params = dict((n, p) for n, p in itertools.chain(
+            self.model.named_parameters(), self.model.named_buffers()))
+
+        # self.dace_model.inputs contains the buffers, parameters and the inputs.
+        # We only want the parameters and buffers
+        model_inputs = self.dace_model.inputs
+
+        # find the index of the first input that is a parameter or buffer
+        start_idx = 0
+        while start_idx < len(
+                model_inputs) and model_inputs[start_idx] not in named_params:
+            start_idx += 1
+
+        return tuple(named_params[i] for i in model_inputs[start_idx:])
 
     def forward(self, *actual_inputs):
         """ Execute the forward pass using the traced ``module``."""

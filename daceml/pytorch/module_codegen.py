@@ -52,15 +52,6 @@ def get_arglist(
         :return: the list of strings that are the argnames to the module, and the list of names of the outputs
     """
     arglist = [clean_onnx_name(i) for i in module.dace_model.inputs]
-
-    # add any parameters that are required
-    named_params = [
-        clean_onnx_name(n) for n, _ in module.model.named_parameters()
-    ]
-    arglist.extend(n for n in named_params
-                   if n not in arglist and n in module.sdfg.arrays
-                   and not module.sdfg.arrays[n].transient)
-
     outputs = [clean_onnx_name(o) for o in module.dace_model.outputs]
     return arglist, outputs
 
@@ -516,9 +507,7 @@ def compile_and_init_sdfgs(
 
     compiled: CompiledSDFG = module.dace_model.compile_and_init()
     # construct the arguments and initialize the SDFG
-    args = tuple(dummy_inputs) + tuple(
-        p.data for n, p in module.model.named_parameters()
-        if n in module.dace_model.inputs)
+    args = tuple(dummy_inputs) + module._call_params()
     inputs, symbols, outputs = module.dace_model._call_args(args=args,
                                                             kwargs={})
 
