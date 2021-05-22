@@ -97,6 +97,55 @@ class DaceModule(nn.Module):
         if dummy_inputs is not None:
             self.function = self._initialize_sdfg(dummy_inputs)
 
+        # setup debug hook
+        if self.debug_transients:
+
+            def transients_outputs(module):
+                for state in module.sdfg.nodes():
+                    for node in state.nodes():
+                        if (isinstance(node, nodes.AccessNode)
+                                and node.desc(module.sdfg).transient
+                                and not isinstance(node.desc(module.sdfg),
+                                                   data.Scalar)):
+                            module.dace_model.outputs.append(node.data)
+                            node.desc(module.sdfg).transient = False
+
+            self.prepend_post_onnx_hook("make_transients_outputs",
+                                        transients_outputs)
+
+        # setup optimization hooks
+        if self.auto_optimize:
+            if self.backward:
+
+                def auto_optimize_backward(fwd_sdfg, bwd_sdfg):
+                    utils.auto_optimize(fwd_sdfg,
+                                        self.use_cuda,
+                                        apply_strict=self.apply_strict)
+                    utils.auto_optimize(bwd_sdfg,
+                                        self.use_cuda,
+                                        apply_strict=self.apply_strict)
+
+                self.append_post_autodiff_hook("auto_optimize",
+                                               auto_optimize_backward)
+            else:
+                self.append_post_onnx_hook(
+                    "auto_optimize", lambda dace_module: utils.auto_optimize(
+                        dace_module.dace_model.sdfg,
+                        self.use_cuda,
+                        apply_strict=self.apply_strict))
+        elif self.apply_strict:
+            if self.backward:
+
+                def apply_strict(fwd_sdfg, bwd_sdfg):
+                    fwd_sdfg.apply_strict_transformations()
+                    bwd_sdfg.apply_strict_transformations()
+
+                self.append_post_autodiff_hook("apply_strict", apply_strict)
+            else:
+                self.append_post_onnx_hook(
+                    "apply_strict", lambda dace_module: dace_module.sdfg.
+                    apply_strict_transformations())
+
     def reset_sdfg(self):
         """ Clear the sdfg so that optimizations are reapplied. """
         self.function = None
@@ -181,55 +230,6 @@ class DaceModule(nn.Module):
 
         if self.use_cuda:
             self.model = self.model.cuda()
-
-        # setup debug hook
-        if self.debug_transients:
-
-            def transients_outputs(module):
-                for state in module.sdfg.nodes():
-                    for node in state.nodes():
-                        if (isinstance(node, nodes.AccessNode)
-                                and node.desc(module.sdfg).transient
-                                and not isinstance(node.desc(module.sdfg),
-                                                   data.Scalar)):
-                            module.dace_model.outputs.append(node.data)
-                            node.desc(module.sdfg).transient = False
-
-            self.prepend_post_onnx_hook("make_transients_outputs",
-                                        transients_outputs)
-
-        # setup optimization hooks
-        if self.auto_optimize:
-            if self.backward:
-
-                def auto_optimize_backward(fwd_sdfg, bwd_sdfg):
-                    utils.auto_optimize(fwd_sdfg,
-                                        self.use_cuda,
-                                        apply_strict=self.apply_strict)
-                    utils.auto_optimize(bwd_sdfg,
-                                        self.use_cuda,
-                                        apply_strict=self.apply_strict)
-
-                self.append_post_autodiff_hook("auto_optimize",
-                                               auto_optimize_backward)
-            else:
-                self.append_post_onnx_hook(
-                    "auto_optimize", lambda dace_module: utils.auto_optimize(
-                        dace_module.dace_model.sdfg,
-                        self.use_cuda,
-                        apply_strict=self.apply_strict))
-        elif self.apply_strict:
-            if self.backward:
-
-                def apply_strict(fwd_sdfg, bwd_sdfg):
-                    fwd_sdfg.apply_strict_transformations()
-                    bwd_sdfg.apply_strict_transformations()
-
-                self.append_post_autodiff_hook("apply_strict", apply_strict)
-            else:
-                self.append_post_onnx_hook(
-                    "apply_strict", lambda dace_module: dace_module.sdfg.
-                    apply_strict_transformations())
 
         # TODO change to StringIO if not too big
         with tempfile.TemporaryDirectory() as dir_name:
