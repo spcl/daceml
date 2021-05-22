@@ -99,15 +99,13 @@ def _cudnn_tensor_descriptor_code(desc: dt.Array, state_field_name: str,
     return init_code, exit_code
 
 
-# yapf: disable
 _DACE_DTYPE_TO_CUDNN_DTYPE = {
     dace.float32: "CUDNN_DATA_FLOAT",
     dace.float64: "CUDNN_DATA_DOUBLE",
     dace.uint8: "CUDNN_DATA_UINT8",
     dace.int8: "CUDNN_DATA_INT8",
-    dace.int32: "CUDNN_DATA_INT32"
+    dace.int32: "CUDNN_DATA_INT32",
 }
-# yapf: enable
 
 
 @op_implementation(op="Conv", name="cuDNN")
@@ -117,17 +115,21 @@ class CudnnConvolution(ONNXForward):
         This node will check for the existence of a _algorithm attribute on the ONNXConv node it is expanding.
         If this attribute does not exist, it will use `CudnnConvolution.default_algorithm`.
 
-        Available algorithm types are:
-        ["implicit_gemm",
-         "implicit_precomp_gemm",
-         "gemm",
-         "direct",
-         "fft",
-         "fft_tiling",
-         "winograd",
-         "winograd_nonfused"]
     """
     default_algorithm = "gemm"
+
+    # choices for algorithms
+    algorithms = [
+        "implicit_gemm",
+        "implicit_precomp_gemm",
+        "gemm",
+        "direct",
+        "fft",
+        "fft_tiling",
+        "winograd",
+        "winograd_nonfused",
+    ]
+
     environments = []
 
     @staticmethod
@@ -512,6 +514,7 @@ class CudnnBatchNormalizationTraining(ONNXForward):
             nstate.add_edge(tasklet, f"_{outp}", outputs[outp], None,
                             nsdfg.make_array_memlet(outp))
 
+        # remove out_mean and out_var. We write these out to the same pointers as the inputs
         remove_output_connector(sdfg, state, node, "out_mean")
         remove_output_connector(sdfg, state, node, "out_var")
         del nsdfg.arrays["out_mean"]

@@ -6,6 +6,7 @@
 #include <stdexcept>  // std::runtime_error
 #include <string>
 #include <unordered_map>
+#include <iostream>
 
 namespace daceml {
 
@@ -15,13 +16,14 @@ namespace daceml {
             if (status != CUDNN_STATUS_SUCCESS) {
                 std::string error_str = "cuDNN failed with error: ";
                 error_str.append(cudnnGetErrorString(status));
-                throw std::runtime_error(error_str);
+                std::cout << error_str << std::endl;
+
             }
         }
 
         static cudnnHandle_t CreateCudnnHandle(int device) {
             if (cudaSetDevice(device) != cudaSuccess) {
-                throw std::runtime_error("Failed to set CUDA device.");
+                std::cout << "cuDNN error: Failed to set CUDA device." << std::endl;
             }
             cudnnHandle_t handle;
             CheckCudnnError(cudnnCreate(&handle));
