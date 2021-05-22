@@ -2,6 +2,7 @@
 import copy
 import dataclasses
 import itertools
+import logging
 import operator
 import os
 from typing import List, Tuple, Callable, Optional, Dict, Union
@@ -21,6 +22,8 @@ from daceml.onnx.converters import clean_onnx_name
 from daceml.onnx.onnx_importer import create_output_array
 from daceml.pytorch.environments import PyTorch
 from daceml.util import is_cuda, platform_library_name
+
+log = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass
@@ -131,7 +134,14 @@ def argument_codegen(
         if isinstance(arglist[name], data.Array) or dt.can_access(
                 dt.ScheduleType.GPU_Device, arglist[name].storage):
             if name in guard_contiguous:
+                if logging.root.level <= logging.DEBUG:
+                    ptr_init_code += f"""
+                    if (!{name}_.is_contiguous()) {{
+                        fprintf(stderr, "{name} was not contiguous!");
+                    }}
+                    """
                 ptr_init_code += '\n' + f"Tensor {name} = {name}_.contiguous();"
+
             ptr_init_code += '\n' + f"{dctype} *{name}_ptr = reinterpret_cast<{dctype}*>({name}.data_ptr<{tctype}>());"
 
         elif isinstance(arglist[name], data.Scalar):
