@@ -12,6 +12,7 @@ from daceml.onnx.forward_implementation_abc import ONNXForward
 from daceml.onnx.nodes.onnx_op import ONNXOp
 from daceml.onnx.op_implementations.utils import op_implementation, program_for_node
 from daceml.util.utils import in_desc_with_name, out_desc_with_name, in_edge_with_name, out_edge_with_name
+from daceml.onnx.op_implementations.utils import python_pure_op_implementation
 
 
 def _2d_sliding_window_index_expr(x_or_y, stride, kernel_size):
@@ -373,3 +374,8 @@ class PureBatchNormalization(ONNXForward):
                            sdfg.make_array_memlet(var_data_name))
 
         return new_sdfg
+
+
+@python_pure_op_implementation
+def GlobalAveragePool(X, Y):
+    Y[:] = np.mean(X, axis=[2, 3])
