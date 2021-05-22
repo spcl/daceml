@@ -10,9 +10,8 @@ import onnx
 from daceml.onnx import ONNXModel
 
 
-def test_efficientnet(gpu, default_implementation, sdfg_name):
-    if gpu:
-        pytest.skip("GPU EfficientNet is currently broken due to Gemv")
+@pytest.mark.ort
+def test_efficientnet(sdfg_name):
     data_directory = os.path.join(os.path.dirname(__file__), "data")
 
     path = os.path.join(data_directory, "efficientnet.onnx")
@@ -26,6 +25,6 @@ def test_efficientnet(gpu, default_implementation, sdfg_name):
 
     model = onnx.load(path)
 
-    dace_model = ONNXModel(sdfg_name, model, cuda=gpu)
+    dace_model = ONNXModel(sdfg_name, model)
     test_input = np.random.rand(1, 3, 224, 224).astype(np.float32)
     dace_model(test_input)

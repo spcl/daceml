@@ -15,7 +15,7 @@ else
 ACTIVATE = . $(VENV_PATH)/bin/activate &&
 endif
 
-.PHONY: clean doc doctest test test-gpu codecov check-formatting check-formatting-names clean-dacecaches
+.PHONY: clean doc doctest test test-gpu codecov check-formatting check-formatting-names clean-dacecaches yapf
 clean:
 	! test -d $(VENV_PATH) || rm -r $(VENV_PATH)
 
@@ -68,6 +68,14 @@ check-formatting:
 		--exclude daceml/onnx/shape_inference/symbolic_shape_infer.py
 	# check for sdfg.view()
 	! git grep '\.view()' -- tests/** daceml/**
+
+yapf:
+	$(ACTIVATE) $(YAPF) \
+		--parallel \
+		--recursive \
+		--in-place \
+		$(SOURCE_FILES) \
+		--exclude daceml/onnx/shape_inference/symbolic_shape_infer.py
 
 check-formatting-names:
 	$(ACTIVATE) $(YAPF) \
