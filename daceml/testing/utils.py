@@ -3,11 +3,9 @@ import torch
 import typing
 
 
-def torch_tensors_close(name, torch_v, dace_v):
+def torch_tensors_close(name, torch_v, dace_v, rtol=1e-5, atol=1e-4):
     """ Assert that the two torch tensors are close. Prints a nice error string if not.
     """
-    rtol = 1e-5
-    atol = 1e-4
     if not torch.allclose(
             torch_v, dace_v, rtol=rtol, atol=atol, equal_nan=True):
         print(name + " was not close")
