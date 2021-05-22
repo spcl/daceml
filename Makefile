@@ -71,6 +71,7 @@ check-formatting:
 
 yapf:
 	$(ACTIVATE) $(YAPF) \
+		--parallel \
 		--recursive \
 		--in-place \
 		$(SOURCE_FILES) \
