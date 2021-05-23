@@ -56,6 +56,15 @@ def add_connecting_access_nodes(graph: gr.OrderedDiGraph):
         graph.remove_edge(e)
 
 
+def onnx_constant_or_none(
+        sdfg: dace.SDFG, node_or_name: Union[nodes.AccessNode,
+                                             str]) -> Optional[Any]:
+    name = node_or_name if isinstance(node_or_name, str) else node_or_name.data
+    if name not in sdfg._parent_onnx_model.clean_weights:
+        return None
+    return sdfg._parent_onnx_model.clean_weights[name].item()
+
+
 class ReplacementTransformation(transformation.Transformation):
     @classmethod
     def pattern(cls) -> gr.OrderedDiGraph[nodes.Node, dace.Memlet]:
@@ -170,42 +179,3 @@ class ReplacementTransformation(transformation.Transformation):
             if isinstance(n, nodes.AccessNode) and state.degree(n) == 0
         ])
         return new_node
-
-
-"""
-Example transformation that lifts Layer Normalization out of the exported torch
-ONNX representation:
-
-@registry.autoregister_params(singlestate=True)
-class LiftLayerNorm(ReplacementTransformation):
-    @classmethod
-    def pattern(cls):
-        path = make_onnx_path(nodes.AccessNode, onnx_op.ONNXReduceMean,
-                              onnx_op.ONNXSub, onnx_op.ONNXPow,
-                              onnx_op.ONNXReduceMean, onnx_op.ONNXAdd,
-                              onnx_op.ONNXSqrt, onnx_op.ONNXDiv,
-                              onnx_op.ONNXMul, onnx_op.ONNXAdd)
-        path.add_edge(path[0], path[2])  # x as an input of x-mu
-        path.add_edge(path[2], path[7])  # x-mu as an input of the division
-        return path
-
-    def replacement(self, path, sdfg, state):
-        shape = path[0].desc(sdfg).shape
-        dtype = path[0].desc(sdfg).dtype
-        axis = path[1].axes[0]
-        norm_shape = list(shape)
-        norm_shape[axis] = 1
-        ln_node = LayerNorm("detected_layernorm", axis)
-        return (
-            ln_node,
-            dict(
-                # Reconnection instructions
-                X=(path[1], 'data'),
-                weight=(path[8], 'B'),
-                bias=(path[9], 'B'),
-                Y=(path[9], 'C'),
-                # New arrays
-                mean=(None, dtype[norm_shape]),
-                inv_std_var=(None, dtype[norm_shape]),
-            ))
-"""
