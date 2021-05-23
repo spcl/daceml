@@ -447,68 +447,31 @@ def expand_node(node, state, sdfg):
 
     tasklet_code = tasklet_setup_code + tasklet_code + tasklet_cleanup_code
 
-    class Environment:
-        cmake_minimum_version = None
-        cmake_packages = []
-        cmake_variables = {}
-        cmake_includes = []
-        cmake_libraries = []
-        cmake_compile_flags = []
-        cmake_link_flags = []
-        cmake_files = []
-        state_fields = [
+    if ONNXRuntimeCUDA.use_streams:
+        raise ValueError("Currently not supported anymore.")
+
+    env_init_code += f"""
+                    __ort_check_status(__state->ort_api, __state->ort_api->CreateExecutableKernel(
+                    __state->ort_session, __state->ort_context_{unique_id}, /*provider_index=*/{provider_index},
+                     &__state->ort_kernel_{unique_id}));
+                    """
+    tasklet = nd.Tasklet(
+        unique_id + '_onnx_code',
+        in_connectors,
+        out_connectors,
+        tasklet_code,
+        state_fields=[
             "OrtExecutableKernelContext *ort_context_{};\n".format(unique_id),
             "OrtExecutableKernel *ort_kernel_{};\n".format(unique_id),
-        ]
-        dependencies = [
-            ONNXRuntimeCUDA if node.schedule in dtypes.GPU_SCHEDULES +
-            [dtypes.ScheduleType.GPU_Default] else ONNXRuntime
-        ]
-        headers = []
+        ],
+        code_init=env_init_code,
+        code_exit=env_finalize_code,
+        language=dace.dtypes.Language.CPP)
 
-        @staticmethod
-        def init_code(sdfg):
-            cands = [
-                n for n, _ in sdfg.all_nodes_recursive()
-                if n.label == unique_id + "_onnx_code"
-            ]
-            if len(cands) != 1:
-                raise ValueError(
-                    f"Expected to find a unique node for this environment, found {len(cands)}"
-                )
-            node = cands[0]
-
-            if hasattr(
-                    node, "_cuda_stream"
-            ) and node._cuda_stream > ONNXRuntimeCUDA.max_concurrent_streams:
-                raise ValueError(
-                    f"This environment was initialized with max_concurrent_streams="
-                    f"{ONNXRuntimeCUDA.max_concurrent_streams}, but node {node} had stream id "
-                    f"{node._cuda_stream}")
-            if ONNXRuntimeCUDA.use_streams:
-                used_provider_index = 0 if provider_index == 0 or not hasattr(
-                    node, "_cuda_stream") else 1 + node._cuda_stream
-            else:
-                used_provider_index = provider_index
-
-            # delay this until codegen so that we know what cuda stream this node should run on
-            return env_init_code + f"""
-                __ort_check_status(__state->ort_api, __state->ort_api->CreateExecutableKernel(
-                __state->ort_session, __state->ort_context_{unique_id}, /*provider_index=*/{used_provider_index},
-                 &__state->ort_kernel_{unique_id}));
-                """
-
-        finalize_code = env_finalize_code
-
-    Environment.__name__ = unique_id + "_environment"
-    dace.library.environment(Environment)
-
-    tasklet = nd.Tasklet(unique_id + '_onnx_code',
-                         in_connectors,
-                         out_connectors,
-                         tasklet_code,
-                         language=dace.dtypes.Language.CPP)
-    tasklet.environments = {Environment.full_class_path()}
+    env = ONNXRuntimeCUDA if node.schedule in dtypes.GPU_SCHEDULES + [
+        dtypes.ScheduleType.GPU_Default
+    ] else ONNXRuntime
+    tasklet.environments = {env.full_class_path()}
 
     nsdfg = dace.SDFG("nested_{}".format(unique_id))
     nstate = nsdfg.add_state()
