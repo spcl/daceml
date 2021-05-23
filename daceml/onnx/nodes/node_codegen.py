@@ -455,6 +455,10 @@ def expand_node(node, state, sdfg):
                     __state->ort_session, __state->ort_context_{unique_id}, /*provider_index=*/{provider_index},
                      &__state->ort_kernel_{unique_id}));
                     """
+
+    env_init_code = "{\n" + env_init_code + "\n}"
+    env_finalize_code = "{\n" + env_finalize_code + "\n}"
+
     tasklet = nd.Tasklet(
         unique_id + '_onnx_code',
         in_connectors,

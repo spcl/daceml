@@ -297,6 +297,9 @@ class CudnnConvolution(ONNXForward):
         ));
         """
 
+        init_code = "{\n" + init_code + "\n}"
+        finalize_code = "{\n" + finalize_code + "\n}"
+
         tasklet = nstate.add_tasklet(
             unique_id, {
                 "_X": dace.pointer(T),
@@ -460,6 +463,10 @@ class CudnnBatchNormalizationTraining(ONNXForward):
 
         in_connectors = ["X", "B", "scale", "in_mean", "in_var"]
         out_connectors = ["Y", "saved_mean", "saved_var"]
+
+        init_code = "{\n" + init_code + "\n}"
+        finalize_code = "{\n" + finalize_code + "\n}"
+
         tasklet = nstate.add_tasklet(
             unique_id, {f"_{i}": dace.pointer(T)
                         for i in in_connectors},
