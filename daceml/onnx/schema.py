@@ -84,7 +84,7 @@ def onnx_representation(represents, **mapping):
             return cls(**constructor_args)
 
         @classmethod
-        def from_json(cls, json, parent=None):
+        def from_json(cls, json, context=None):
 
             constructor_args = {
                 name: prop.from_json(json[name])
@@ -93,7 +93,9 @@ def onnx_representation(represents, **mapping):
             return cls(**constructor_args)
 
         def to_json(self):
-            return dace.serialize.all_properties_to_json(self)
+            serialized = dace.serialize.all_properties_to_json(self)
+            serialized["type"] = cls.__name__
+            return serialized
 
         cls.__init__ = __init__
 
