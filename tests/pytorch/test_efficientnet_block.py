@@ -10,6 +10,7 @@ import daceml.onnx as donnx
 from daceml.onnx.op_implementations.cudnn_implementations import CudnnConvolution
 from daceml.pytorch import DaceModule
 from daceml.testing import torch_tensors_close
+from daceml.util import expand_onnx_nodes
 
 
 @pytest.mark.pure
