@@ -269,9 +269,10 @@ class PureConv2D(ONNXForward):
 
             def conv(X, Y, W):
                 zero_init(Y)
-                for b, m, out_x, out_y, cin, hx, hy in dace.map[0:batch_size, 0:num_filters,
-                                                       0:output_size_y,
-                                                       0:output_size_x, 0:num_channels, 0:filter_hx, 0:filter_hy]:
+                for b, m, out_x, out_y, cin, hx, hy in dace.map[
+                        0:batch_size, 0:num_filters, 0:output_size_y,
+                        0:output_size_x, 0:num_channels, 0:filter_hx,
+                        0:filter_hy]:
                     with dace.tasklet:
                         filter << W[m, cin, hx, hy]
                         image << X[b, cin, hx + out_x, hy + out_y]
@@ -281,35 +282,46 @@ class PureConv2D(ONNXForward):
 
             def conv(X, Y, W, B):
                 broadcast(Y, B)
-                for b, m, out_x, out_y, cin, hx, hy in dace.map[0:batch_size, 0:num_filters,
-                                                   0:output_size_y,
-                                                   0:output_size_x, 0:num_channels, 0:filter_hx, 0:filter_hy]:
+                for b, m, out_x, out_y, cin, hx, hy in dace.map[
+                        0:batch_size, 0:num_filters, 0:output_size_y,
+                        0:output_size_x, 0:num_channels, 0:filter_hx,
+                        0:filter_hy]:
                     with dace.tasklet:
                         filter << W[m, cin, hx, hy]
                         image << X[b, cin, hx + out_x, hy + out_y]
                         out >> Y(1, lambda x, y: x + y)[b, m, out_x, out_y]
                         out = filter * image
+
         nsdfg = program_for_node(conv, sdfg, state, node)
 
         compute_state = nsdfg.node(1)
         nsdfg.apply_transformations(MapExpansion, states=[compute_state])
 
-        read_X = [n for n in compute_state.nodes() if isinstance(n, nodes.AccessNode) and n.data == "X"]
+        read_X = [
+            n for n in compute_state.nodes()
+            if isinstance(n, nodes.AccessNode) and n.data == "X"
+        ]
         assert len(read_X) == 1
         read_X = read_X[0]
         path = compute_state.memlet_path(compute_state.out_edges(read_X)[0])
 
-        entry_nodes = [e.dst for e in path if isinstance(e.dst, nodes.EntryNode)]
+        entry_nodes = [
+            e.dst for e in path if isinstance(e.dst, nodes.EntryNode)
+        ]
 
         # merge the first 4 maps
         me = entry_nodes[0]
         for i in range(1, 4):
-            me, _ = MapCollapse.apply_to(nsdfg, _outer_map_entry=me, _inner_map_entry=entry_nodes[i])
+            me, _ = MapCollapse.apply_to(nsdfg,
+                                         _outer_map_entry=me,
+                                         _inner_map_entry=entry_nodes[i])
 
         # merge the second 3 maps
         me = entry_nodes[4]
         for i in range(5, 7):
-            me, _ = MapCollapse.apply_to(nsdfg, _outer_map_entry=me, _inner_map_entry=entry_nodes[i])
+            me, _ = MapCollapse.apply_to(nsdfg,
+                                         _outer_map_entry=me,
+                                         _inner_map_entry=entry_nodes[i])
 
         return nsdfg
 
@@ -363,7 +375,8 @@ class PureBatchNormalization(ONNXForward):
                                          axis=(0, 2, 3)) / N
             saved_var_eps = np.reshape(saved_var + eps, broadcast_shape)
 
-            normalized = X_minus_mean * dace.elementwise(lambda x: dace.float32(1.0) / sqrt(x), saved_var_eps)
+            normalized = X_minus_mean * dace.elementwise(
+                lambda x: dace.float32(1.0) / sqrt(x), saved_var_eps)
 
             scale_reshaped = np.reshape(scale, broadcast_shape)
             bias_reshaped = np.reshape(B, broadcast_shape)

@@ -87,8 +87,7 @@ def out_edge_with_name(node: nd.Node, state: SDFGState,
     return cands[0]
 
 
-def find_str_not_in_set(existing: Set[str],
-                        target_str: Optional[str]) -> str:
+def find_str_not_in_set(existing: Set[str], target_str: Optional[str]) -> str:
     """ Try to find a new str that is not in the set.
 
         :param existing: the existing strs.
@@ -106,7 +105,8 @@ def find_str_not_in_set(existing: Set[str],
     return base_name + "_" + str(i)
 
 
-def expand_onnx_nodes(sdfg: dace.SDFG, predicate: Optional[Callable[[nd.Node], bool]] = None):
+def expand_onnx_nodes(sdfg: dace.SDFG,
+                      predicate: Optional[Callable[[nd.Node], bool]] = None):
     """ Recursively expand all onnx library nodes in the SDFG, resulting in an SDFG that can be optimized by
         dace transformations. Will also specialize dace matmuls.
 

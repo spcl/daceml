@@ -46,7 +46,8 @@ def _gen_attr_init_code(kernel_context: str, attr: ONNXAttribute,
 
     def value_to_str(value):
         return '"{}"'.format(
-            value) if attr.attribute_type == ONNXAttributeType.String else str(value)
+            value) if attr.attribute_type == ONNXAttributeType.String else str(
+                value)
 
     if attr.attribute_type in [
             ONNXAttributeType.Int, ONNXAttributeType.Float,
