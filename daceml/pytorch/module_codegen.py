@@ -2,6 +2,7 @@
 import copy
 import dataclasses
 import itertools
+import logging
 import operator
 import os
 from typing import List, Tuple, Callable, Optional, Dict, Union
@@ -21,6 +22,8 @@ from daceml.onnx.converters import clean_onnx_name
 from daceml.onnx.onnx_importer import create_output_array
 from daceml.pytorch.environments import PyTorch
 from daceml.util import is_cuda, platform_library_name
+
+log = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass
@@ -52,15 +55,6 @@ def get_arglist(
         :return: the list of strings that are the argnames to the module, and the list of names of the outputs
     """
     arglist = [clean_onnx_name(i) for i in module.dace_model.inputs]
-
-    # add any parameters that are required
-    named_params = [
-        clean_onnx_name(n) for n, _ in module.model.named_parameters()
-    ]
-    arglist.extend(n for n in named_params
-                   if n not in arglist and n in module.sdfg.arrays
-                   and not module.sdfg.arrays[n].transient)
-
     outputs = [clean_onnx_name(o) for o in module.dace_model.outputs]
     return arglist, outputs
 
@@ -140,7 +134,14 @@ def argument_codegen(
         if isinstance(arglist[name], data.Array) or dt.can_access(
                 dt.ScheduleType.GPU_Device, arglist[name].storage):
             if name in guard_contiguous:
+                if logging.root.level <= logging.DEBUG:
+                    ptr_init_code += f"""
+                    if (!{name}_.is_contiguous()) {{
+                        fprintf(stderr, "{name} was not contiguous!");
+                    }}
+                    """
                 ptr_init_code += '\n' + f"Tensor {name} = {name}_.contiguous();"
+
             ptr_init_code += '\n' + f"{dctype} *{name}_ptr = reinterpret_cast<{dctype}*>({name}.data_ptr<{tctype}>());"
 
         elif isinstance(arglist[name], data.Scalar):
@@ -165,7 +166,7 @@ def argument_codegen(
     # initialize all remaining parameters
     remaining = set(arglist).difference(
         itertools.chain(input_names, output_names))
-    for name in remaining:
+    for name in sorted(remaining):
         # remaining args must be constants
         if name not in clean_weights:
             raise ValueError(
@@ -483,7 +484,7 @@ def compile_and_get_function(module: 'daceml.pytorch.DaceModule',
     code = indent_code(code)
 
     # build the PyTorch module
-    libname = f"torch_{module.sdfg.name}"
+    libname = f"torch_{compiled.sdfg.name}"
     program = CodeObject(libname,
                          code,
                          "cpp",
@@ -501,7 +502,7 @@ def compile_and_get_function(module: 'daceml.pytorch.DaceModule',
                      platform_library_name(libname)))
 
     torch_function = operator.attrgetter(
-        f"daceml_{module.sdfg.name}.{module.sdfg.name}")(torch.ops)
+        f"daceml_{compiled.sdfg.name}.{compiled.sdfg.name}")(torch.ops)
 
     result = CompiledTorchFunction(function=torch_function,
                                    compiled_sdfgs=compiled_sdfgs,
@@ -516,9 +517,7 @@ def compile_and_init_sdfgs(
 
     compiled: CompiledSDFG = module.dace_model.compile_and_init()
     # construct the arguments and initialize the SDFG
-    args = tuple(dummy_inputs) + tuple(
-        p.data for n, p in module.model.named_parameters()
-        if n in module.dace_model.inputs)
+    args = tuple(dummy_inputs) + module._call_params()
     inputs, symbols, outputs = module.dace_model._call_args(args=args,
                                                             kwargs={})
 

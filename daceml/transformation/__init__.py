@@ -1,4 +1,6 @@
 from .constant_folding import ConstantFolding
-from .parameter_to_transient import parameter_to_transient
 from .input_to_constant import InputToConstant
+from .parameter_to_transient import parameter_to_transient
+from .tasklet_fusion import TaskletFusion
+from .pad_conv_fusion import PadConvFusion
 from .reshape_elimination import ReshapeElimination, expand_library_nodes_except_reshape

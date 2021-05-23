@@ -1,15 +1,19 @@
 import collections
+import copy
 import logging
+import itertools
 import os
 import tempfile
 from functools import wraps
-from typing import Optional, Tuple, Callable, OrderedDict, Type
+from typing import Optional, Tuple, Callable, OrderedDict, Type, Dict, Union
 
 import dace
+from dace import nodes, data
 import onnx
 import torch
 import torch.nn as nn
 from dace.codegen import compiled_sdfg
+from torch import Tensor
 from torch.onnx import TrainingMode
 
 from daceml.pytorch.module_codegen import compile_and_get_function
@@ -34,6 +38,7 @@ class DaceModule(nn.Module):
                              but can be slow).
         :param sdfg_name: the name to give to the sdfg (defaults to ``dace_model``).
         :param auto_optimize: whether to apply automatic optimizations.
+        :param debug_transients: if True, the module will have all transients as outputs.
 
         :Example:
 
@@ -60,6 +65,7 @@ class DaceModule(nn.Module):
                  backward=False,
                  apply_strict: bool = True,
                  auto_optimize: bool = True,
+                 debug_transients: bool = False,
                  sdfg_name: Optional[str] = None):
         super(DaceModule, self).__init__()
 
@@ -72,6 +78,7 @@ class DaceModule(nn.Module):
         self.sdfg_name = sdfg_name or type(module).__name__
         self.auto_optimize = auto_optimize
         self.apply_strict = apply_strict
+        self.debug_transients = debug_transients
 
         self.function = None
 
@@ -89,6 +96,55 @@ class DaceModule(nn.Module):
 
         if dummy_inputs is not None:
             self.function = self._initialize_sdfg(dummy_inputs)
+
+        # setup debug hook
+        if self.debug_transients:
+
+            def transients_outputs(module):
+                for state in module.sdfg.nodes():
+                    for node in state.nodes():
+                        if (isinstance(node, nodes.AccessNode)
+                                and node.desc(module.sdfg).transient
+                                and not isinstance(node.desc(module.sdfg),
+                                                   data.Scalar)):
+                            module.dace_model.outputs.append(node.data)
+                            node.desc(module.sdfg).transient = False
+
+            self.prepend_post_onnx_hook("make_transients_outputs",
+                                        transients_outputs)
+
+        # setup optimization hooks
+        if self.auto_optimize:
+            if self.backward:
+
+                def auto_optimize_backward(fwd_sdfg, bwd_sdfg):
+                    utils.auto_optimize(fwd_sdfg,
+                                        self.use_cuda,
+                                        apply_strict=self.apply_strict)
+                    utils.auto_optimize(bwd_sdfg,
+                                        self.use_cuda,
+                                        apply_strict=self.apply_strict)
+
+                self.append_post_autodiff_hook("auto_optimize",
+                                               auto_optimize_backward)
+            else:
+                self.append_post_onnx_hook(
+                    "auto_optimize", lambda dace_module: utils.auto_optimize(
+                        dace_module.dace_model.sdfg,
+                        self.use_cuda,
+                        apply_strict=self.apply_strict))
+        elif self.apply_strict:
+            if self.backward:
+
+                def apply_strict(fwd_sdfg, bwd_sdfg):
+                    fwd_sdfg.apply_strict_transformations()
+                    bwd_sdfg.apply_strict_transformations()
+
+                self.append_post_autodiff_hook("apply_strict", apply_strict)
+            else:
+                self.append_post_onnx_hook(
+                    "apply_strict", lambda dace_module: dace_module.sdfg.
+                    apply_strict_transformations())
 
     def reset_sdfg(self):
         """ Clear the sdfg so that optimizations are reapplied. """
@@ -175,48 +231,20 @@ class DaceModule(nn.Module):
         if self.use_cuda:
             self.model = self.model.cuda()
 
-        # setup optimization hooks
-        if self.auto_optimize:
-            if self.backward:
-
-                def auto_optimize_backward(fwd_sdfg, bwd_sdfg):
-                    utils.auto_optimize(fwd_sdfg,
-                                        self.use_cuda,
-                                        apply_strict=self.apply_strict)
-                    utils.auto_optimize(bwd_sdfg,
-                                        self.use_cuda,
-                                        apply_strict=self.apply_strict)
-
-                self.prepend_post_autodiff_hook("auto_optimize",
-                                                auto_optimize_backward)
-            else:
-                self.prepend_post_onnx_hook(
-                    "auto_optimize", lambda dace_module: utils.auto_optimize(
-                        dace_module.dace_model.sdfg,
-                        self.use_cuda,
-                        apply_strict=self.apply_strict))
-        elif self.apply_strict:
-            if self.backward:
-
-                def apply_strict(fwd_sdfg, bwd_sdfg):
-                    fwd_sdfg.apply_strict_transformations()
-                    bwd_sdfg.apply_strict_transformations()
-
-                self.prepend_post_autodiff_hook("apply_strict", apply_strict)
-            else:
-                self.prepend_post_onnx_hook(
-                    "apply_strict", lambda dace_module: dace_module.sdfg.
-                    apply_strict_transformations())
-
         # TODO change to StringIO if not too big
         with tempfile.TemporaryDirectory() as dir_name:
             export_name = os.path.join(dir_name, "export.onnx")
 
+            # save the state of the model, and restore it after tracing
+            state = copy.deepcopy(self.state_dict())
             torch.onnx.export(
                 self.model,
                 dummy_inputs,
                 export_name,
                 verbose=logging.root.level <= logging.DEBUG,
+                # Some models will require training even when we don't want to train:
+                # when training is set to EVAL, pytorch currently performs an optimization pass ("onnx_eval_peephole")
+                # that renames weights and thus breaks the model in some settings.
                 training=(TrainingMode.TRAINING
                           if self.training else TrainingMode.EVAL),
                 opset_version=12,
@@ -227,6 +255,7 @@ class DaceModule(nn.Module):
                 # anymore, so we disable this. Our CF is more flexible.
                 do_constant_folding=False,
                 keep_initializers_as_inputs=True)
+            self.load_state_dict(state)
 
             onnx_model = infer_shapes(onnx.load(export_name))
             self.onnx_model = onnx_model
@@ -258,15 +287,32 @@ class DaceModule(nn.Module):
                 self.compiled_function = compile_and_get_function(
                     self, dummy_inputs)
 
-            parameters_to_pass = tuple(
-                p for n, p in self.model.named_parameters()
-                if n in self.dace_model.inputs)
+            # order the parameters
+            parameters_to_pass = self._call_params()
 
             def forward(*args):
                 return self.compiled_function.function(
                     *self.compiled_function.ptr, *args, *parameters_to_pass)
 
             return forward
+
+    def _call_params(self) -> Tuple[Union[Tensor, nn.Parameter]]:
+        """ Get the parameters that we need to pass to the model, in the correct order. """
+
+        named_params = dict((n, p) for n, p in itertools.chain(
+            self.model.named_parameters(), self.model.named_buffers()))
+
+        # self.dace_model.inputs contains the buffers, parameters and the inputs.
+        # We only want the parameters and buffers
+        model_inputs = self.dace_model.inputs
+
+        # find the index of the first input that is a parameter or buffer
+        start_idx = 0
+        while start_idx < len(
+                model_inputs) and model_inputs[start_idx] not in named_params:
+            start_idx += 1
+
+        return tuple(named_params[i] for i in model_inputs[start_idx:])
 
     def forward(self, *actual_inputs):
         """ Execute the forward pass using the traced ``module``."""
@@ -284,7 +330,8 @@ def dace_module(moduleclass,
                 backward=False,
                 apply_strict: bool = True,
                 auto_optimize: bool = True,
-                sdfg_name: Optional[str] = None) -> Type[DaceModule]:
+                sdfg_name: Optional[str] = None,
+                debug_transients: bool = False) -> Type[DaceModule]:
     """ Decorator to apply on a definition of a ``torch.nn.Module`` to
         convert it to a data-centric module upon construction.
 
@@ -313,6 +360,7 @@ def dace_module(moduleclass,
                              but can be slow).
         :param auto_optimize: whether to apply automatic optimizations.
         :param sdfg_name: the name to give to the sdfg (defaults to ``dace_model``).
+        :param debug_transients: if True, the module will have all transients as outputs.
     """
     @wraps(moduleclass)
     def _create(*args, **kwargs):
@@ -323,6 +371,7 @@ def dace_module(moduleclass,
                           backward=backward,
                           apply_strict=apply_strict,
                           auto_optimize=auto_optimize,
-                          sdfg_name=sdfg_name)
+                          sdfg_name=sdfg_name,
+                          debug_transients=debug_transients)
 
     return _create

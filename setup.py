@@ -37,7 +37,7 @@ setup(
         exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
     package_data={'': (['*.cpp'] + runtime_files)},
     install_requires=[
-        'dace@git+https://github.com/spcl/dace.git@a34452d', 'onnx == 1.7.0',
+        'dace@git+https://github.com/spcl/dace.git@4c6a674', 'onnx == 1.7.0',
         'torch', 'dataclasses; python_version < "3.7"'
     ],
     # install with pip and --find-links (see Makefile)
@@ -45,7 +45,7 @@ setup(
     extras_require={
         'testing': [
             'coverage', 'pytest', 'yapf', 'pytest-cov', 'transformers',
-            'pytest-xdist', 'torchvision', 'tabulate'
+            'pytest-xdist', 'torchvision', 'tabulate', 'efficientnet_pytorch'
         ],
         'docs': [
             'sphinx==3.2.1', 'sphinx_rtd_theme==0.5.2',

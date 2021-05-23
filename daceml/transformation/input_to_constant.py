@@ -1,9 +1,10 @@
 from typing import Dict
 
 import dace
-from dace import registry, dtypes, properties, memlet as mm
+from dace import registry, dtypes, properties, memlet as mm, symbolic
 from dace.sdfg import nodes
 from dace.sdfg import utils as sdutil
+from dace.sdfg.replace import replace_properties
 from dace.transformation import transformation as xf
 
 from daceml.onnx import ONNXModel
@@ -122,6 +123,18 @@ def print_tree(tree):
         "\n |\n +- {}".format(print_tree(c)) for c in tree.children)
 
 
+def _replace_in_tasklet(tasklet: nodes.Tasklet, name: str, new_name: str):
+    symname = symbolic.symbol(name)
+    symrepl = {
+        symname:
+        symbolic.pystr_to_symbolic(new_name)
+        if isinstance(new_name, str) else new_name
+    }
+
+    # Replace in node properties
+    replace_properties(tasklet, symrepl, name, new_name)
+
+
 @registry.autoregister_params(singlestate=True)
 @properties.make_properties
 class InputToConstant(xf.Transformation):
@@ -172,7 +185,6 @@ class InputToConstant(xf.Transformation):
                 if child.edge.dst.language not in [dtypes.Language.Python]:
                     return False
 
-        print(InputToConstant.match_to_str(state, candidate))
         return True
 
     @staticmethod
@@ -219,11 +231,11 @@ class InputToConstant(xf.Transformation):
                 if len(data.shape) > 0:
                     access_str = "{}[{}]".format(data_name,
                                                  root_edge.data.subset)
-                else:  # scalar
-                    access_str = "{}".format(data_name)
-                tasklet.code = properties.CodeBlock(
-                    "{} = {}\n".format(conn_name, access_str) +
-                    tasklet.code.as_string, tasklet.language)
+                    tasklet.code = properties.CodeBlock(
+                        "{} = {}\n".format(conn_name, access_str) +
+                        tasklet.code.as_string, tasklet.language)
+                else:  # if scalar, inline constant into tasklet contents
+                    _replace_in_tasklet(tasklet, conn_name, data_name)
 
                 # wipe the memlets off the tree
                 state.remove_memlet_path(root_edge)

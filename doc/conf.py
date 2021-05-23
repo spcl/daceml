@@ -56,9 +56,23 @@ autoclass_content = 'both'
 
 build_fpga_docs = "DACEML_DOC_BUILD_FPGA" in os.environ and os.environ[
     "DACEML_DOC_BUILD_FPGA"] == 'True'
+build_cuda_docs = "DACEML_DOC_BUILD_CUDA" in os.environ and os.environ[
+    "DACEML_DOC_BUILD_CUDA"] == 'True'
+if build_cuda_docs and build_fpga_docs:
+    pattern = "/plot_"
+elif not build_cuda_docs and build_fpga_docs:
+    pattern = "/plot(?!_cuda)_"
+elif build_cuda_docs and not build_fpga_docs:
+    pattern = "/plot(?!_fpga)_"
+else:
+    pattern = "/plot(?!(_fpga)|(_cuda))_"
+
+print()
+print(pattern)
+
 sphinx_gallery_conf = {
     'default_thumb_file': 'dace.png',
-    'filename_pattern': '/plot_' if build_fpga_docs else '/plot_(?!fpga)'
+    'filename_pattern': pattern
 }
 
 
