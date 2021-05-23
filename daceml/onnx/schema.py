@@ -180,23 +180,23 @@ _ATTR_TYPE_TO_PYTHON_TYPE = {
 }
 
 
-@onnx_representation(onnx.defs.OpSchema.Attribute)
+@onnx_representation(onnx.defs.OpSchema.Attribute, attribute_type='type')
 class ONNXAttribute:
     """ Python representation of an ONNX attribute. """
 
     name = Property(dtype=str, desc="The attribute name")
     description = Property(dtype=str, desc="A description this attribute")
     required = Property(dtype=bool, desc="Whether this attribute is required")
-    type = Property(choices=ONNXAttributeType,
-                    desc="The type of this attribute",
-                    default=ONNXAttributeType.Int)
+    attribute_type = Property(choices=ONNXAttributeType,
+                              desc="The type of this attribute",
+                              default=ONNXAttributeType.Int)
     default_value = Property(dtype=None,
                              desc="The default value of this attribute",
                              default=None,
                              allow_none=True)
 
     def validate(self):
-        if self.required and self.type == ONNXAttributeType.Unsupported:
+        if self.required and self.attribute_type == ONNXAttributeType.Unsupported:
             raise NotImplementedError(
                 "Required attribute '{}' has an unsupported type".format(
                     self.name))
