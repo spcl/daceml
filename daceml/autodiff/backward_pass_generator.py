@@ -679,7 +679,8 @@ class BackwardPassGenerator:
                             access_intermediate = self.backward_state.add_access(
                                 intermediate_name)
 
-                            edge.data.data = intermediate_name
+                            for mte in self.backward_state.memlet_tree(edge):
+                                mte.data.data = intermediate_name
                             new_edge = self.backward_state.add_edge(
                                 edge.src, edge.src_conn, access_intermediate,
                                 None, edge.data)
@@ -711,8 +712,8 @@ class BackwardPassGenerator:
                             self.backward_state.in_edges(reversed_node)[0])
 
             except AutoDiffException as e:
-                raise AutoDiffException(
-                    "Failed at node {}".format(node)) from e
+                raise AutoDiffException("Failed at node {}: {}".format(
+                    node, str(e))) from e
 
     def _set_wcr_sum_if_needed(self, edge: dgraph.MultiConnectorEdge):
         """ Set the WCR to sum for all edges along the path of edge, if needed.
