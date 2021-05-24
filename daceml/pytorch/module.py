@@ -53,8 +53,6 @@ class DaceModule(nn.Module):
             tensor([0., 0.])
             >>> dace_module = DaceModule(module)
             >>> dace_module(torch.ones(2))
-            Automatically expanded library node "Log_0" with implementation "onnxruntime".
-            Automatically expanded library node "Sqrt_1" with implementation "onnxruntime".
             tensor([0., 0.])
     """
     def __init__(self,
@@ -345,8 +343,6 @@ def dace_module(moduleclass,
             ...        return x
             >>> module = MyDecoratedModule()
             >>> module(torch.ones(2))
-            Automatically expanded library node "Log_0" with implementation "onnxruntime".
-            Automatically expanded library node "Sqrt_1" with implementation "onnxruntime".
             tensor([0., 0.])
 
         :param moduleclass: the model to wrap.

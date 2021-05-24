@@ -190,11 +190,6 @@ ONNX models can be imported using the :class:`~daceml.onnx.ONNXModel` frontend.
     test_input = np.random.rand(1, 3, 224, 224).astype(np.float32)
     dace_model(test_input)
 
-.. testoutput::
-    :hide:
-    :options: +ELLIPSIS
-
-    ...
 
 Schema Representation & Protobuf conversion
 -------------------------------------------

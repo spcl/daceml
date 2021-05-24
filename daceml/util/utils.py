@@ -126,9 +126,10 @@ def expand_onnx_nodes(sdfg: dace.SDFG,
             elif isinstance(node, ONNXOp) or isinstance(node, blas.MatMul):
                 if predicate is None or predicate(node):
                     impl_name = node.expand(sdfg, state)
-                    print(
-                        "Automatically expanded library node \"{}\" with implementation \"{}\"."
-                        .format(str(node), impl_name))
+                    if dace.Config.get_bool('debugprint'):
+                        print(
+                            "Automatically expanded library node \"{}\" with implementation \"{}\"."
+                            .format(str(node), impl_name))
                     # We made a copy of the original list of nodes, so we keep
                     # iterating even though this list has now changed
                     expanded_something = True

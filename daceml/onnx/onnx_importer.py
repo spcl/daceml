@@ -91,11 +91,6 @@ class ONNXModel:
                 test_input = np.random.rand(1, 3, 224, 224).astype(np.float32)
                 dace_model(test_input)
 
-            .. testoutput::
-                :hide:
-                :options: +ELLIPSIS
-
-                ...
     """
     def __init__(self,
                  name: str,
