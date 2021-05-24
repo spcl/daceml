@@ -32,9 +32,3 @@ A PyTorch ``nn.Module`` can be imported using the :class:`~daceml.pytorch.DaceMo
     
     dace_model = Model(3)
     outputs_dec = dace_model(torch.rand(1, 1, 8, 8))
-
-.. testoutput::
-    :hide:
-    :options: +ELLIPSIS
-
-    ...

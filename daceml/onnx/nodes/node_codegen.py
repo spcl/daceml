@@ -46,21 +46,22 @@ def _gen_attr_init_code(kernel_context: str, attr: ONNXAttribute,
 
     def value_to_str(value):
         return '"{}"'.format(
-            value) if attr.type == ONNXAttributeType.String else str(value)
+            value) if attr.attribute_type == ONNXAttributeType.String else str(
+                value)
 
-    if attr.type in [
+    if attr.attribute_type in [
             ONNXAttributeType.Int, ONNXAttributeType.Float,
             ONNXAttributeType.String
     ]:
-        assert_type(value, _ATTR_TYPE_TO_PYTHON_TYPE[attr.type])
+        assert_type(value, _ATTR_TYPE_TO_PYTHON_TYPE[attr.attribute_type])
 
         init_code += """
         __ort_check_status(__state->ort_api, __state->ort_api->ExecutableKernelContext_AddAttribute{type_str}({kernel_context}, "{name}", {value}));
-        """.format(type_str=attr.type.name,
+        """.format(type_str=attr.attribute_type.name,
                    kernel_context=kernel_context,
                    name=attr.name,
                    value=value_to_str(value))
-    elif attr.type in [
+    elif attr.attribute_type in [
             ONNXAttributeType.Ints, ONNXAttributeType.Floats,
             ONNXAttributeType.Strings
     ]:
@@ -70,30 +71,30 @@ def _gen_attr_init_code(kernel_context: str, attr: ONNXAttribute,
                     attr.name, value))
 
         values = list(value)
-        if attr.type == ONNXAttributeType.Ints:
+        if attr.attribute_type == ONNXAttributeType.Ints:
             c_type = "int64_t"
-        elif attr.type == ONNXAttributeType.Floats:
+        elif attr.attribute_type == ONNXAttributeType.Floats:
             c_type = "float"
-        elif attr.type == ONNXAttributeType.String:
+        elif attr.attribute_type == ONNXAttributeType.String:
             c_type = "char*"
 
         init_code += "{type} values[{length}];\n".format(type=c_type,
                                                          length=len(values))
 
         for i, values_elem in enumerate(values):
-            assert_type(i, _ATTR_TYPE_TO_PYTHON_TYPE[attr.type])
+            assert_type(i, _ATTR_TYPE_TO_PYTHON_TYPE[attr.attribute_type])
             init_code += "values[{i}] = {value};\n".format(
                 i=i, value=value_to_str(values_elem))
 
         init_code += """
         __ort_check_status(__state->ort_api, __state->ort_api->ExecutableKernelContext_AddAttribute{type_str}({kernel_context}, "{name}", values, {length}));
-        """.format(type_str=attr.type.name,
+        """.format(type_str=attr.attribute_type.name,
                    kernel_context=kernel_context,
                    name=attr.name,
                    length=len(values))
 
-    elif attr.type == ONNXAttributeType.Tensor:
-        assert_type(value, _ATTR_TYPE_TO_PYTHON_TYPE[attr.type])
+    elif attr.attribute_type == ONNXAttributeType.Tensor:
+        assert_type(value, _ATTR_TYPE_TO_PYTHON_TYPE[attr.attribute_type])
 
         dace_typeclass = dtypes.DTYPE_TO_TYPECLASS[value.dtype.type]
 

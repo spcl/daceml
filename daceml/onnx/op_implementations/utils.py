@@ -38,8 +38,11 @@ def op_implementation(op, name):
     return dec
 
 
-def program_for_node(program, sdfg: SDFG, state: SDFGState,
-                     node: onnx_op.ONNXOp) -> SDFG:
+def program_for_node(program,
+                     sdfg: SDFG,
+                     state: SDFGState,
+                     node: onnx_op.ONNXOp,
+                     strict=True) -> SDFG:
     """ Expand a function to a dace program.
 
         The dtypes for the arguments will be extracted by matching the parameter names to edges.

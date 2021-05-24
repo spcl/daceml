@@ -38,17 +38,17 @@ def _get_connector_docstring(param: ONNXParameter) -> str:
 def _get_attr_docstring(attr: ONNXAttribute) -> str:
     param_doc = ":param {}: {}".format(attr.name, attr.description)
 
-    if attr.type is ONNXAttributeType.Unsupported:
+    if attr.attribute_type is ONNXAttributeType.Unsupported:
         return ""
 
-    if attr.type is ONNXAttributeType.Tensor:
+    if attr.attribute_type is ONNXAttributeType.Tensor:
         type_string = "numpy.ndarray"
     else:
-        type_string = _ATTR_TYPE_TO_PYTHON_TYPE[attr.type].__name__
+        type_string = _ATTR_TYPE_TO_PYTHON_TYPE[attr.attribute_type].__name__
 
     type_string = ":class:`{}`".format(type_string)
 
-    if attr.type in [
+    if attr.attribute_type in [
             ONNXAttributeType.Ints, ONNXAttributeType.Floats,
             ONNXAttributeType.Strings
     ]:
@@ -512,21 +512,22 @@ for schema in _get_schemas_from_version(12):
     attrs = {}
     # add properties for each op attribute
     for name, attr in dace_schema.attributes.items():
-        if attr.type in [
+        if attr.attribute_type in [
                 ONNXAttributeType.Int, ONNXAttributeType.String,
                 ONNXAttributeType.Float, ONNXAttributeType.Tensor
         ]:
-            attrs[name] = Property(dtype=_ATTR_TYPE_TO_PYTHON_TYPE[attr.type],
-                                   desc=attr.description,
-                                   allow_none=True,
-                                   default=None if attr.default_value is None
-                                   else attr.default_value)
-        elif attr.type in [
+            attrs[name] = Property(
+                dtype=_ATTR_TYPE_TO_PYTHON_TYPE[attr.attribute_type],
+                desc=attr.description,
+                allow_none=True,
+                default=None
+                if attr.default_value is None else attr.default_value)
+        elif attr.attribute_type in [
                 ONNXAttributeType.Ints, ONNXAttributeType.Strings,
                 ONNXAttributeType.Floats
         ]:
             attrs[name] = ListProperty(
-                element_type=_ATTR_TYPE_TO_PYTHON_TYPE[attr.type],
+                element_type=_ATTR_TYPE_TO_PYTHON_TYPE[attr.attribute_type],
                 desc=attr.description,
                 allow_none=True,
                 default=None
