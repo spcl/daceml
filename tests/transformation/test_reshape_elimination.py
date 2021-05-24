@@ -5,6 +5,8 @@ import torch.nn.functional as F
 import numpy as np
 from daceml.pytorch import DaceModule
 import pytest
+import dace
+import daceml.onnx as donnx
 
 
 class Model(nn.Module):
@@ -21,9 +23,6 @@ class Model(nn.Module):
 @pytest.mark.pure
 def test_reshape_elimination(sdfg_name):
 
-    import daceml.onnx as donnx
-    donnx.default_implementation = "pure"
-
     ptmodel = Model()
     x = torch.rand((100, 6, 12, 12))
     dace_model = DaceModule(ptmodel, auto_optimize=False, sdfg_name=sdfg_name)
@@ -38,7 +37,8 @@ def test_reshape_elimination(sdfg_name):
     dace_model.append_post_onnx_hook("ApplyReshapeElimination",
                                      ApplyReshapeElimination)
 
-    dace_output = dace_model(x)
     torch_output = ptmodel(x)
+    with dace.library.change_default(donnx.ONNXReshape, "pure"):
+        dace_output = dace_model(x)
 
     assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)

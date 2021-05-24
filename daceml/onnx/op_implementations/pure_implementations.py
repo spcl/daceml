@@ -74,48 +74,24 @@ class PurePow(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@op_implementation(op="Add", name="pure")
-class PureAdd(ONNXForward):
-    @staticmethod
-    def forward(node: onnx_op.ONNXOp, state: SDFGState,
-                sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        def prog(A, B, C):
-            C[:] = A + B
-
-        return program_for_node(prog, sdfg, state, node)
+@python_pure_op_implementation
+def Add(A, B, C):
+    C[:] = A + B
 
 
-@op_implementation(op="Sub", name="pure")
-class PureSub(ONNXForward):
-    @staticmethod
-    def forward(node: onnx_op.ONNXOp, state: SDFGState,
-                sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        def prog(A, B, C):
-            C[:] = A - B
-
-        return program_for_node(prog, sdfg, state, node)
+@python_pure_op_implementation
+def Sub(A, B, C):
+    C[:] = A - B
 
 
-@op_implementation(op="Mul", name="pure")
-class PureMul(ONNXForward):
-    @staticmethod
-    def forward(node: onnx_op.ONNXOp, state: SDFGState,
-                sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        def prog(A, B, C):
-            C[:] = A * B
-
-        return program_for_node(prog, sdfg, state, node)
+@python_pure_op_implementation
+def Mul(A, B, C):
+    C[:] = A * B
 
 
-@op_implementation(op="Div", name="pure")
-class PureDiv(ONNXForward):
-    @staticmethod
-    def forward(node: onnx_op.ONNXOp, state: SDFGState,
-                sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        def prog(A, B, C):
-            C[:] = A / B
-
-        return program_for_node(prog, sdfg, state, node)
+@python_pure_op_implementation
+def Div(A, B, C):
+    C[:] = A / B
 
 
 @op_implementation(op="ReduceMean", name="pure")
@@ -291,20 +267,9 @@ class PureEinsum(ONNXForward):
         return nsdfg
 
 
-@op_implementation(op="Identity", name="pure")
-class PureIdentity(ONNXForward):
-    @staticmethod
-    def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
-                               sdfg: SDFG) -> bool:
-        return True
-
-    @staticmethod
-    def forward(node: onnx_op.ONNXOp, state: SDFGState,
-                sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        def prog(input, output):
-            output[:] = input
-
-        return program_for_node(prog, sdfg, state, node)
+@python_pure_op_implementation
+def Identity(input, output):
+    output[:] = input
 
 
 @op_implementation(op="Reciprocal", name="pure")
@@ -328,15 +293,9 @@ class PureReciprocal(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@op_implementation(op="Tanh", name="pure")
-class PureTanh(ONNXForward):
-    @staticmethod
-    def forward(node: onnx_op.ONNXOp, state: SDFGState,
-                sdfg: SDFG) -> typing.Union[Node, SDFG]:
-        def prog(input, output):
-            output[:] = dace.elementwise(lambda x: tanh(x), input)
-
-        return program_for_node(prog, sdfg, state, node)
+@python_pure_op_implementation
+def Tanh(input, output):
+    output[:] = dace.elementwise(lambda x: tanh(x), input)
 
 
 @op_implementation(op="ReduceSum", name="pure")
@@ -737,3 +696,17 @@ class PureSlice(ONNXForward):
 @python_pure_op_implementation
 def Softplus(X, Y):
     Y[:] = np.log(1 + np.exp(X))
+
+
+@op_implementation(op="Sigmoid", name="pure")
+class PureSigmoid(ONNXForward):
+    @staticmethod
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+        dtype = in_desc_with_name(node, state, sdfg, "X").dtype
+
+        def prog(X, Y):
+            Y[:] = dace.elementwise(lambda x: dtype(1) / (dtype(1) + exp(-x)),
+                                    X)
+
+        return program_for_node(prog, sdfg, state, node)
