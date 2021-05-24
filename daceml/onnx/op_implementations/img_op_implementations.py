@@ -347,9 +347,8 @@ class PureBatchNormalization(ONNXForward):
     @staticmethod
     def forward(node: ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[nodes.Node, SDFG]:
-
-        reduce_axes = list(
-            copy.deepcopy(in_desc_with_name(node, state, sdfg, "X").shape))
+        shape = copy.deepcopy(in_desc_with_name(node, state, sdfg, "X").shape)
+        reduce_axes = list(shape)
         num_channels = reduce_axes.pop(1)
 
         N = _prod(reduce_axes)
@@ -359,9 +358,11 @@ class PureBatchNormalization(ONNXForward):
         momentum = node.momentum
         inv_momentum = 1 - node.momentum
 
+        axis = tuple(i for i in range(len(shape)) if i != 1)
+
         def prog(X, scale, B, in_mean, in_var, Y, out_mean, out_var,
                  saved_mean, saved_var):
-            saved_mean[:] = np.add.reduce(X, axis=[0, 2, 3]) / N
+            saved_mean[:] = np.add.reduce(X, axis=axis) / N
 
             saved_mean_broadcastable = dace.define_local(
                 broadcast_shape, dtype)
@@ -372,7 +373,7 @@ class PureBatchNormalization(ONNXForward):
             X_minus_mean = (X - saved_mean_broadcastable)
 
             saved_var[:] = np.add.reduce(X_minus_mean * X_minus_mean,
-                                         axis=(0, 2, 3)) / N
+                                         axis=axis) / N
             saved_var_eps = np.reshape(saved_var + eps, broadcast_shape)
 
             normalized = X_minus_mean * dace.elementwise(
