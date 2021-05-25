@@ -6,7 +6,7 @@ import collections
 import copy
 import logging
 import numbers
-from typing import List, Tuple, Set, Dict, Union, Deque, cast, Optional
+from typing import List, Tuple, Set, Dict, Union, Deque, cast, Optional, Callable
 
 import dace
 import dace.sdfg.nodes as nd
@@ -366,6 +366,9 @@ class BackwardPassGenerator:
         else:
             self.separate_sdfgs = True
 
+        self.completion_hooks: List[Callable[[BackwardPassGenerator],
+                                             None]] = []
+
     def _expand_nodes(self, subgraph: dstate.StateSubgraphView) -> bool:
         """ Expand all library nodes in the graph to pure implementations. Returns whether something was expanded
         """
@@ -387,7 +390,8 @@ class BackwardPassGenerator:
                     if impl.forward_can_be_applied(node, state, self.sdfg):
                         # try to apply the expansion
                         class Expansion(xf.ExpandTransformation):
-                            environments = []
+                            environments = impl.environments if hasattr(
+                                impl, "environments") else []
                             _expansion_result = None
 
                             @classmethod
@@ -522,6 +526,10 @@ class BackwardPassGenerator:
             if self.array_grad_name(
                     given_grad.data) not in self.backward_sdfg.arrays:
                 self._add_gradient_data_descriptor(given_grad.data)
+
+        # execute hooks
+        for hook in self.completion_hooks:
+            hook(self)
 
         # prepare the output
         required_grad_names = {

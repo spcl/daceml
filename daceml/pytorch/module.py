@@ -16,6 +16,7 @@ from dace.codegen import compiled_sdfg
 from torch import Tensor
 from torch.onnx import TrainingMode
 
+from daceml.onnx.converters import clean_onnx_name
 from daceml.pytorch.module_codegen import compile_and_get_function
 from daceml.autodiff.pytorch import make_backward_function
 from daceml.onnx import ONNXModel
@@ -272,8 +273,24 @@ class DaceModule(nn.Module):
                 hook(self)
 
             if self.backward:
+
+                # Determine what grads we need
+                # For now: we want gradients for all inputs that are not pytorch buffers
+                # TODO mark the others as non differentiable in the PT fwd.
+                named_buffers = {n for n, _ in self.model.named_buffers()}
+                required_gradients = [
+                    clean_onnx_name(name) for name in self.dace_model.inputs
+                    if name not in named_buffers
+                ]
+                named_parameters = dict(self.model.named_parameters())
+                required_gradients.extend(
+                    clean_onnx_name(name)
+                    for name, param in named_parameters.items()
+                    if param.requires_grad)
+                required_gradients = list(set(required_gradients))
+
                 self.forward_sdfg, self.backward_sdfg, self._ad_result, self._ad_inp_arrs = make_backward_function(
-                    dace_model)
+                    dace_model, required_gradients)
 
                 for _, hook in self.post_autodiff_hooks.items():
                     hook(self.forward_sdfg, self.backward_sdfg)

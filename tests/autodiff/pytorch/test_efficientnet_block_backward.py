@@ -1,13 +1,36 @@
 import pytest
 import torch
+
 from dace.library import change_default
 from efficientnet_pytorch import get_model_params
 from efficientnet_pytorch.model import MBConvBlock
+from torch import nn
 
 import daceml.onnx as donnx
 from daceml.onnx.op_implementations import CudnnConvolution
 from daceml.pytorch import DaceModule
 from daceml.testing import torch_tensors_close
+
+
+@pytest.mark.gpu
+def test_bn_cudnn(sdfg_name):
+    with change_default(donnx.ONNXBatchNormalization, "cuDNN"):
+        torch_bn = nn.BatchNorm2d(3).cuda()
+        dace_bn = DaceModule(nn.BatchNorm2d(3).cuda(),
+                             backward=True,
+                             training=True)
+
+        with torch.no_grad():
+            dace_inputs = torch.rand(8, 3, 224, 224).cuda()
+            torch_inputs = torch.clone(dace_inputs)
+
+        dace_inputs.requires_grad = True
+        torch_inputs.requires_grad = True
+
+        dace_output = dace_bn(dace_inputs)
+        torch_output = torch_bn(torch_inputs)
+
+        torch_tensors_close("output", torch_output, dace_output)
 
 
 @pytest.mark.gpu

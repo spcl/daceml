@@ -349,8 +349,10 @@ class CudnnBatchNormalizationTraining(ONNXForward):
         return True
 
     @staticmethod
-    def forward(node: onnx_op.ONNXOp, state: SDFGState,
-                sdfg: SDFG) -> Union[nd.Node, SDFG]:
+    def forward(node: onnx_op.ONNXOp,
+                state: SDFGState,
+                sdfg: SDFG,
+                reserved_ptr=False) -> Union[nd.Node, SDFG]:
 
         nsdfg, nstate, inputs, outputs = empty_sdfg_for_node(sdfg, state, node)
 
@@ -459,10 +461,29 @@ class CudnnBatchNormalizationTraining(ONNXForward):
             *__state->{unique_id}_workspace_size,
             __state->{unique_id}_reserved,
             *__state->{unique_id}_reserved_size));
+
+            // save the reserved ptr as an output if required
+            {f"_reserved_ptr = __state->{unique_id}_reserved;" if reserved_ptr else ""}
+            {f"_reserved_size = *__state->{unique_id}_reserved_size;" if reserved_ptr else ""}
         """
 
         in_connectors = ["X", "B", "scale", "in_mean", "in_var"]
-        out_connectors = ["Y", "saved_mean", "saved_var"]
+        out_connectors = {
+            "Y": dace.pointer(T),
+            "saved_mean": dace.pointer(T),
+            "saved_var": dace.pointer(T)
+        }
+        if reserved_ptr:
+            out_connectors["reserved_size"] = dace.int64
+            out_connectors["reserved_ptr"] = dace.pointer(dace.typeclass(None))
+            nsdfg.add_scalar(f"reserved_ptr",
+                             dace.pointer(dace.typeclass(None)),
+                             storage=dtypes.StorageType.CPU_Heap)
+            nsdfg.add_scalar(f"reserved_size",
+                             dace.int64,
+                             storage=dtypes.StorageType.CPU_Heap)
+            outputs["reserved_ptr"] = nstate.add_write("reserved_ptr")
+            outputs["reserved_size"] = nstate.add_write("reserved_size")
 
         init_code = "{\n" + init_code + "\n}"
         finalize_code = "{\n" + finalize_code + "\n}"
@@ -470,8 +491,8 @@ class CudnnBatchNormalizationTraining(ONNXForward):
         tasklet = nstate.add_tasklet(
             unique_id, {f"_{i}": dace.pointer(T)
                         for i in in_connectors},
-            {f"_{i}": dace.pointer(T)
-             for i in out_connectors},
+            {f"_{i}": t
+             for i, t in out_connectors.items()},
             tasklet_code,
             dtypes.Language.CPP,
             code_init=init_code,
