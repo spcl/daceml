@@ -1,5 +1,5 @@
 import functools
-from typing import Union, Optional, Tuple
+from typing import Union, Optional, Tuple, List
 
 import dace
 from dace import SDFGState, nodes as nd, SDFG, dtypes, data as dt
@@ -58,24 +58,29 @@ def _get_tensor_layout(desc: dt.Array) -> Optional[str]:
         return None
 
 
-def _cudnn_tensor_descriptor_code(desc: dt.Array, state_field_name: str,
-                                  filter: bool) -> Tuple[str, str]:
+def _cudnn_tensor_descriptor_code(
+        desc: dt.Array,
+        state_field_name: str,
+        filter: bool,
+        shape: Optional[List[int]] = None) -> Tuple[str, str]:
     """ Emit the cudnn code for the tensor descriptor for a given dace descriptor.
 
         :param desc: the descriptor of the dace tensor.
         :param state_field_name: the name of the pointer variable where the descriptor should be stored.
         :param filter: True if the tensor is a filter.
+        :param shape: (optional) the shape to override the shape of the tensor
         :return: the init and exit code
     """
 
     # detect layout
     layout = _get_tensor_layout(desc)
-    if len(desc.shape) == 4:
-        shape = desc.shape
-    elif len(desc.shape) < 4:
-        shape = list(desc.shape) + [1] * (4 - len(desc.shape))
-    else:
-        raise ValueError("Tensor with dimension > 4 is not supported")
+    if shape is None:
+        if len(desc.shape) == 4:
+            shape = desc.shape
+        elif len(desc.shape) < 4:
+            shape = list(desc.shape) + [1] * (4 - len(desc.shape))
+        else:
+            raise ValueError("Tensor with dimension > 4 is not supported")
 
     assert layout is not None, "layout changed after can_be_applied"
     f_or_t_str = 'Filter' if filter else 'Tensor'

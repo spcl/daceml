@@ -261,6 +261,7 @@ def setup_grad_values(backward_result: BackwardResult, sdfg: dace.SDFG,
     for _, grad_name in backward_result.required_grad_names.items():
         code += "\n" + tensor_init_for_desc(
             grad_name, sdfg.arrays[grad_name], zeros=True)
+        code += f'std::cout << "{grad_name}" << std::endl << {grad_name}.options() << std::endl << std::endl;'
 
     code += "// output grads"
     for i, o in enumerate(outputs):
@@ -373,22 +374,22 @@ class {sdfg_name}Function : public torch::autograd::Function<{sdfg_name}Function
             // return calculated grads in correct order
             // first two grads are None (these are the grads for the handle ptrs)
             return {{
-                Tensor(), Tensor(), {', '.join(backward_result.required_grad_names[i] for i in inputs if i in backward_result.required_grad_names)}
-            }};
-        }}
+                Tensor(), Tensor(), {', '.join(backward_result.required_grad_names[i] if i in backward_result.required_grad_names else 'Tensor()' for i in inputs )}
+    }};
+}}
 }};
 
 {ret_str}
 {sdfg_name}_autograd(int64_t handle_ptr, int64_t bwd_handle_ptr, {",".join(f"const Tensor& {name}_" for name in inputs)}) {{
-    return {sdfg_name}Function::apply(
-        handle_ptr, bwd_handle_ptr, {", ".join(f"{name}_" for name in inputs)}
-    );
+return {sdfg_name}Function::apply(
+handle_ptr, bwd_handle_ptr, {", ".join(f"{name}_" for name in inputs)}
+);
 }}
 
 TORCH_LIBRARY_IMPL(daceml_{sdfg_name}, Autograd{'CUDA' if module.use_cuda else 'CPU'}, m) {{
-    m.impl("{sdfg_name}", {sdfg_name}_autograd);
+m.impl("{sdfg_name}", {sdfg_name}_autograd);
 }}
-        """
+"""
 
 
 def code_for_module(module: 'daceml.pytorch.DaceModule',

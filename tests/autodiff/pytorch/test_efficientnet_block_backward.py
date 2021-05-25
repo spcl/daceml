@@ -10,6 +10,7 @@ import daceml.onnx as donnx
 from daceml.onnx.op_implementations import CudnnConvolution
 from daceml.pytorch import DaceModule
 from daceml.testing import torch_tensors_close
+from daceml.transformation import ConstantDeviceCopyElimination, PadConvFusion
 
 
 @pytest.mark.gpu
@@ -61,6 +62,18 @@ def test_mbconv(sdfg_name):
             assert dace_name == torch_name
             torch_tensors_close(dace_name, value, dace_value)
 
+        def set_impls_fuse_conv(module: DaceModule):
+            assert module.sdfg.apply_transformations(
+                ConstantDeviceCopyElimination) == 1
+            assert module.sdfg.apply_transformations(PadConvFusion) == 1
+
+            # for state in module.sdfg.nodes():
+            #     for n in state.nodes():
+            #         if isinstance(n, donnx.ONNXConv):
+            #             if n.label == "Conv_92":
+            #                 n.implementation = "pure"
+
+        dace_model.prepend_post_onnx_hook("high_level", set_impls_fuse_conv)
         CudnnConvolution.default_algorithm = "gemm"
 
         dace_output = dace_model(dace_inputs)
@@ -86,9 +99,16 @@ def test_mbconv(sdfg_name):
 
         # backward pass
 
-        dy = torch.rand(8, 16, 224, 224)
+        dy = torch.rand(8, 16, 224, 224).cuda()
 
         torch_output.backward(dy)
         dace_output.backward(dy)
 
         torch_tensors_close("input_grad", torch_inputs.grad, dace_inputs.grad)
+
+        for (name,
+             dace_param), (pt_name,
+                           pt_param) in zip(torch_model.named_parameters(),
+                                            dace_model.named_parameters()):
+            assert 'model.' + name == pt_name
+            torch_tensors_close(name, pt_param.grad, dace_param.grad)

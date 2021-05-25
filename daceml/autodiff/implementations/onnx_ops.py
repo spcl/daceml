@@ -250,6 +250,9 @@ class CuDNNConvBackward(BackwardImplementation):
 
         nsdfg = dace.SDFG(forward_node.label + "_backward")
         X_desc = butils.forward_in_desc_with_name(forward_node, context, "X")
+        bias_desc = butils.forward_in_desc_with_name(forward_node, context,
+                                                     "B")
+
         T = X_desc.dtype
 
         # setup gradient arrays
@@ -286,9 +289,13 @@ class CuDNNConvBackward(BackwardImplementation):
         # add descriptor init code for gradients
         for r in required_grads:
             is_filter = r == "W"
+
+            is_bias = r == "B"
             init, exit = cudnn_implementations._cudnn_tensor_descriptor_code(
                 nsdfg.arrays[result.required_grad_names[r]],
-                f"{unique_id}_d{r}_desc", is_filter)
+                f"{unique_id}_d{r}_desc",
+                is_filter,
+                shape=[1, bias_desc.shape[0], 1, 1] if is_bias else None)
             init_code += init
             finalize_code += exit
 
@@ -421,6 +428,8 @@ class CuDNNConvBackward(BackwardImplementation):
                 _dB));
             """
 
+        init_code = "{\n" + init_code + "\n}"
+        finalize_code = "{\n" + finalize_code + "\n}"
         tasklet = nstate.add_tasklet(
             unique_id, {
                 f"_{i}": dace.pointer(T)
@@ -428,7 +437,22 @@ class CuDNNConvBackward(BackwardImplementation):
             }, {
                 f"_d{i}": dace.pointer(T)
                 for i in itertools.chain(required_gradients)
-            }, tasklet_code, dace.dtypes.Language.CPP)
+            },
+            tasklet_code,
+            dace.dtypes.Language.CPP,
+            state_fields=[
+                f"cudnnTensorDescriptor_t *{unique_id}_X_desc;",
+                f"cudnnFilterDescriptor_t *{unique_id}_W_desc;",
+                f"cudnnTensorDescriptor_t *{unique_id}_dX_desc;",
+                f"cudnnTensorDescriptor_t *{unique_id}_dY_desc;",
+                f"cudnnTensorDescriptor_t *{unique_id}_dB_desc;",
+                f"cudnnFilterDescriptor_t *{unique_id}_dW_desc;"
+                f"cudnnConvolutionDescriptor_t *{unique_id}_conv_desc;",
+                f"float *{unique_id}_workspace;",
+                f"size_t *{unique_id}_workspace_size;"
+            ],
+            code_init=init_code,
+            code_exit=finalize_code)
         tasklet.environments = {donnx.environments.cuDNN.full_class_path()}
 
         nstate.add_edge(
@@ -625,6 +649,9 @@ class CuDNNBatchNormBackward(BackwardImplementation):
             "reserved_size": dace.int64
         }
         out_connectors = ["dX", "dScale", "dBias"]
+
+        init_code = "{\n" + init_code + "\n}"
+        finalize_code = "{\n" + finalize_code + "\n}"
         tasklet = nstate.add_tasklet(
             unique_id, {f"_{i}": t
                         for i, t in in_connectors.items()},
