@@ -98,6 +98,7 @@ class SymbolicShapeInference:
             'Conv': self._infer_Conv,
             'CumSum': self._pass_on_shape_and_type,
             'Div': self._infer_symbolic_compute_ops,
+            'Einsum': self._infer_Einsum,
             'Expand': self._infer_Expand,
             'Equal': self._infer_symbolic_compute_ops,
             'Floor': self._infer_symbolic_compute_ops,
@@ -689,6 +690,22 @@ class SymbolicShapeInference:
         vi.CopyFrom(
             helper.make_tensor_value_info(node.output[0], vi.type.tensor_type.elem_type,
                                           get_shape_from_sympy_shape(sympy_shape)))
+
+    def _infer_Einsum(self, node):
+        eq = get_attribute(node, 'equation', b'').decode('utf-8')
+        eq_inputs, eq_outputs = eq.split('->')
+        eq_inputs = eq_inputs.split(',')
+        dim_map = {}
+        for i_idx in range(len(node.input)):
+            input_shape = self._get_shape(node, i_idx)
+            eqinp = eq_inputs[i_idx]
+            dim_map.update({e: dim for e, dim in zip(eqinp, input_shape)})
+
+        new_shape = []
+        for eqout in eq_outputs:
+            new_shape.append(dim_map[eqout])
+        vi = self.known_vi_[node.output[0]]
+        vi.CopyFrom(helper.make_tensor_value_info(node.output[0], vi.type.tensor_type.elem_type, new_shape))
 
     def _infer_Expand(self, node):
         expand_to_shape = self._try_get_value(node, 1)
