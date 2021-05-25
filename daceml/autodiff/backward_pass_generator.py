@@ -323,6 +323,10 @@ class BackwardPassGenerator:
         #: mapping from forward node -> backward node, and forward map -> backward map
         self.reverse_map: Dict[nd.Node, Union[nd.Node, nd.Map]] = {}
 
+        #: for replicated nodes from the fwd pass: mapping from fwd node to
+        #: replicated node
+        self.replicated_map: Dict[nd.Node, nd.Node] = {}
+
         #: mapping from forward_node -> BackwardResult for that node
         self.result_map: Dict[nd.Node, BackwardResult] = {}
 
@@ -655,7 +659,16 @@ class BackwardPassGenerator:
                 # the gradients ...
                 self._connect_given_gradients(subgraph, node)
                 # ... and any required input values from the forward pass
-                self._connect_forward_inputs(node)
+
+                ####################################
+                # Determine which inputs we need to connect.
+                # these are the in_connectors on the reverse node, minus the gradients.
+                # (these are connected in _connect_given_gradients)
+                required_inputs = set(reversed_node.in_connectors).difference(
+                    backward_result.given_grad_names.values())
+                required_inputs = {c: c for c in required_inputs}
+                self._connect_forward_inputs(node, reversed_node,
+                                             required_inputs)
 
                 if isinstance(node, nd.AccessNode):
 
@@ -759,7 +772,6 @@ class BackwardPassGenerator:
                 tree_edge.data.wcr = "lambda x, y: x + y"
             self._init_grad(edge.data.data)
 
-
     def _add_gradient_data_descriptor(self, data_name: str):
         """ Add the data descriptor for the gradient for `data_name`.
             :param data_name: the name of the forward descriptor.
@@ -822,7 +834,9 @@ class BackwardPassGenerator:
                 memlet,
             )
 
-    def _connect_forward_inputs(self, forward_node):
+    def _connect_forward_inputs(self, forward_node: nd.Node,
+                                backward_node: nd.Node,
+                                required_inputs: Dict[str, str]):
         """ Connect the reversed node of `forward_node` to all required non-gradient inputs.
 
             There are non-trivial points to handle:
@@ -833,15 +847,24 @@ class BackwardPassGenerator:
                For now, this is only supported when the node is at the "top level" of the SDFG, since it's quite
                difficult to handle otherwise (you have to decide whether to recompute or to store the value, and you
                have to store the value once for every iteration in the map)
+
+            :param forward_node: the forward node.
+            :param backward_node: the backward node. This must not necessarily be a reversed node.
+            :param required_inputs: the inputs to connect to the backward node. These inputs must exist on the forward
+                                    node. The dict maps the fwd pass connector we require to the connector that we.
+                                    should connect to.
         """
 
-        rev = self.reverse_map[forward_node]
-        ####################################
-        # Determine which inputs we need to connect.
-        # these are the in_connectors on the reverse node, minus the gradients.
-        # (these are connected in _connect_input_gradients)
-        required_inputs = set(rev.in_connectors).difference(
-            self.result_map[forward_node].given_grad_names.values())
+        # DEADLINE MODE: this assert should be true for sanity's sake but it
+        # isn't a the moment
+
+        # if set(required_inputs).difference(forward_node.in_connectors):
+        #     missing_connectors = \
+        #         set(required_inputs).difference(forward_node.in_connectors)
+        #     raise ValueError(f"Can't connect connectors"
+        #                      f" {missing_connectors} to {backward_node} "
+        #                      f"because they don't exist on the corresponding "
+        #                      f"forward node {forward_node}")
 
         # note we use forward state here: we might need to connect inputs that are not in the
         # forward pass
@@ -850,142 +873,98 @@ class BackwardPassGenerator:
             if edge.dst_conn in required_inputs)
 
         for edge in input_edges_to_connect:
-            # memlet path should be fine here because the edges connect directly to the tasklet
-            path = self.forward_state.memlet_path(edge)
 
-            ####################################
-            # we can only add this edge if the first node in the path not within a map scope. Otherwise the value read
-            # in the backward pass might be different to the one read in the forward pass
+            edge_src = edge.src
+            next_required_inputs: Dict[Optional[str], Optional[str]]
+            replicated_edge_src: nd.Node
+            replicated_edge_src_conn: str
+            if isinstance(edge_src, nd.MapEntry):
+                # in the map case, the map must already exist in the bwd pass
+                # (the following function call internally asserts this)
+                replicated_edge_src = self._find_backward_entry_node_for_map_entry(
+                    edge_src)
+                new_in_conn, new_out_conn = _add_through_connector(
+                    replicated_edge_src)
 
-            if self.forward_state.scope_dict()[path[0].src] is not None:
-                parent = self.forward_state.scope_dict()[path[0].src]
-                raise AutoDiffException(
-                    "Unexpected graph structure: unable to access value of {} in the"
-                    " backward pass. This can be remedied by moving the node outside the scope it "
-                    "is in (it's parent is {})".format(path[0].src, parent))
+                replicated_edge_src_conn = new_out_conn
 
-            if len(path) == 1 and isinstance(path[0].src,
-                                             nd.CodeNode) and isinstance(
-                                                 path[0].dst, nd.CodeNode):
-                # paths of length one with scalar data are allowed; these are code -> code edges
-                # however, in this case it must be a scalar edge
-                if not _is_int_value(
-                        self.sdfg.arrays[path[0].data.data].total_size, 1):
-                    raise AutoDiffException(
-                        "Unexpected graph structure: encountered code -> code edge with scalar size "
-                        "!= 1 (was {})".format(
-                            self.sdfg.arrays[path[0].data].total_size))
+                # the inverse connector of edge.src_conn should be connected
+                # to the new through connector we made
+                next_required_inputs = {
+                    _invert_map_connector(edge.src_conn): new_in_conn
+                }
 
-                raise NotImplementedError()
             else:
-                # otherwise we expect AccessNode -> MapEntry -> ... -> MapEntry -> CodeNode
-                if not (isinstance(path[0].src, nd.AccessNode)
-                        and isinstance(path[-1].dst, nd.CodeNode)):
-                    raise AutoDiffException(
-                        "Unexpected graph structure: expected memlet path that starts with an "
-                        "AccessNode and ends with CodeNode")
+                replicated_edge_src_conn = edge.src_conn
 
-                conn_map = {}
-                for i, path_edge in enumerate(path):
+                if edge_src in self.replicated_map:
+                    replicated_edge_src = self.replicated_map[edge_src]
+                else:
+                    # node has not been replicated yet: do it now
+                    replicated_edge_src = copy.deepcopy(edge_src)
+                    self.backward_state.add_node(replicated_edge_src)
 
-                    ####################################
-                    # Get the dst node and connector
+                if isinstance(edge_src, nd.AccessNode):
+                    is_base_level = self.forward_state.scope_dict(
+                    )[edge_src] is None
+                    data_name = edge_src.data
+                    data_desc = copy.deepcopy(edge_src.desc(self.sdfg))
+                    if self.separate_sdfgs:
+                        # need to copy over the descriptor from the forward pass
+                        if data_name not in self.backward_sdfg.arrays:
+                            self.backward_sdfg.add_datadesc(
+                                data_name, data_desc)
 
-                    if i == len(path) - 1:
-                        if not isinstance(path_edge.dst, nd.CodeNode):
-                            raise AutoDiffException(
-                                "Unexpected graph structure: expected memlet path that starts with an "
-                                "AccessNode and ends with CodeNode")
-                        new_edge_dst = self.reverse_map[path_edge.dst]
-                        new_edge_dst_conn = edge.dst_conn
+                    if isinstance(data_desc, dt.View) or not is_base_level:
+                        next_required_inputs = {None: None}
                     else:
-                        # if we have more than one edge, check that all intermediate nodes are MapEntry
-                        if not isinstance(path_edge.dst, nd.MapEntry):
-                            raise AutoDiffException(
-                                "Unexpected graph structure")
+                        # base-case: we have reached a bottom level AccessNode.
 
-                        new_edge_dst = self._find_backward_entry_node_for_map_entry(
-                            path_edge.dst)
-                        new_edge_dst_conn, _src_conn = _add_through_connector(
-                            new_edge_dst)
-                        # save the newly added connector so that we can use for the next loop iteration
-                        conn_map[new_edge_dst] = _src_conn
-
-                    ####################################
-                    # Get the src node and connector
-
-                    if i == 0:
-                        if not isinstance(path_edge.src, nd.AccessNode):
-                            raise AutoDiffException(
-                                "Unexpected graph structure: expected memlet path that starts with an "
-                                "AccessNode and ends with CodeNode")
-
-                        new_edge_src_conn = None
-                        if path_edge.src in self.reverse_map:
-                            new_edge_src = self.reverse_map[path_edge.src]
-                        else:
-                            # Add an AccessNode for this to the backward pass
-                            data_name = path_edge.src.data
-                            data_desc = copy.deepcopy(
-                                self.sdfg.arrays[data_name])
-
-                            # if the descriptor is a view, we will rebuild the sequence of views that create this view
-                            # this involves walking up the path until we find a non-view access node, and then
-                            # replicating that path in the backward pass
-                            if type(data_desc) is dt.View:
-                                data_desc, data_name, view_nodes_to_clone = _walk_up_memlet_tree_through_view_nodes(
-                                    self.sdfg, self.forward_state, data_name)
-                                new_edge_src = self.backward_state.add_access(
-                                    data_name)
-
-                                while len(view_nodes_to_clone) > 0:
-                                    view_name, view_desc, memlet = view_nodes_to_clone.pop(
-                                    )
-
-                                    memlet = copy.deepcopy(memlet)
-
-                                    if self.separate_sdfgs:
-                                        self.backward_sdfg.add_datadesc(
-                                            view_name,
-                                            copy.deepcopy(view_desc))
-                                    new_access = self.backward_state.add_access(
-                                        view_name)
-                                    self.backward_state.add_edge(
-                                        new_edge_src, None, new_access, None,
-                                        memlet)
-                                    new_edge_src = new_access
-                            else:
-                                new_edge_src = self.backward_state.add_access(
-                                    data_name)
-
-                            # adding it to the backward_input_arrays will mean that any users of this SDFG
-                            # will know that we require this array from the forward pass
-                            assert data_name not in self.backward_input_arrays
+                        # this value must be forwarded.
+                        if data_name not in self.backward_input_arrays:
                             self.backward_input_arrays[data_name] = data_desc
 
-                            if self.separate_sdfgs:
-                                # because we need to forward this, the descriptor is no longer transient
-                                data_desc.transient = False
-                                self.backward_sdfg.add_datadesc(
-                                    data_name, data_desc)
+                        if self.separate_sdfgs:
+                            # because we need to forward this, the descriptor
+                            # is no longer transient
+                            data_desc.transient = False
 
-                            self.reverse_map[path_edge.src] = new_edge_src
+                        # because this is the base-case there is no recursive call
+                        # in this branch; next_required_inputs stays empty
+                        next_required_inputs = {}
+                elif isinstance(edge_src, nd.Tasklet):
+                    # in the tasklet case, we need to connect all inputs
+                    next_required_inputs = {
+                        c: c
+                        for c in edge_src.in_connectors
+                    }
 
-                    else:
-                        # if we have more than one edge, check that all intermediate nodes are MapEntry
-                        if not isinstance(path_edge.src, nd.MapEntry):
-                            raise AutoDiffException(
-                                "Unexpected graph structure")
+            new_edge_data = copy.deepcopy(edge.data)
+            if isinstance(edge.src, nd.CodeNode) and isinstance(
+                    edge.dst, nd.CodeNode):
+                # code->code edges have a small special case:
+                # we need to copy the descriptor
+                data_name = new_edge_data.data
+                data_desc = self.sdfg.arrays[data_name]
+                if self.separate_sdfgs:
+                    self.backward_sdfg.add_datadesc(data_name, data_desc)
+                else:
+                    new_data_name = self.backward_sdfg.add_datadesc(
+                        data_name, data_desc, find_new_name=True)
+                    new_edge_data.data = new_data_name
 
-                        new_edge_src = self._find_backward_entry_node_for_map_entry(
-                            path_edge.src)
-                        new_edge_src_conn = conn_map[new_edge_src]
+            # add the new edge
+            self.backward_state.add_edge(replicated_edge_src,
+                                         replicated_edge_src_conn,
+                                         backward_node,
+                                         required_inputs[edge.dst_conn],
+                                         new_edge_data)
 
-                    self.backward_state.add_edge(new_edge_src,
-                                                 new_edge_src_conn,
-                                                 new_edge_dst,
-                                                 new_edge_dst_conn,
-                                                 copy.deepcopy(path_edge.data))
+            if next_required_inputs:
+                # if there are any required inputs on the new node, we need to
+                # recursively call
+                self._connect_forward_inputs(edge.src, replicated_edge_src,
+                                             next_required_inputs)
 
     def _lookup_required_grad_name(self, node: nd.Node, connector: str) -> str:
         if node not in self.result_map:

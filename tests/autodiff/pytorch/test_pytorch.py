@@ -4,9 +4,11 @@ import pytest
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from dace.transformation.dataflow import MapFusion
 
 from daceml.pytorch import DaceModule
 from daceml.testing import torch_tensors_close, copy_to_gpu
+from daceml.util import utils
 
 
 def run_pytorch_module(module,
@@ -16,7 +18,8 @@ def run_pytorch_module(module,
                        use_max=False,
                        auto_optimize=True,
                        rtol=1e-4,
-                       atol=1e-3):
+                       atol=1e-3,
+                       post_onnx_hooks=None):
     shape = shape or (3, 5)
 
     module = copy_to_gpu(gpu, module)
@@ -49,6 +52,9 @@ def run_pytorch_module(module,
                              backward=True,
                              sdfg_name=sdfg_name,
                              auto_optimize=auto_optimize)
+    if post_onnx_hooks is not None:
+        for i, h in enumerate(post_onnx_hooks):
+            dace_module.append_post_onnx_hook(str(i), h)
 
     if use_max:
         dace_s = dace_module(dace_input).max()
@@ -210,3 +216,19 @@ def test_scalar_forwarding(sdfg_name, gpu):
             return self.factor * x
 
     run_pytorch_module(Module(), sdfg_name, gpu, use_max=False)
+
+
+@pytest.mark.pure
+def test_simple_fused(sdfg_name, gpu):
+    class Module(torch.nn.Module):
+        def forward(self, x):
+            x = torch.sqrt(x)
+            x = torch.log(x)
+            return x
+
+    def fuse_maps(module: DaceModule):
+        utils.expand_onnx_nodes(module.sdfg)
+        module.sdfg.apply_strict_transformations()
+        assert module.sdfg.apply_transformations(MapFusion) == 1
+
+    run_pytorch_module(Module(), sdfg_name, gpu, post_onnx_hooks=[fuse_maps])

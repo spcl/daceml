@@ -309,7 +309,6 @@ def test_reused_scalar_inplace_error(sdfg_name):
     assert "Inplace" in str(execinfo.value)
 
 
-@pytest.mark.skip(reason="this was rewritten and needs to be reimplemented")
 @run_correctness
 def test_tasklets_direct_scalar_edges():
     def torch_func(*, A):
@@ -320,7 +319,7 @@ def test_tasklets_direct_scalar_edges():
         tmp_c.backward()
         return dict(A_gradient=A.grad)
 
-    sdfg = dace.SDFG("dace_func")
+    sdfg = dace.SDFG("tasklets_direct_scalar_edges")
     state = sdfg.add_state()
 
     sdfg.add_array(
