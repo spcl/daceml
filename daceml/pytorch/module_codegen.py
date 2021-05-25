@@ -261,7 +261,6 @@ def setup_grad_values(backward_result: BackwardResult, sdfg: dace.SDFG,
     for _, grad_name in backward_result.required_grad_names.items():
         code += "\n" + tensor_init_for_desc(
             grad_name, sdfg.arrays[grad_name], zeros=True)
-        code += f'std::cout << "{grad_name}" << std::endl << {grad_name}.options() << std::endl << std::endl;'
 
     code += "// output grads"
     for i, o in enumerate(outputs):
