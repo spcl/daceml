@@ -250,8 +250,6 @@ class CuDNNConvBackward(BackwardImplementation):
 
         nsdfg = dace.SDFG(forward_node.label + "_backward")
         X_desc = butils.forward_in_desc_with_name(forward_node, context, "X")
-        bias_desc = butils.forward_in_desc_with_name(forward_node, context,
-                                                     "B")
 
         T = X_desc.dtype
 
@@ -290,12 +288,18 @@ class CuDNNConvBackward(BackwardImplementation):
         for r in required_grads:
             is_filter = r == "W"
 
-            is_bias = r == "B"
+            if r == "B":
+                bias_desc = butils.forward_in_desc_with_name(
+                    forward_node, context, "B")
+                shape = [1, bias_desc.shape[0], 1, 1]
+            else:
+                shape = None
+
             init, exit = cudnn_implementations._cudnn_tensor_descriptor_code(
                 nsdfg.arrays[result.required_grad_names[r]],
                 f"{unique_id}_d{r}_desc",
                 is_filter,
-                shape=[1, bias_desc.shape[0], 1, 1] if is_bias else None)
+                shape=shape)
             init_code += init
             finalize_code += exit
 
