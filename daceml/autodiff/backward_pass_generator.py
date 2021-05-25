@@ -759,40 +759,6 @@ class BackwardPassGenerator:
                 tree_edge.data.wcr = "lambda x, y: x + y"
             self._init_grad(edge.data.data)
 
-    def _insert_transient_into_edge(
-        self, sibling_edge: dgraph.MultiConnectorEdge, state: SDFGState
-    ) -> Tuple[dgraph.MultiConnectorEdge, Optional[dgraph.MultiConnectorEdge]]:
-        """ Modifies a graph so that a transient is inserted into an edge.
-            For example:
-                (a) -e-> (b)
-            becomes:
-                (a) -e1-> (transient) -e2> (b)
-
-            :param sibling_edge: the edge to split.
-            :return: e1, and the edge e2 (or None if no split occurred)
-        """
-        if (isinstance(sibling_edge.src, (nd.LibraryNode, nd.NestedSDFG))
-                or (isinstance(sibling_edge.src, nd.Tasklet)
-                    and sibling_edge.src.language is dtypes.Language.CPP)):
-            # write out the data to a transient, then connect the transient to the rest of
-            # the path with WCR.
-            desc = self.backward_sdfg.arrays[sibling_edge.data.data]
-            transient_name, _ = self.backward_sdfg.add_temp_transient(
-                sibling_edge.data.subset.size(),
-                desc.dtype,
-                storage=desc.storage,
-                lifetime=desc.lifetime)
-            access_transient = state.add_access(transient_name)
-            state.remove_edge(sibling_edge)
-            memlet = copy.deepcopy(sibling_edge.data)
-            memlet.data = transient_name
-            state.add_edge(sibling_edge.src, sibling_edge.src_conn,
-                           access_transient, None, memlet)
-            new_edge = state.add_edge(access_transient, None, sibling_edge.dst,
-                                      sibling_edge.dst_conn, sibling_edge.data)
-            return sibling_edge, new_edge
-        else:
-            return sibling_edge, None
 
     def _add_gradient_data_descriptor(self, data_name: str):
         """ Add the data descriptor for the gradient for `data_name`.
