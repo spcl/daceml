@@ -1,7 +1,7 @@
 import copy
 from typing import Dict, List, Union, Optional
 
-from dace import registry, sdfg, properties
+from dace import registry, sdfg, properties, data
 from dace.codegen.targets import cpp
 from dace.sdfg import nodes, SDFG, SDFGState, graph
 from dace.sdfg import utils as sdutil
@@ -203,10 +203,16 @@ class InitStateFusion(transformation.Transformation):
             copy_out_state = nsdfg.add_state_after(compute_nested_state)
             for n in init_nested_state.sink_nodes():
                 # make the descs that both states are writing to transient
+                new_desc = copy.deepcopy(nsdfg.arrays[n.data])
+
                 nsdfg.arrays[n.data].transient = True
+                # we need to update the total size and strides now that it's smaller
+                shape = nsdfg.arrays[n.data].shape
+                nsdfg.arrays[n.data].total_size = data._prod(shape)
+                nsdfg.arrays[n.data].strides = tuple(
+                    data._prod(shape[i + 1:]) for i, _ in enumerate(shape))
 
                 # add a non-transient that we will copy out to
-                new_desc = copy.deepcopy(nsdfg.arrays[n.data])
                 new_desc.transient = False
                 new_name = nsdfg.add_datadesc(n.data + "_global",
                                               new_desc,

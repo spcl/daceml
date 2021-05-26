@@ -25,5 +25,8 @@ def test_init_state_fusion():
     sdfg.expand_library_nodes()
     assert sdfg.apply_transformations(InitStateFusion) == 1
 
+    for n, parent in sdfg.all_nodes_recursive():
+        print(n, parent.node_id(n))
+
     sdfg(X_arr=X, W_arr=W, Y_arr=Y)
     torch_tensors_close("output", Y, F.conv2d(X, W))
