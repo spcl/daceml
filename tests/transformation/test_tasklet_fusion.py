@@ -1,8 +1,14 @@
 import numpy as np
 import dace
+import pytest
+import torch
 from dace.transformation.dataflow import MapFusion
+from daceml.pytorch import dace_module
 
-from daceml.transformation import TaskletFusion
+from daceml.transformation import TaskletFusion, TaskletFission
+from daceml.transformation.tasklet_fusion import MergeTaskletReads
+from torch import nn
+from torch.nn import functional as F
 
 
 def test_basic():
@@ -30,8 +36,11 @@ def test_same_name():
 
     sdfg: dace.SDFG = test_same_name.to_sdfg()
 
+    sdfg.view()
+
     assert sdfg.apply_transformations_repeated(MapFusion) == 2
     assert sdfg.apply_transformations_repeated(TaskletFusion) == 2
+    sdfg.view()
 
     result = np.empty((5, 5), dtype=np.float32)
     A = np.ones_like(result)
@@ -57,3 +66,52 @@ def test_same_name_diff_memlet():
     B = np.ones_like(result) * 2
     sdfg(A=A, B=B, __return=result)
     assert np.allclose(result, A + 1 + B * 3)
+
+
+def test_tasklet_fission():
+    @dace.program
+    def test_basic_tf(A: dace.float32, D: dace.float32):
+
+        B = dace.define_local_scalar(dace.float32)
+        C = dace.define_local([1], dace.float32)
+        with dace.tasklet:
+            a << A[0]
+            d << D[0]
+            b >> B[0]
+            c >> C[0]
+
+            b = d + 1
+            c = a * 3
+
+        C += B
+        return C
+
+    sdfg: dace.SDFG = test_basic_tf.to_sdfg()
+
+    assert sdfg.apply_transformations(TaskletFission) == 1
+
+    sdfg.view()
+    result = np.empty((1,), dtype=np.float32)
+    sdfg(A=1, __return=result, D=2)
+    assert result[0] == 6
+
+
+
+@pytest.mark.pure
+def test_silu():
+    @dace_module
+    class silu(nn.Module):
+        def forward(self, x):
+            return F.silu(x)
+
+    m = silu()
+    def fuse(m):
+        sdfg = m.sdfg
+        assert sdfg.apply_transformations(MapFusion) == 1
+        assert sdfg.apply_transformations(TaskletFusion) == 1
+        assert sdfg.apply_transformations(MergeTaskletReads) == 1
+        sdfg.view()
+    m.append_post_onnx_hook("fuse", fuse)
+    m(torch.rand(3, 3))
+
+

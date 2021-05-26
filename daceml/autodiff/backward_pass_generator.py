@@ -938,6 +938,8 @@ class BackwardPassGenerator:
                         c: c
                         for c in edge_src.in_connectors
                     }
+                else:
+                    raise AutoDiffException("Unsupported node")
 
             new_edge_data = copy.deepcopy(edge.data)
             if isinstance(edge.src, nd.CodeNode) and isinstance(
