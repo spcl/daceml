@@ -21,7 +21,7 @@ PKG_DIR = os.path.dirname(os.path.abspath(__file__))
 setup(
     name='daceml',
     version='0.1.0a',
-    url='https://github.com/spcl/dace-onnx',
+    url='https://github.com/spcl/daceml',
     author='SPCL @ ETH Zurich',
     author_email='rauscho@ethz.ch',
     description='DaCe frontend for machine learning',
