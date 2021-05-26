@@ -96,6 +96,32 @@ def test_tasklet_fission():
     assert result[0] == 6
 
 
+def test_tasklet_fusion_multiline():
+    @dace.program
+    def test_tf_multiline(A: dace.float32):
+
+        D = dace.define_local([1], dace.float32)
+        C = dace.define_local([1], dace.float32)
+        B = A + 1
+        with dace.tasklet:
+            b << B[0]
+            c >> C[0]
+            d >> D[0]
+
+            d = b * 3
+            c = b + 3
+
+        return C + D
+
+    sdfg: dace.SDFG = test_tf_multiline.to_sdfg()
+
+    assert sdfg.apply_transformations(TaskletFusion) == 1
+
+    sdfg.view()
+    result = np.empty((1,), dtype=np.float32)
+    sdfg(A=1, __return=result)
+    assert result[0] == 11
+
 
 @pytest.mark.pure
 def test_silu():

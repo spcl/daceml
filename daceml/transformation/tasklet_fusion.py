@@ -81,13 +81,9 @@ class TaskletFusion(Transformation):
                                            and graph.out_degree(data) != 1):
             return False
 
-        # tsk2 should have one out connector only
-        if graph.out_degree(tsk2) != 1:
-            return False
-
         # try to parse the tasklet
         try:
-            if len(tsk1.code.code) != 1 or len(tsk2.code.code) != 1:
+            if len(tsk1.code.code) != 1:
                 return False
             if len(tsk1.code.code[0].targets) != 1:
                 return False
@@ -134,9 +130,12 @@ class TaskletFusion(Transformation):
         assigned_value = tsk1.code.code[0].value
         if repldict:
             assigned_value = Renamer(repldict).visit(assigned_value)
-        new_code = Inliner(tsk2_in_edge.dst_conn,
-                           assigned_value).visit(tsk2.code.code[0])
-        new_code_str = astunparse.unparse(new_code)
+
+        new_code = [
+            Inliner(tsk2_in_edge.dst_conn, assigned_value).visit(line)
+            for line in tsk2.code.code
+        ]
+        new_code_str = "\n".join(astunparse.unparse(line) for line in new_code)
 
         new_tasklet = state.add_tasklet(tsk1.label + "_fused_" + tsk2.label,
                                         inputs, tsk2.out_connectors,
