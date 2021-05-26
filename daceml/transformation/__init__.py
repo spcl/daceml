@@ -5,3 +5,4 @@ from .tasklet_fusion import TaskletFusion
 from .pad_conv_fusion import PadConvFusion
 from .replacement import ReplacementTransformation
 from .constant_gpu_copy_elimination import ConstantDeviceCopyElimination
+from .init_state_fusion import InitStateFusion
