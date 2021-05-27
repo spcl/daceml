@@ -394,6 +394,8 @@ class BackwardPassGenerator:
             if isinstance(node, ONNXOp):
                 for impl in ONNXForward.registered_implementations(
                         node.schema.name):
+
+
                     if impl.forward_can_be_applied(node, state, self.sdfg):
                         # try to apply the expansion
                         class Expansion(xf.ExpandTransformation):
@@ -414,7 +416,8 @@ class BackwardPassGenerator:
                                            verify=False,
                                            _match_node=node)
                         expanded_something = True
-                        continue
+                        break
+
 
             # This could later on be changed to check if the expansion is differentiable and if not, move
             # on to the next expansion. For now we will just apply the first one that matches, prioritizing ones that
