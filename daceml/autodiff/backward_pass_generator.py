@@ -2,6 +2,8 @@
    This module exposes the add_backward_pass method that can be used to add a backward pass to an
    SDFGState.
 """
+import ast
+import astunparse
 import collections
 import copy
 import logging
@@ -98,6 +100,7 @@ def symbolic_execution({}):
     from sympy import sign, floor, ceiling as ceil, Abs as abs, Abs as fabs
     from sympy import Max as max, Min as min
     from sympy import Max as fmax, Min as fmin
+    from sympy import erf
 {}
     return {}
     """
@@ -1336,6 +1339,9 @@ class BackwardPassGenerator:
                 # small hack: our heaviside is lowercase
                 diff_code_str = diff_code_str.replace("Heaviside", "heaviside")
 
+                diff_code_str = astunparse.unparse(SympyCleaner().visit(ast.parse(diff_code_str)))
+
+
                 sub_expression_code_strs = "\n".join(
                     f"{target} = {expression}"
                     for target, expression in sub_expressions)
@@ -1369,3 +1375,11 @@ class BackwardPassGenerator:
                          debuginfo=tasklet.debuginfo)
         self.backward_state.add_node(rev)
         return rev, result
+
+
+class SympyCleaner(ast.NodeTransformer):
+    def visit_Name(self, node):
+        if node.id == "pi":
+            return ast.copy_location(ast.parse("(3.141592653589)").body[0], node)
+        else:
+            return self.generic_visit(node)

@@ -186,7 +186,6 @@ def connect_output_from_forward(forward_node: nd.Node, backward_node: nd.Node,
             n for n, _ in context.backward_state.all_nodes_recursive()
             if isinstance(n, nd.AccessNode) and n.data == output_arr_name
         ]
-        assert len(cand) == 1
         read = cand[0]
     context.backward_state.add_edge(read, None, backward_node,
                                     output_connector_name,

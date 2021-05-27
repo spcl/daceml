@@ -271,6 +271,31 @@ class PureEinsum(ONNXForward):
 def Identity(input, output):
     output[:] = input
 
+@op_implementation(op="Expand", name="pure")
+class PureExpand(ONNXForward):
+    """ Handle no-op case for Expand """
+
+    @staticmethod
+    def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
+        return iterables_equal(in_desc_with_name(node, state, sdfg, "input").shape ,
+                        out_desc_with_name(node, state, sdfg, "output").shape)
+
+
+    @staticmethod
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+
+        node.remove_in_connector("shape")
+        shape_node = in_edge_with_name(node, state, "shape").src
+        constant_folding.remove_node_and_computation(
+            sdfg, state, shape_node)
+
+        def prog(input, output):
+            output[:] = input
+
+        return program_for_node(prog, sdfg, state, node)
+
 
 @op_implementation(op="Reciprocal", name="pure")
 class PureReciprocal(ONNXForward):
