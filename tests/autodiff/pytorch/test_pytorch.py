@@ -12,7 +12,6 @@ from daceml.testing import torch_tensors_close, copy_to_gpu
 from daceml.util import utils
 
 
-
 def run_pytorch_module(module,
                        sdfg_name,
                        gpu,
@@ -246,20 +245,32 @@ def test_simple_broadcasted_mul(sdfg_name, gpu):
 
     run_pytorch_module(Module(), sdfg_name, gpu)
 
-def test_linformer_case(sdfg_name, gpu, default_implementation):
 
+def test_linformer_case(sdfg_name, gpu, default_implementation):
     class Module(torch.nn.Module):
         def __init__(self):
             super(Module, self).__init__()
             self.linear = nn.Linear(1024, 4096)
+
         def forward(self, x):
             return self.linear(x)
 
-    run_pytorch_module(Module(), sdfg_name, gpu, shape=(8, 512, 1024), rtol=1e-5, atol=1e-5)
+    run_pytorch_module(Module(),
+                       sdfg_name,
+                       gpu,
+                       shape=(8, 512, 1024),
+                       rtol=1e-5,
+                       atol=1e-5)
+
 
 def test_linformer_case(sdfg_name, gpu, default_implementation):
     class FeedForward(nn.Module):
-        def __init__(self, dim, mult = 4, dropout = 0., activation = None, glu = False):
+        def __init__(self,
+                     dim,
+                     mult=4,
+                     dropout=0.,
+                     activation=None,
+                     glu=False):
             super().__init__()
             activation = nn.ReLU
 
@@ -280,4 +291,10 @@ def test_linformer_case(sdfg_name, gpu, default_implementation):
             x = self.dropout(x)
             x = self.w2(x)
             return x
-    run_pytorch_module(FeedForward(1024), sdfg_name, gpu, shape=(8, 512, 1024), rtol=1e-5, atol=1e-5)
+
+    run_pytorch_module(FeedForward(1024),
+                       sdfg_name,
+                       gpu,
+                       shape=(8, 512, 1024),
+                       rtol=1e-5,
+                       atol=1e-5)
