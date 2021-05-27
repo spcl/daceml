@@ -410,7 +410,7 @@ class CuDNNConvBackward(BackwardImplementation):
         else:
             init_code += f"""
             __state->{unique_id}_filter_algo = new cudnnConvolutionBwdFilterAlgo_t;
-            *__state->{unique_id}_filter_algo = CUDNN_CONVOLUTION_BWD_FILTER_ALGO_{data_algo.upper()};
+            *__state->{unique_id}_filter_algo = CUDNN_CONVOLUTION_BWD_FILTER_ALGO_{filter_algo.upper()};
             """
 
         if data_algo == "auto":
