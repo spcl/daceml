@@ -250,7 +250,19 @@ class CudnnConvolution(ONNXForward):
             {dilation_w},
             CUDNN_CROSS_CORRELATION,
             {_DACE_DTYPE_TO_CUDNN_DTYPE[T]}));
+        daceml::cudnn::CheckCudnnError(cudnnSetConvolutionMathType(
+            *__state->{unique_id}_conv_desc,
+            CUDNN_DEFAULT_MATH));
         """
+
+        if node.group != 1:
+            init_code += f"""
+            daceml::cudnn::CheckCudnnError(cudnnSetConvolutionGroupCount(
+                *__state->{unique_id}_conv_desc,
+                {node.group}
+                ));
+            """
+
         finalize_code += f"""
         daceml::cudnn::CheckCudnnError(cudnnDestroyConvolutionDescriptor(*__state->{unique_id}_conv_desc));
         delete __state->{unique_id}_conv_desc;

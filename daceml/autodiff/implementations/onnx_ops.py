@@ -341,6 +341,13 @@ class CuDNNConvBackward(BackwardImplementation):
             CUDNN_CROSS_CORRELATION,
             {cudnn_implementations._DACE_DTYPE_TO_CUDNN_DTYPE[T]}));
         """
+        if forward_node.group != 1:
+            init_code += f"""
+            daceml::cudnn::CheckCudnnError(cudnnSetConvolutionGroupCount(
+                *__state->{unique_id}_conv_desc,
+                {forward_node.group}
+                ));
+            """
         finalize_code += f"""
         daceml::cudnn::CheckCudnnError(cudnnDestroyConvolutionDescriptor(*__state->{unique_id}_conv_desc));
         delete __state->{unique_id}_conv_desc;
