@@ -3,6 +3,7 @@ from typing import Union, Optional, Tuple, List
 
 import dace
 from dace import SDFGState, nodes as nd, SDFG, dtypes, data as dt
+from dace.codegen.targets.common import sym2cpp
 
 from daceml.onnx import environments
 from daceml.onnx.converters import clean_onnx_name
@@ -122,10 +123,11 @@ class CudnnConvolution(ONNXForward):
 
     """
     environments = [environments.cuDNN]
-    default_algorithm = "gemm"
+    default_algorithm = "auto"
 
     # choices for algorithms
     algorithms = [
+        "auto"
         "implicit_gemm",
         "implicit_precomp_gemm",
         "gemm",
@@ -135,6 +137,7 @@ class CudnnConvolution(ONNXForward):
         "winograd",
         "winograd_nonfused",
     ]
+    search_ws_size = 32 * 1024 * 1024
 
     @staticmethod
     def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
@@ -229,11 +232,6 @@ class CudnnConvolution(ONNXForward):
             init_code += init
             finalize_code += exit
 
-        if hasattr(node, "_algorithm"):
-            algo = node._algorithm
-        else:
-            algo = CudnnConvolution.default_algorithm
-
         # setup conv descriptor
         # we know padding is symmetric
         pad_h, pad_w = node.pads[0], node.pads[1]
@@ -258,10 +256,64 @@ class CudnnConvolution(ONNXForward):
         delete __state->{unique_id}_conv_desc;
         """
 
+        if hasattr(node, "_algorithm"):
+            algo = node._algorithm
+        else:
+            algo = CudnnConvolution.default_algorithm
+        if algo == "auto":
+
+            # setup fake data
+            free_fake_data_code, fake_data_init_code = setup_fake_data(
+                node, sdfg, state, False)
+
+            # setup algo
+            init_code += f"""
+            {environments.cuDNN.handle_setup_code(node, init_stream=False)}
+
+            // setup fake data
+            {fake_data_init_code}
+
+            // setup workspace
+            void *search_ws; 
+            cudaMalloc(&search_ws, {CudnnConvolution.search_ws_size});
+            // run search
+            cudnnConvolutionFwdAlgoPerf_t results;
+            int algo_count = 1;
+            daceml::cudnn::CheckCudnnError(cudnnFindConvolutionForwardAlgorithmEx(
+                __dace_cudnn_handle,
+                *__state->{unique_id}_X_desc,
+                fake_X,
+                *__state->{unique_id}_W_desc,
+                fake_W,
+                *__state->{unique_id}_conv_desc,
+                *__state->{unique_id}_Y_desc,
+                fake_Y,
+                1,
+                &algo_count,
+                &results,
+                search_ws,
+                {CudnnConvolution.search_ws_size}
+            ));
+            cudaFree(search_ws);
+            __state->{unique_id}_algo = new cudnnConvolutionFwdAlgo_t;
+            *__state->{unique_id}_algo = results.algo;
+            printf("{unique_id} using algo %d\\n", *__state->{unique_id}_algo);
+            
+            {free_fake_data_code}
+            """
+        else:
+            init_code += f"""
+            __state->{unique_id}_algo = new cudnnConvolutionFwdAlgo_t;
+            *__state->{unique_id}_algo = cudnnCUDNN_CONVOLUTION_FWD_ALGO_{algo.upper()};
+            """
+
+        finalize_code += f"""
+             delete __state->{unique_id}_algo;
+        """
+
         # setup workspace
         init_code += \
             f"""
-        {environments.cuDNN.handle_setup_code(node, init_stream=False)}
         // Setup workspace for {unique_id}
         size_t ws_size;
         daceml::cudnn::CheckCudnnError(cudnnGetConvolutionForwardWorkspaceSize(
@@ -270,7 +322,7 @@ class CudnnConvolution(ONNXForward):
             *__state->{unique_id}_W_desc,
             *__state->{unique_id}_conv_desc,
             *__state->{unique_id}_Y_desc,
-            CUDNN_CONVOLUTION_FWD_ALGO_{algo.upper()},
+            *__state->{unique_id}_algo,
             &ws_size));
         __state->{unique_id}_workspace_size = new size_t;
         *__state->{unique_id}_workspace_size = ws_size;
@@ -293,7 +345,7 @@ class CudnnConvolution(ONNXForward):
             *__state->{unique_id}_W_desc,
             _W,
             *__state->{unique_id}_conv_desc,
-            CUDNN_CONVOLUTION_FWD_ALGO_{algo.upper()},
+            *__state->{unique_id}_algo,
             __state->{unique_id}_workspace,
             *__state->{unique_id}_workspace_size,
             &beta,
@@ -318,6 +370,7 @@ class CudnnConvolution(ONNXForward):
                 f"cudnnConvolutionDescriptor_t *{unique_id}_conv_desc;",
                 f"cudnnTensorDescriptor_t *{unique_id}_Y_desc;",
                 f"cudnnTensorDescriptor_t *{unique_id}_X_desc;",
+                f"cudnnConvolutionFwdAlgo_t *{unique_id}_algo;",
                 f"cudnnFilterDescriptor_t *{unique_id}_W_desc;",
                 f"float *{unique_id}_workspace;",
                 f"size_t *{unique_id}_workspace_size;"
@@ -331,6 +384,37 @@ class CudnnConvolution(ONNXForward):
                         nsdfg.make_array_memlet("Y"))
 
         return nsdfg
+
+
+def setup_fake_data(node, sdfg, state, bwd) -> Tuple[str, str]:
+    free_fake_data_code = ""
+    init_code = ""
+
+    for edge, is_input in node.iter_edges(state):
+        conn = edge.dst_conn if is_input else edge.src_conn
+        desc = in_desc_with_name(node, state, sdfg,
+                                 conn) if is_input else out_desc_with_name(
+                                     node, state, sdfg, conn)
+        assert isinstance(desc, dt.Array)
+        init_code += f"""
+            void *fake_{conn};
+            cudaMalloc(&fake_{conn}, {sym2cpp(desc.total_size * desc.dtype.bytes)});
+            cudaMemset(fake_{conn}, 0, {sym2cpp(desc.total_size * desc.dtype.bytes)});
+            """
+        free_fake_data_code += f"""
+            cudaFree(fake_{conn});
+            """
+        if bwd:
+            init_code += f"""
+                void *fake_d{conn};
+                cudaMalloc(&fake_d{conn}, {sym2cpp(desc.total_size * desc.dtype.bytes)});
+                cudaMemset(fake_d{conn}, 0, {sym2cpp(desc.total_size * desc.dtype.bytes)});
+                """
+            free_fake_data_code += f"""
+                cudaFree(fake_d{conn});
+                """
+
+    return free_fake_data_code, init_code
 
 
 @op_implementation(op="BatchNormalization", name="cuDNN")

@@ -11,7 +11,8 @@ import dace.transformation.transformation as xf
 
 import daceml.onnx as donnx
 from daceml.onnx.converters import clean_onnx_name
-from daceml.onnx.op_implementations import pure_implementations, cudnn_implementations, CudnnBatchNormalizationTraining
+from daceml.onnx.op_implementations import pure_implementations, \
+    cudnn_implementations, CudnnBatchNormalizationTraining, setup_fake_data
 import daceml.autodiff.utils as butils
 from daceml.autodiff.base_abc import BackwardImplementation, BackwardContext, BackwardResult
 from daceml.util import utils
@@ -218,6 +219,7 @@ class CuDNNConvBackward(BackwardImplementation):
     """ Conv backward using CUDNN.
         The algorithm implementations can be set using node._data_algorithm and node._filter_algorithm
         Available choices for data algorithm:
+            "auto"
             "0"
             "1"
             "fft"
@@ -225,6 +227,7 @@ class CuDNNConvBackward(BackwardImplementation):
             "winograd"
             "winograd_nonfused"
         Available choices for filter algorithm:
+            "auto"
             "0"
             "1"
             "fft"
@@ -232,8 +235,8 @@ class CuDNNConvBackward(BackwardImplementation):
             "3"
             "winograd_nonfused"
     """
-    default_data_algorithm = "0"
-    default_filter_algorithm = "0"
+    default_data_algorithm = "auto"
+    default_filter_algorithm = "auto"
 
     @staticmethod
     def backward_can_be_applied(node: nd.Node, state: dace.SDFGState,
@@ -284,6 +287,7 @@ class CuDNNConvBackward(BackwardImplementation):
         init_code = ""
         finalize_code = ""
 
+        #######################
         # add descriptor init code for gradients
         for r in required_grads:
             is_filter = r == "W"
@@ -317,16 +321,7 @@ class CuDNNConvBackward(BackwardImplementation):
         init_code += init
         finalize_code += exit
 
-        if hasattr(forward_node, "_data_algorithm"):
-            data_algo = forward_node._data_algorithm
-        else:
-            data_algo = CuDNNConvBackward.default_data_algorithm
-
-        if hasattr(forward_node, "_filter_algorithm"):
-            filter_algo = forward_node._filter_algorithm
-        else:
-            filter_algo = CuDNNConvBackward.default_filter_algorithm
-
+        #######################
         # setup conv descriptor
         # we know from can_be_applied that the pads are symmetric
         pad_h, pad_w = forward_node.pads[0], forward_node.pads[1]
@@ -351,10 +346,111 @@ class CuDNNConvBackward(BackwardImplementation):
         delete __state->{unique_id}_conv_desc;
         """
 
+        #######################
+        # setup algorithms
+
+        if hasattr(forward_node, "_data_algorithm"):
+            data_algo = forward_node._data_algorithm
+        else:
+            data_algo = CuDNNConvBackward.default_data_algorithm
+
+        if hasattr(forward_node, "_filter_algorithm"):
+            filter_algo = forward_node._filter_algorithm
+        else:
+            filter_algo = CuDNNConvBackward.default_filter_algorithm
+
+        if data_algo == "auto" or filter_algo == "auto":
+            # setup fake data
+            free_fake_data_code, fake_data_init_code = setup_fake_data(
+                forward_node, context.forward_sdfg, context.forward_state,
+                True)
+
+            # setup algo
+            init_code += f"""
+            {donnx.environments.cuDNN.handle_setup_code(forward_node, init_stream=False)}
+            // setup fake data
+            {fake_data_init_code}
+
+            // setup workspace
+            void *search_ws; 
+            cudaMalloc(&search_ws, {cudnn_implementations.CudnnConvolution.search_ws_size});
+            """
+
+        if filter_algo == "auto":
+            init_code += f"""
+            // run search
+            cudnnConvolutionBwdFilterAlgoPerf_t filter_results;
+            int filter_algo_count = 1;
+            daceml::cudnn::CheckCudnnError(cudnnFindConvolutionBackwardFilterAlgorithmEx(
+                __dace_cudnn_handle,
+                *__state->{unique_id}_X_desc,
+                fake_X,
+                *__state->{unique_id}_dY_desc,
+                fake_dY,
+                *__state->{unique_id}_conv_desc,
+                *__state->{unique_id}_dW_desc,
+                fake_dW,
+                1,
+                &filter_algo_count,
+                &filter_results,
+                search_ws,
+                {cudnn_implementations.CudnnConvolution.search_ws_size}
+            ));
+            __state->{unique_id}_filter_algo = new cudnnConvolutionBwdFilterAlgo_t;
+            *__state->{unique_id}_filter_algo = filter_results.algo;
+            printf("{unique_id} using filter algo %d\\n", *__state->{unique_id}_filter_algo);
+            """
+        else:
+            init_code += f"""
+            __state->{unique_id}_filter_algo = new cudnnConvolutionBwdFilterAlgo_t;
+            *__state->{unique_id}_filter_algo = CUDNN_CONVOLUTION_BWD_FILTER_ALGO_{data_algo.upper()};
+            """
+
+        if data_algo == "auto":
+            init_code += f"""
+            // run search
+            cudnnConvolutionBwdDataAlgoPerf_t data_results;
+            int data_algo_count = 1;
+            daceml::cudnn::CheckCudnnError(cudnnFindConvolutionBackwardDataAlgorithmEx(
+                __dace_cudnn_handle,
+                *__state->{unique_id}_W_desc,
+                fake_W,
+                *__state->{unique_id}_dY_desc,
+                fake_dY,
+                *__state->{unique_id}_conv_desc,
+                *__state->{unique_id}_dX_desc,
+                fake_dX,
+                1,
+                &data_algo_count,
+                &data_results,
+                search_ws,
+                {cudnn_implementations.CudnnConvolution.search_ws_size}
+            ));
+            __state->{unique_id}_data_algo = new cudnnConvolutionBwdDataAlgo_t;
+            *__state->{unique_id}_data_algo = data_results.algo;
+            printf("{unique_id} using data algo %d\\n", *__state->{unique_id}_data_algo);
+            """
+        else:
+            init_code += f"""
+            __state->{unique_id}_data_algo = new cudnnConvolutionBwdDataAlgo_t;
+            *__state->{unique_id}_data_algo = CUDNN_CONVOLUTION_BWD_DATA_ALGO_{data_algo.upper()};
+            """
+
+        if data_algo == "auto" or filter_algo == "auto":
+            init_code += f"""
+            cudaFree(search_ws);
+            {free_fake_data_code}
+            """
+
+        finalize_code += f"""
+             delete __state->{unique_id}_data_algo;
+             delete __state->{unique_id}_filter_algo;
+        """
+
+        #######################
         # setup workspace
         init_code += \
             f"""
-        {donnx.environments.cuDNN.handle_setup_code(forward_node, init_stream=False)}
         // Setup workspace for {unique_id}
         
         size_t data_ws_size;
@@ -364,7 +460,7 @@ class CuDNNConvBackward(BackwardImplementation):
             *__state->{unique_id}_dY_desc,
             *__state->{unique_id}_conv_desc,
             *__state->{unique_id}_dX_desc,
-            CUDNN_CONVOLUTION_BWD_DATA_ALGO_{data_algo.upper()},
+            *__state->{unique_id}_data_algo,
             &data_ws_size));
         size_t filter_ws_size;
         daceml::cudnn::CheckCudnnError(cudnnGetConvolutionBackwardFilterWorkspaceSize(
@@ -373,7 +469,7 @@ class CuDNNConvBackward(BackwardImplementation):
             *__state->{unique_id}_dY_desc,
             *__state->{unique_id}_conv_desc,
             *__state->{unique_id}_dW_desc,
-            CUDNN_CONVOLUTION_BWD_FILTER_ALGO_{filter_algo.upper()},
+            *__state->{unique_id}_filter_algo,
             &filter_ws_size));
         
         size_t ws_size = max(filter_ws_size, data_ws_size);
@@ -385,6 +481,9 @@ class CuDNNConvBackward(BackwardImplementation):
         cudaFree(__state->{unique_id}_workspace);
         delete __state->{unique_id}_workspace_size;
         """
+
+        #######################
+        # tasklet code
 
         tasklet_code = f"""
         {donnx.environments.cuDNN.handle_setup_code(forward_node)}
@@ -398,7 +497,7 @@ class CuDNNConvBackward(BackwardImplementation):
             *__state->{unique_id}_dY_desc,
             _dY,
             *__state->{unique_id}_conv_desc,
-            CUDNN_CONVOLUTION_BWD_DATA_ALGO_{data_algo.upper()},
+            *__state->{unique_id}_data_algo,
             __state->{unique_id}_workspace,
             *__state->{unique_id}_workspace_size,
             &beta,
@@ -412,7 +511,7 @@ class CuDNNConvBackward(BackwardImplementation):
             *__state->{unique_id}_dY_desc,
             _dY,
             *__state->{unique_id}_conv_desc,
-            CUDNN_CONVOLUTION_BWD_FILTER_ALGO_{filter_algo.upper()},
+            *__state->{unique_id}_filter_algo,
             __state->{unique_id}_workspace,
             *__state->{unique_id}_workspace_size,
             &beta,
@@ -451,6 +550,8 @@ class CuDNNConvBackward(BackwardImplementation):
                 f"cudnnTensorDescriptor_t *{unique_id}_dY_desc;",
                 f"cudnnTensorDescriptor_t *{unique_id}_dB_desc;",
                 f"cudnnFilterDescriptor_t *{unique_id}_dW_desc;"
+                f"cudnnConvolutionBwdDataAlgo_t *{unique_id}_data_algo;"
+                f"cudnnConvolutionBwdFilterAlgo_t *{unique_id}_filter_algo;"
                 f"cudnnConvolutionDescriptor_t *{unique_id}_conv_desc;",
                 f"float *{unique_id}_workspace;",
                 f"size_t *{unique_id}_workspace_size;"

@@ -233,6 +233,7 @@ def test_simple_fused(sdfg_name, gpu):
 
     run_pytorch_module(Module(), sdfg_name, gpu, post_onnx_hooks=[fuse_maps])
 
+
 @pytest.mark.pure
 def test_simple_broadcasted_mul(sdfg_name, gpu):
     class Module(torch.nn.Module):
