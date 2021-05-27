@@ -255,6 +255,10 @@ class CudnnConvolution(ONNXForward):
         daceml::cudnn::CheckCudnnError(cudnnDestroyConvolutionDescriptor(*__state->{unique_id}_conv_desc));
         delete __state->{unique_id}_conv_desc;
         """
+        # setup algo
+        init_code += f"""
+        {environments.cuDNN.handle_setup_code(node, init_stream=False)}
+        """
 
         if hasattr(node, "_algorithm"):
             algo = node._algorithm
@@ -266,10 +270,8 @@ class CudnnConvolution(ONNXForward):
             free_fake_data_code, fake_data_init_code = setup_fake_data(
                 node, sdfg, state, False)
 
-            # setup algo
-            init_code += f"""
-            {environments.cuDNN.handle_setup_code(node, init_stream=False)}
 
+            init_code += f"""
             // setup fake data
             {fake_data_init_code}
 
@@ -304,7 +306,7 @@ class CudnnConvolution(ONNXForward):
         else:
             init_code += f"""
             __state->{unique_id}_algo = new cudnnConvolutionFwdAlgo_t;
-            *__state->{unique_id}_algo = cudnnCUDNN_CONVOLUTION_FWD_ALGO_{algo.upper()};
+            *__state->{unique_id}_algo = CUDNN_CONVOLUTION_FWD_ALGO_{algo.upper()};
             """
 
         finalize_code += f"""
