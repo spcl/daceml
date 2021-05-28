@@ -411,3 +411,77 @@ class PureBatchNormalization(ONNXForward):
 @python_pure_op_implementation
 def GlobalAveragePool(X, Y):
     Y[:] = np.mean(X, axis=[2, 3])
+
+
+@op_implementation(op="GlobalAveragePool", name="pure_opt")
+class PureGlobalAveragePool(ONNXForward):
+    @staticmethod
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
+        return True
+
+    @staticmethod
+    def forward(node: ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[nodes.Node, SDFG]:
+        x_name = list(node.in_connectors)[0]
+        y_name = list(node.out_connectors)[0]
+
+        in_edge = state.in_edges(node)[0]
+        out_edge = state.out_edges(node)[0]
+
+        x_data = sdfg.data(in_edge.data.data)
+        y_data = sdfg.data(out_edge.data.data)
+
+        new_sdfg = SDFG(name='GlobalAveragePoolExpansion')
+        new_state = new_sdfg.add_state()
+
+        new_sdfg.add_array(name=x_name, shape=x_data.shape, dtype=x_data.dtype)
+        new_sdfg.add_array(name=y_name, shape=y_data.shape, dtype=y_data.dtype)
+
+        map_entry_1, map_exit_1 = new_state.add_map(name='grid_map',
+                                                    ndrange={'a': f'0:{x_data.shape[0]}', 'b': f'0:{x_data.shape[1]}'})
+
+        map_entry_2, map_exit_2 = new_state.add_map(name='block_map', ndrange={'c': f'0:{x_data.shape[2]}'})
+
+        map_entry_3, map_exit_3 = new_state.add_map(name='thread_map', ndrange={'d': f'0:{x_data.shape[3]}'})
+
+        input_access = new_state.add_access(x_name)
+        output_access = new_state.add_access(y_name)
+
+        tasklet = new_state.add_tasklet(name='reduce', inputs={'x'}, outputs={'y'}, code='y = x')
+
+        new_state.add_memlet_path(input_access, map_entry_1, map_entry_2, map_entry_3, tasklet,
+                                  dst_conn='x', memlet=dace.Memlet(data=x_name, subset="a,b,c,d"))
+
+        acc_transient = 'acc_transient1'
+        new_sdfg.add_transient(name=acc_transient, shape=(1,), dtype=x_data.dtype)
+        acc_transient_access = new_state.add_access(acc_transient)
+        acc_transient_access.setzero = True
+
+        new_state.add_memlet_path(tasklet, map_exit_3, acc_transient_access, src_conn='y',
+                                  memlet=dace.Memlet(data=acc_transient, subset="0", wcr='lambda a, b: a + b'))
+
+        red = new_state.add_reduce(wcr='lambda a,b: a+b', axes=None, identity=0)
+        red.name = "reduce_cuda_block"
+        red.implementation = 'CUDA (block)'
+
+        new_state.add_edge(acc_transient_access, None, red, None, dace.Memlet(data=acc_transient, subset="0"))
+
+        red_transient = 'red_transient1'
+        new_sdfg.add_transient(name=red_transient, shape=(1,), dtype=x_data.dtype)
+        red_transient_access = new_state.add_access(red_transient)
+
+        writeout_tasklet = new_state.add_tasklet('writeout1', {'inp'}, {'out'},
+                                                 f'if c == 0: out = inp * {1. / (x_data.shape[2] * x_data.shape[3])}')
+
+        new_state.add_edge(red, None, red_transient_access, None, dace.Memlet(data=red_transient, subset="0"))
+        new_state.add_edge(red_transient_access, None, writeout_tasklet, 'inp',
+                           dace.Memlet(data=red_transient, subset="0"))
+
+        new_state.add_memlet_path(writeout_tasklet, map_exit_2, map_exit_1, output_access,
+                                  src_conn='out', memlet=dace.Memlet(data=y_name, subset="a,b", dynamic=True, volume=0))
+
+        new_sdfg.save('my123.sdfg')
+
+        return new_sdfg
+

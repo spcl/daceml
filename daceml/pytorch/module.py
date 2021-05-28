@@ -106,8 +106,9 @@ class DaceModule(nn.Module):
                                 and node.desc(module.sdfg).transient
                                 and not isinstance(node.desc(module.sdfg),
                                                    data.Scalar)):
-                            module.dace_model.outputs.append(node.data)
-                            node.desc(module.sdfg).transient = False
+                            if "mean" not in node.data and "std" not in node.data:
+                                module.dace_model.outputs.append(node.data)
+                                node.desc(module.sdfg).transient = False
 
             self.prepend_post_onnx_hook("make_transients_outputs",
                                         transients_outputs)

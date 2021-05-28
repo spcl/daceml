@@ -112,3 +112,4 @@ def test_mbconv(sdfg_name):
                                             dace_model.named_parameters()):
             assert 'model.' + name == pt_name
             torch_tensors_close(name, pt_param.grad, dace_param.grad)
+
