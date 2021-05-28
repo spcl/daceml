@@ -46,6 +46,11 @@ class BackwardResult:
     #: mapping from names of gradients to whether they should be zeroed out on initialization.
     zero_init: typing.Dict[typing.Optional[str], typing.Optional[bool]]
 
+    def __init__(self, required_grad_names, given_grad_names, zero_init=None):
+        self.required_grad_names = required_grad_names
+        self.given_grad_names = given_grad_names
+        self.zero_init = zero_init or {}
+
     @staticmethod
     def empty():
         return BackwardResult(given_grad_names={},
