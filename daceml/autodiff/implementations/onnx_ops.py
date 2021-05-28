@@ -663,20 +663,20 @@ class PyTorchConvBackward(BackwardImplementation):
         }
 
         tasklet_code = f"""
-            at::IntArrayRef x_shape = {{ {", ".join(map(str, X_desc.shape))} }};
-            at::IntArrayRef x_strides = {{ {", ".join(map(str, X_desc.strides))} }};
-            at::IntArrayRef w_shape = {{ {", ".join(map(str, W_desc.shape))} }};
-            at::IntArrayRef w_strides = {{ {", ".join(map(str, W_desc.strides))} }};
+            std::vector<int64_t> x_shape = {{ {", ".join(map(str, X_desc.shape))} }};
+            std::vector<int64_t> x_strides = {{ {", ".join(map(str, X_desc.strides))} }};
+            std::vector<int64_t> w_shape = {{ {", ".join(map(str, W_desc.shape))} }};
+            std::vector<int64_t> w_strides = {{ {", ".join(map(str, W_desc.strides))} }};
             at::Tensor x = at::from_blob(_X, x_shape, x_strides, [](void*){{}}, at::TensorOptions().device(at::kCUDA).dtype(at::{pytorch_dtype}).requires_grad(false));
             at::Tensor w = at::from_blob(_W, w_shape, w_strides, [](void*){{}}, at::TensorOptions().device(at::kCUDA).dtype(at::{pytorch_dtype}).requires_grad(false));
             at::Tensor dy = at::from_blob(_dY, x_shape, x_strides, [](void*){{}}, at::TensorOptions().device(at::kCUDA).dtype(at::{pytorch_dtype}).requires_grad(false));
             at::Tensor dw = at::from_blob(_dW, w_shape, w_strides, [](void*){{}}, at::TensorOptions().device(at::kCUDA).dtype(at::{pytorch_dtype}).requires_grad(false));
             at::Tensor dx = at::from_blob(_dX, x_shape, x_strides, [](void*){{}}, at::TensorOptions().device(at::kCUDA).dtype(at::{pytorch_dtype}).requires_grad(false));
             
-            at::IntArrayRef kernel_shape = {{ {", ".join(map(str, forward_node.kernel_shape))} }};
-            at::IntArrayRef conv_strides = {{ {", ".join(map(str, forward_node.strides))} }};
-            at::IntArrayRef padding = {{ {", ".join(map(str, forward_node.pads[::2]))} }};
-            at::IntArrayRef dilation = {{ {", ".join(map(str, forward_node.dilations))} }};
+            std::vector<int64_t> kernel_shape = {{ {", ".join(map(str, forward_node.kernel_shape))} }};
+            std::vector<int64_t> conv_strides = {{ {", ".join(map(str, forward_node.strides))} }};
+            std::vector<int64_t> padding = {{ {", ".join(map(str, forward_node.pads[::2]))} }};
+            std::vector<int64_t> dilation = {{ {", ".join(map(str, forward_node.dilations))} }};
             
             at::thnn_conv_depthwise2d_backward_out(dy, x, w, dx, dw, kernel_shape, conv_strides, padding, dilation);
         """
