@@ -678,7 +678,7 @@ class PyTorchConvBackward(BackwardImplementation):
             std::vector<int64_t> padding = {{ {", ".join(map(str, forward_node.pads[::2]))} }};
             std::vector<int64_t> dilation = {{ {", ".join(map(str, forward_node.dilations))} }};
             
-            at::thnn_conv_depthwise2d_backward_out(dy, x, w, dx, dw, kernel_shape, conv_strides, padding, dilation);
+            at::thnn_conv_depthwise2d_backward_out(dx, dw, dy, x, w, kernel_shape, conv_strides, padding, dilation);
         """
 
         tasklet = nstate.add_tasklet(
