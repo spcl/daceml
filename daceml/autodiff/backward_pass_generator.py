@@ -395,7 +395,6 @@ class BackwardPassGenerator:
                 for impl in ONNXForward.registered_implementations(
                         node.schema.name):
 
-
                     if impl.forward_can_be_applied(node, state, self.sdfg):
                         # try to apply the expansion
                         class Expansion(xf.ExpandTransformation):
@@ -417,7 +416,6 @@ class BackwardPassGenerator:
                                            _match_node=node)
                         expanded_something = True
                         break
-
 
             # This could later on be changed to check if the expansion is differentiable and if not, move
             # on to the next expansion. For now we will just apply the first one that matches, prioritizing ones that
@@ -550,8 +548,23 @@ class BackwardPassGenerator:
             name.data: self.array_grad_name(name.data)
             for name in self.given_gradients
         }
+
+        # set mapping from gradient name to whether it should be zeroed out on
+        # initialization
+        zero_init: Dict[str, bool] = {}
+        for node, bres in self.result_map.items():
+            for zname, zinit in bres.zero_init.items():
+                # Reverse lookup
+                cname = next(k for k, v in bres.required_grad_names.items()
+                             if v == zname)
+                for e in forward_subgraph.in_edges_by_connector(node, cname):
+                    zero_init[e.data.data] = zinit
+                for e in forward_subgraph.out_edges_by_connector(node, cname):
+                    zero_init[e.data.data] = zinit
+
         result = BackwardResult(required_grad_names=required_grad_names,
-                                given_grad_names=given_grad_names)
+                                given_grad_names=given_grad_names,
+                                zero_init=zero_init)
         return result, self.backward_grad_arrays, self.backward_input_arrays
 
     def _find_subgraph_to_differentiate(self) -> dstate.StateSubgraphView:
@@ -1342,8 +1355,8 @@ class BackwardPassGenerator:
                 # small hack: our heaviside is lowercase
                 diff_code_str = diff_code_str.replace("Heaviside", "heaviside")
 
-                diff_code_str = astunparse.unparse(SympyCleaner().visit(ast.parse(diff_code_str)))
-
+                diff_code_str = astunparse.unparse(SympyCleaner().visit(
+                    ast.parse(diff_code_str)))
 
                 sub_expression_code_strs = "\n".join(
                     f"{target} = {expression}"
@@ -1383,6 +1396,7 @@ class BackwardPassGenerator:
 class SympyCleaner(ast.NodeTransformer):
     def visit_Name(self, node):
         if node.id == "pi":
-            return ast.copy_location(ast.parse("(3.141592653589)").body[0], node)
+            return ast.copy_location(
+                ast.parse("(3.141592653589)").body[0], node)
         else:
             return self.generic_visit(node)
