@@ -3,6 +3,8 @@ import ctypes
 import itertools
 from typing import List, Optional, Tuple, Dict, Union
 
+import numpy as np
+
 import dace
 from dace.frontend.common import einsum
 from dace.registry import autoregister_params
@@ -915,3 +917,24 @@ class PureGlobalAveragePoolingBackward(BackwardImplementation):
                     x_grad = y_grad * dtype(inv)
 
         return butils.backward_program_for_node(bwd, context, forward_node)
+
+
+@autoregister_params(op="Transpose", name="default")
+class DefaultTransposeBackward(BackwardImplementation):
+    @staticmethod
+    def backward(
+            forward_node: nd.Node, context: BackwardContext,
+            given_gradients: List[Optional[str]],
+            required_gradients: List[Optional[str]]
+    ) -> Tuple[nd.Node, BackwardResult]:
+        inv_perm = tuple(np.argsort(forward_node.perm))
+
+        node = donnx.ONNXTranspose(forward_node.name + "_backward", perm=inv_perm)
+        context.backward_state.add_node(node)
+
+        result = BackwardResult.empty()
+        result.given_grad_names["transposed"] = "data"
+        result.required_grad_names["data"] = "transposed"
+
+        return node, result
+
