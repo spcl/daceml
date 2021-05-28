@@ -43,9 +43,14 @@ class BackwardResult:
     #: mapping from names of input connectors to the connector name of the gradient for that connector.
     given_grad_names: typing.Dict[typing.Optional[str], typing.Optional[str]]
 
+    #: mapping from names of gradients to whether they should be zeroed out on initialization.
+    zero_init: typing.Dict[typing.Optional[str], typing.Optional[bool]]
+
     @staticmethod
     def empty():
-        return BackwardResult(given_grad_names={}, required_grad_names={})
+        return BackwardResult(given_grad_names={},
+                              required_grad_names={},
+                              zero_init={})
 
 
 @dace.registry.make_registry

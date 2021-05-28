@@ -259,8 +259,9 @@ def setup_grad_values(backward_result: BackwardResult, sdfg: dace.SDFG,
                       outputs: List[str]) -> str:
     code = "// input grads"
     for _, grad_name in backward_result.required_grad_names.items():
+        zero_init = backward_result.zero_init.get(grad_name, True)
         code += "\n" + tensor_init_for_desc(
-            grad_name, sdfg.arrays[grad_name], zeros=True)
+            grad_name, sdfg.arrays[grad_name], zeros=zero_init)
 
     code += "// output grads"
     for i, o in enumerate(outputs):
