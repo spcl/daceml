@@ -669,7 +669,7 @@ class PyTorchConvBackward(BackwardImplementation):
             
             at::IntArrayRef kernel_shape = {{ {", ".join(map(str, forward_node.kernel_shape))} }};
             at::IntArrayRef conv_strides = {{ {", ".join(map(str, forward_node.strides))} }};
-            at::IntArrayRef padding = {{ {", ".join(map(str, forward_node.pads))} }};
+            at::IntArrayRef padding = {{ {", ".join(map(str, forward_node.pads[::2]))} }};
             at::IntArrayRef dilation = {{ {", ".join(map(str, forward_node.dilations))} }};
             std::array<bool, 2> output_mask = {{true, true}};
             
