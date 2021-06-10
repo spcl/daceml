@@ -20,13 +20,12 @@ class Model(nn.Module):
         return F.relu(x)
 
 
-@pytest.mark.seq
 @pytest.mark.pure
 def test_reshape_elimination(sdfg_name):
 
     ptmodel = Model()
     x = torch.rand((100, 6, 12, 12))
-    dace_model = DaceModule(ptmodel, auto_optimize=False, sdfg_name=sdfg_name)
+    dace_model = DaceModule(ptmodel, auto_optimize=False, sdfg_name=sdfg_name, cuda=False)
 
     def ApplyReshapeElimination(dace_module):
         sdfg = dace_module.sdfg
