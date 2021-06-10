@@ -38,7 +38,6 @@ def test_reshape_elimination(sdfg_name):
                                      ApplyReshapeElimination)
 
     torch_output = ptmodel(x)
-    with dace.library.change_default(donnx.ONNXReshape, "pure"):
-        dace_output = dace_model(x)
+    dace_output = dace_model(x)
 
     assert np.allclose(torch_output.detach().numpy(), dace_output, atol=1e-06)
