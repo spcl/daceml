@@ -376,11 +376,13 @@ class ONNXOp(nd.LibraryNode):
 
             edge_data = edge.data.data
             edge_dtype = sdfg.arrays[edge_data].dtype
+            # edge_dtype can be a vector type
             if matched.param_type == ONNXParameterType.Variadic and not matched.homogeneous:
                 # non homogeneous parameters don't need to be consistent
                 pass
-            elif matched.type_str in assigned_params and assigned_params[
-                    matched.type_str] != edge_dtype:
+            elif matched.type_str in assigned_params and (
+                    assigned_params[matched.type_str] != edge_dtype and
+                    assigned_params[matched.type_str] != edge_dtype.base_type):
                 raise ValueError(
                     "Could not solve type constraints;"
                     " excepted type '{expected}' for {param_type} '{conn_name}', got type '{actual}'"
@@ -391,14 +393,14 @@ class ONNXOp(nd.LibraryNode):
 
             # otherwise, matched.type_str was not assigned a type yet: try to assign it
             cons = self.schema.type_constraints[matched.type_str]
-            if edge_dtype not in cons.types:
+            if edge_dtype not in cons.types and edge_dtype.base_type not in cons.types:
                 raise ValueError(
                     "Expected type in '{possible}' for {param_type} '{conn_name}', got type '{actual}'"
                     .format(possible=cons.types,
                             param_type="input" if is_input else "output",
                             conn_name=matched.name,
                             actual=edge_dtype))
-            assigned_params[matched.type_str] = edge_dtype
+            assigned_params[matched.type_str] = edge_dtype.base_type
 
         # check that we have all required attributes
         ##########################################

@@ -1,5 +1,6 @@
 VENV_PATH ?= venv
 PYTHON ?= python
+PYTHON_BINARY ?= python
 PYTEST ?= pytest
 PIP ?= pip
 YAPF ?= yapf
@@ -52,6 +53,9 @@ test-parallel:
 
 test-gpu: 
 	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests --gpu
+
+test-intel-fpga:
+	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests/pytorch/fpga/
 
 codecov:
 	curl -s https://codecov.io/bash | bash

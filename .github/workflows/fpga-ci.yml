@@ -1,0 +1,41 @@
+name: FPGA CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  test-fpga:
+    runs-on: [self-hosted, linux, intel-fpga]
+    env:
+      ORT_ROOT: '/opt/onnxruntime'
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+          submodules: 'recursive'
+
+      - name: Install dependencies
+        env:
+          UPDATE_PIP: 'true'
+        run: |
+          rm -rf .dacecache tests/.dacecache
+          . /opt/setupenv
+          make clean install
+
+      - name: Run Intel FPGA tests
+        env:
+          PYTEST_ARGS: --cov=daceml --cov-report=term --cov-report xml --cov-config=.coveragerc -s -m "not slow and fpga"
+          DACE_compiler_fpga_vendor: intel_fpga
+          DACE_compiler_use_cache: 0
+          DACE_compiler_default_data_types: C
+          DACE_compiler_intel_fpga_mode: emulator
+          DACE_optimizer_transform_on_call: 0
+          DACE_optimizer_autooptimize: 0
+        run: make test-intel-fpga
+
+      - name: Upload coverage
+        run: make codecov
