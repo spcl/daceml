@@ -19,6 +19,7 @@ class Model(nn.Module):
         x = x.view(-1, 256)
         return F.relu(x)
 
+
 @pytest.mark.skip(reason="Does not work on CI")
 @pytest.mark.pure
 def test_reshape_elimination(gpu, sdfg_name):
