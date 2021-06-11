@@ -21,7 +21,7 @@ class Model(nn.Module):
 
 
 @pytest.mark.pure
-def test_reshape_elimination(sdfg_name):
+def test_reshape_elimination(gpu, sdfg_name):
 
     ptmodel = Model()
     x = torch.rand((100, 6, 12, 12))
