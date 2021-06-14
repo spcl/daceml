@@ -373,7 +373,9 @@ class FPGAIm2ColConv(ONNXForward):
                                            len(node.dilations) != image_dims):
             return False
 
-        if node.pads is not None and (not all(p == 0 for p in node.pads)
+        # Support all same padding
+        if node.pads is not None and (not all(p == node.pads[0]
+                                              for p in node.pads)
                                       or len(node.pads) != image_dims * 2):
             return False
 
@@ -419,6 +421,10 @@ class FPGAIm2ColConv(ONNXForward):
         num_filters = W.shape[0]
         num_channels = X.shape[1]
         batch_size = X.shape[0]
+
+        # Padding
+        padding = node.pads[0]  # currently only equal padding supported
+        offset = 2 * (filter_hx // 2 - padding)
 
         # Take output size: note, tat this accounts for vectorization (if present)
         output_size_x, output_size_y = Y.shape[2:]
@@ -533,12 +539,21 @@ class FPGAIm2ColConv(ONNXForward):
             X = state.add_read("X")
             pipe = state.add_write("im2col_pipe")
             vect_data = state.add_access("vec_data_im2col")
-            tasklet = state.add_tasklet("read_X", {"from_memory"},
-                                        {"to_kernel"},
-                                        "to_kernel = from_memory")
+            tasklet = state.add_tasklet(
+                "read_X", {"from_memory"}, {"to_kernel"}, f"""
+if ((x + hx - {padding} < {output_size_x} + {offset}) and 
+        (x + hx  - {padding} >= 0) and 
+        (y0*{vec_width}+y1 + hy  - {padding} < {output_size_y} * {vec_width} + {offset})  and
+        (y0*{vec_width}+y1 + hy  - {padding} >= 0)):
+    to_kernel = from_memory
+else:
+    to_kernel = 0
+""")
 
             im2col_input_memlet = dace.Memlet(
-                f"X[b, cin, x + hx, y0*{vec_width}+y1 + hy]")
+                f"X[b, cin, x + hx - {padding}, y0*{vec_width}+y1 + hy - {padding}]",
+                allow_oob=True,
+                dynamic=True)
 
             # In the innermost map we read W=vec_width data elements and we store them into `vec_data`
             state.add_memlet_path(X,
