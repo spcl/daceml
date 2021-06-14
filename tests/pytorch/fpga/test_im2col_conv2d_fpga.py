@@ -19,12 +19,17 @@ from multiprocessing import Process, Queue
 
 
 class Model(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size,
-                 input_to_constant):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 kernel_size,
+                 input_to_constant,
+                 padding=0):
         super(Model, self).__init__()
         self.conv = nn.Conv2d(in_channels=in_channels,
                               out_channels=out_channels,
-                              kernel_size=kernel_size)
+                              kernel_size=kernel_size,
+                              padding=padding)
         if input_to_constant:
             #fix the weight otherwise everytime they are randomized
             self.conv.weight.data.fill_(0.1)
@@ -41,14 +46,16 @@ def evaluate(in_channels,
              data_shape: tuple,
              input_to_constant: bool,
              execute_cpu_dace: bool = False,
-             queue=None):
+             queue=None,
+             padding: int = 0):
     '''
     This function is used to evaluate a given model.
     It will build the pytorch model, transform it to a DaCe Model, apply transformation and execute on FPGA
     :return: returns if the result is correct
     '''
     # create pytorch model
-    ptmodel = Model(in_channels, out_channels, kernel_size, input_to_constant)
+    ptmodel = Model(in_channels, out_channels, kernel_size, input_to_constant,
+                    padding)
 
     #create data
     x = torch.rand(data_shape)
@@ -120,7 +127,7 @@ def run(input_to_constant):
     :return:
     '''
     # Example: second convolutional layer in Lenet
-    evaluate(1, 6, 5, 1, (100, 1, 28, 28), input_to_constant, False)
+    evaluate(1, 6, 5, 1, (100, 1, 28, 28), input_to_constant, False, padding=0)
 
 
 @pytest.mark.fpga
@@ -190,6 +197,41 @@ def test(input_to_constant=False, extensive=False):
         p = Process(target=evaluate,
                     args=(3, 3, 3, 16, (100, 3, 34, 34), input_to_constant,
                           False, queue))
+        p.start()
+        p.join()
+        assert (queue.get() < 1e-6)
+
+    # With padding
+    queue = Queue()
+    p = Process(target=evaluate,
+                args=(1, 6, 3, 1, (100, 1, 28, 28), input_to_constant, False,
+                      queue, 1))
+    p.start()
+    p.join()
+    assert (queue.get() < 1e-6)
+
+    queue = Queue()
+    p = Process(target=evaluate,
+                args=(1, 6, 3, 4, (100, 1, 28, 28), input_to_constant, False,
+                      queue, 1))
+    p.start()
+    p.join()
+    assert (queue.get() < 1e-6)
+
+    if extensive:
+
+        queue = Queue()
+        p = Process(target=evaluate,
+                    args=(1, 6, 5, 1, (100, 1, 12, 12), input_to_constant,
+                          False, queue, 2))
+        p.start()
+        p.join()
+        assert (queue.get() < 1e-6)
+
+        queue = Queue()
+        p = Process(target=evaluate,
+                    args=(1, 6, 5, 2, (100, 1, 12, 12), input_to_constant,
+                          False, queue, 1))
         p.start()
         p.join()
         assert (queue.get() < 1e-6)
