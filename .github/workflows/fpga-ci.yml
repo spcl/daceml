@@ -8,7 +8,7 @@ on:
 
 jobs:
   test-fpga:
-    runs-on: [self-hosted, linux, intel-fpga]
+    runs-on: [self-hosted, linux, intel-fpga, , xilinx-fpga]
     env:
       ORT_ROOT: '/opt/onnxruntime'
 
@@ -36,6 +36,17 @@ jobs:
           DACE_optimizer_transform_on_call: 0
           DACE_optimizer_autooptimize: 0
         run: make test-intel-fpga
+
+      - name: Run Xilinx FPGA tests
+        env:
+          PYTEST_ARGS: --cov=daceml --cov-report=term --cov-report xml --cov-config=.coveragerc -s -m "not slow and fpga"
+          DACE_compiler_fpga_vendor: xilinx
+          DACE_compiler_use_cache: 0
+          DACE_compiler_default_data_types: C
+          DACE_compiler_intel_fpga_mode: simulation
+          DACE_optimizer_transform_on_call: 0
+          DACE_optimizer_autooptimize: 0
+        run: make test-xilinx
 
       - name: Upload coverage
         run: make codecov

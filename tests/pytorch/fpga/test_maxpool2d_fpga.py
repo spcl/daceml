@@ -26,7 +26,7 @@ class Model(nn.Module):
         return F.max_pool2d(x, 2)
 
 
-def run(data_shape: tuple, vec_width=1, queue=None):
+def run(data_shape: tuple, vec_width=1, queue=None, vec_width_out=1):
     '''
     Evaluates specific configurations
     :param data_shape:
@@ -62,6 +62,10 @@ def run(data_shape: tuple, vec_width=1, queue=None):
             vec_type = dace.vector(dace.float32, vec_width)
             utils.vectorize_array_and_memlet(sdfg, "fpga_ONNX_0", vec_type)
 
+        if vec_width_out > 1:
+            vec_type = dace.vector(dace.float32, vec_width_out)
+            utils.vectorize_array_and_memlet(sdfg, "fpga_ONNX_1", vec_type)
+
         sdfg.expand_library_nodes()
         sdfg.apply_transformations_repeated([InlineSDFG])
 
@@ -90,13 +94,41 @@ def test():
     '''
        TODO: add more testing
     '''
-    data_shape = (1000, 6, 32, 32)
     # Multiprocess is needed for testing otherwise Intel Compiler mess up with threads
     queue = Queue()
-    p = Process(target=run, args=(data_shape, 1, queue))
+    vendor = dace.config.Config.get("compiler", "fpga_vendor")
+    print("[MAXPOOL]", vendor)
+
+    # Baseline case
+    data_shape = (1000, 6, 32, 32)
+    p = Process(target=run, args=(data_shape, 1, queue, 1))
     p.start()
     p.join()
     assert (queue.get() < 1e-6)
+
+    # Vectorized input and output
+    data_shape = (1000, 6, 32, 32)
+    p = Process(target=run, args=(data_shape, 2, queue, 2))
+    p.start()
+    p.join()
+    assert (queue.get() < 1e-6)
+
+    # Vectorized input and output, output vectorized by in_vec / kernel
+    # thus in_vec: 8 --> out_vec: 4 for testing kernel of s
+    data_shape = (1000, 6, 32, 32)
+    p = Process(target=run, args=(data_shape, 8, queue, 4))
+    p.start()
+    p.join()
+    assert (queue.get() < 1e-6)
+
+    # Intel only tests
+    if vendor != "xilinx":
+        # Vectorized input with unrolled writes (Intel)
+        data_shape = (1000, 6, 32, 32)
+        p = Process(target=run, args=(data_shape, 4, queue, 1))
+        p.start()
+        p.join()
+        assert (queue.get() < 1e-6)
 
     print("Success!")
 
