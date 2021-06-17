@@ -8,7 +8,7 @@ on:
 
 jobs:
   test-fpga:
-    runs-on: [self-hosted, linux, intel-fpga, , xilinx-fpga]
+    runs-on: [self-hosted, linux, intel-fpga, xilinx-fpga]
     env:
       ORT_ROOT: '/opt/onnxruntime'
 
