@@ -37,6 +37,9 @@ jobs:
           DACE_optimizer_autooptimize: 0
         run: make test-intel-fpga
 
+      - name: Upload coverage
+        run: make codecov
+
       - name: Run Xilinx FPGA tests
         env:
           PYTEST_ARGS: --cov=daceml --cov-report=term --cov-report xml --cov-config=.coveragerc -s -m "not slow and fpga"
