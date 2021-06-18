@@ -1239,27 +1239,25 @@ if hy == {filter_height} - 1 and hx == {filter_width} -1 and  in_y % {filter_hei
             y_memlet = dace.Memlet(
                 f"Y[b,c, in_y//{filter_height}, in_x//{filter_width}]")
         else:
-            # print("vectorize in and out")
             x_access = f"int_floor(in_x, {filter_width})"
             if X.veclen == filter_width * Y.veclen:
                 # if input vector size is a multiple of the output vector size
                 # we can output to each index of the input on the output
                 x_access = "in_x"
 
+
+        #    dynamic memlet (to access only when needed) from compute tasklet to out image
             y_memlet = dace.Memlet(
                 f"Y[b,c, int_floor(in_y, {filter_height}), {x_access}]",
                 allow_oob=True,
                 dynamic=True)
-            # y_memlet = dace.Memlet(
-            #     f"Y[b,c, (in_y // {filter_height}), (in_x // {filter_width})]", allow_oob=True,
-            #     dynamic=True)
 
-        # dynamic memlet (to access only when needed) from compute tasklet to out image
 
         # Attention: use propagate=False otherwise it does not validate
         if Y.veclen == 1:
 
-            # plane data type output for plane data types or unrolled writes on Intel
+            
+            # plain data type output for plain data types or unrolled writes on Intel
             new_state.add_memlet_path(
                 compute_tasklet,
                 inner_mx,
