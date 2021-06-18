@@ -42,7 +42,7 @@ jobs:
 
       - name: Run Xilinx FPGA tests
         env:
-          PYTEST_ARGS: --cov=daceml --cov-report=term --cov-report xml --cov-config=.coveragerc -s -m "not slow and fpga"
+          PYTEST_ARGS: --cov=daceml --cov-report=term --cov-report xml --cov-config=.coveragerc -s -m "xilinx"
           DACE_compiler_fpga_vendor: xilinx
           DACE_compiler_use_cache: 0
           DACE_compiler_default_data_types: C

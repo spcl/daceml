@@ -90,6 +90,7 @@ def run(data_shape: tuple, vec_width=1, queue=None, vec_width_out=1):
 
 
 @pytest.mark.fpga
+@pytest.mark.xilinx
 def test():
     '''
        TODO: add more testing
