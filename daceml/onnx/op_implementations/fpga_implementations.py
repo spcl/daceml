@@ -1008,7 +1008,8 @@ class FPGAMaxPool2D(ONNXForward):
 
         if Y.veclen != 1:  # if output vectorized must match
             _, filter_width = node.kernel_shape
-            if not (X.veclen == Y.veclen or X.veclen == filter_width * Y.veclen):  # support reducing vector size proportionally to filter
+            if not (X.veclen == Y.veclen or X.veclen == filter_width * Y.veclen
+                    ):  # support reducing vector size proportionally to filter
                 return False
 
         if "Indices" in {e.src_conn for e in state.out_edges(node)}:
