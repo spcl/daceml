@@ -1245,18 +1245,15 @@ if hy == {filter_height} - 1 and hx == {filter_width} -1 and  in_y % {filter_hei
                 # we can output to each index of the input on the output
                 x_access = "in_x"
 
-
         #    dynamic memlet (to access only when needed) from compute tasklet to out image
             y_memlet = dace.Memlet(
                 f"Y[b,c, int_floor(in_y, {filter_height}), {x_access}]",
                 allow_oob=True,
                 dynamic=True)
 
-
         # Attention: use propagate=False otherwise it does not validate
         if Y.veclen == 1:
 
-            
             # plain data type output for plain data types or unrolled writes on Intel
             new_state.add_memlet_path(
                 compute_tasklet,
