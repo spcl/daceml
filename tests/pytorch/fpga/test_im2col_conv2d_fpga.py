@@ -17,6 +17,15 @@ from dace.transformation.dataflow import streaming_memory as sm
 from dace.transformation.dataflow import PruneConnectors
 from multiprocessing import Process, Queue
 
+def get_library_node_by_name(sdfg, name):
+
+    for node, state in sdfg.all_nodes_recursive():
+        if isinstance(node, dace.sdfg.nodes.LibraryNode):
+            print(node.label)
+            if node.label == name:
+                return node, state
+
+    raise Exception(f"LibraryNode {name} not found")
 
 class Model(nn.Module):
     def __init__(self,
@@ -47,7 +56,9 @@ def evaluate(in_channels,
              input_to_constant: bool,
              execute_cpu_dace: bool = False,
              queue=None,
-             padding: int = 0):
+             padding: int = 0,
+             expansion="fpga",
+             activation=None):
     '''
     This function is used to evaluate a given model.
     It will build the pytorch model, transform it to a DaCe Model, apply transformation and execute on FPGA
@@ -62,6 +73,7 @@ def evaluate(in_channels,
 
     #evaluate pytorch model
     torch_output = ptmodel(x)
+    print(torch_output.shape)
 
     #create dace model
     dace_model = DaceModule(ptmodel, dummy_inputs=(x, ), auto_optimize=False)
@@ -89,7 +101,16 @@ def evaluate(in_channels,
             vec_type = dace.vector(dace.float32, vec_width)
             utils.vectorize_array_and_memlet(sdfg, "fpga_ONNX_3", vec_type)
 
-        sdfg.expand_library_nodes()
+            # vectorize input too for tiled implementation
+            if "tile" in expansion:
+                utils.vectorize_array_and_memlet(sdfg, "fpga_input", vec_type)
+
+        # pass expansion parameters for tiled implementation
+        if "tile" in expansion:
+            node, state  = get_library_node_by_name(sdfg, "Conv_0")
+            node.expand(sdfg, state, tiles=(torch_output.shape[3] * 8), pe=4, activation=activation)
+        else:
+            sdfg.expand_library_nodes()
         sdfg.apply_transformations_repeated([InlineSDFG])
         # # Input to constant
         if input_to_constant:
@@ -102,15 +123,18 @@ def evaluate(in_channels,
     dace_model.append_post_onnx_hook("TransformToFPGA", TransformToFPGA)
 
     # Execute Module with FPGA expansion
-    with dace.library.change_default(donnx.ONNXConv, "fpga"):
+    with dace.library.change_default(donnx.ONNXConv, expansion):
         dace_output_fpga = dace_model(torch.clone(x))
 
     dace_output_fpga = dace_output_fpga.detach().numpy().reshape(
         torch_output.shape)
 
-    diff = np.linalg.norm(torch_output.detach().numpy() -
+    torch_output_numpy = torch_output.detach().numpy()
+    if activation is not None and activation == "relu":
+        torch_output_numpy = np.maximum(0, torch_output_numpy)
+    diff = np.linalg.norm(torch_output_numpy -
                           dace_output_fpga) / np.linalg.norm(
-                              torch_output.detach().numpy())
+                              torch_output_numpy)
     print("Difference: ", diff)
     if queue is not None:
         # we are testing
@@ -127,7 +151,9 @@ def run(input_to_constant):
     :return:
     '''
     # Example: second convolutional layer in Lenet
-    evaluate(1, 6, 5, 1, (100, 1, 28, 28), input_to_constant, False, padding=0)
+    # evaluate(1, 6, 5, 1, (100, 1, 28, 28), input_to_constant, False, padding=0, expansion="fpga")
+
+    evaluate(1, 6, 3, 4, (100, 1, 28, 28), input_to_constant, False, padding=1, expansion="fpga_tiled", activation="relu")
 
 
 @pytest.mark.fpga
@@ -154,6 +180,15 @@ def test(input_to_constant=False, extensive=False):
     p.join()
     assert (queue.get() < 1e-6)
 
+    # with tiling
+    queue = Queue()
+    p = Process(target=evaluate,
+                args=(1, 6, 5, 1, (100, 1, 28, 28), input_to_constant, False,
+                      queue, 0, "fpga_tiled"))
+    p.start()
+    p.join()
+    assert (queue.get() < 1e-6)
+
     if extensive:
         p = Process(target=evaluate,
                     args=(10, 1, 5, 1, (100, 10, 20, 20), input_to_constant,
@@ -165,6 +200,13 @@ def test(input_to_constant=False, extensive=False):
         p = Process(target=evaluate,
                     args=(14, 8, 3, 1, (100, 14, 20, 20), input_to_constant,
                           False, queue))
+        p.start()
+        p.join()
+        assert (queue.get() < 1e-6)
+
+        p = Process(target=evaluate,
+            args=(14, 8, 3, 1, (100, 14, 20, 20), input_to_constant,
+                    False, queue, 0, "fpga_tiled"))
         p.start()
         p.join()
         assert (queue.get() < 1e-6)
@@ -181,6 +223,13 @@ def test(input_to_constant=False, extensive=False):
     p = Process(target=evaluate,
                 args=(6, 16, 5, 8, (100, 6, 12, 12), input_to_constant, False,
                       queue))
+    p.start()
+    p.join()
+    assert (queue.get() < 1e-6)
+
+    p = Process(target=evaluate,
+            args=(6, 16, 5, 8, (100, 6, 12, 12), input_to_constant, False,
+                      queue, 0, "fpga_tiled"))
     p.start()
     p.join()
     assert (queue.get() < 1e-6)
@@ -218,6 +267,14 @@ def test(input_to_constant=False, extensive=False):
     p.join()
     assert (queue.get() < 1e-6)
 
+    queue = Queue()
+    p = Process(target=evaluate,
+                args=(1, 6, 3, 4, (100, 1, 28, 28), input_to_constant, False,
+                      queue, 1, "fpga_tiled"))
+    p.start()
+    p.join()
+    assert (queue.get() < 1e-6)
+
     if extensive:
 
         queue = Queue()
@@ -235,6 +292,16 @@ def test(input_to_constant=False, extensive=False):
         p.start()
         p.join()
         assert (queue.get() < 1e-6)
+
+
+    # with relu activation on tiled implementation
+    queue = Queue()
+    p = Process(target=evaluate,
+                args=(1, 6, 3, 4, (100, 1, 28, 28), input_to_constant, False,
+                      queue, 1, "fpga_tiled", "relu"))
+    p.start()
+    p.join()
+    assert (queue.get() < 1e-6)
 
     print("----------- Success! ---------------")
 
