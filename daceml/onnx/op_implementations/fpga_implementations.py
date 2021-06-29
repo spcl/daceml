@@ -891,10 +891,16 @@ else:
 
 @op_implementation(op="Conv", name="fpga_tiled")
 class FPGAIm2ColConv_tiled(ONNXForward):
-    """
-        Im2Col implementation of Convolution.
-        Based on DaCe master GEMM 1D Systolic Array Implementation
-    """
+    # ==================================
+    # Im2Col Convolution based on DaCe Master GEMM
+    # ==================================
+    '''
+    Use tiled 1D-Systolic GEMM implementation A @ B + C
+    A: the weights W streamed for Im2Col processing
+    B: the Im2Col converted input X
+    C: the Bias (if applicable)
+    '''
+
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
@@ -935,12 +941,9 @@ class FPGAIm2ColConv_tiled(ONNXForward):
         if node.pads[0] > W.shape[2] // 2:
             return False
 
-        # if node.pads is not None and node.pads[0] > 0:
-        #     raise ValueError("Attention, no padding support yet on tiled Im2Col Convolution")
-
-        # Currently only support vectorization on Y
-        # if X.dtype.veclen > 1 or W.dtype.veclen > 1:
-        #     return False
+        # assume square kernel
+        if W.shape[2] != W.shape[3]:
+            return False
 
         # Weights cannot be vectorized
         if W.dtype.veclen > 1:
@@ -964,12 +967,7 @@ class FPGAIm2ColConv_tiled(ONNXForward):
         W = in_desc_with_name(node, state, sdfg, "W")  # weights/features
         Y = out_desc_with_name(node, state, sdfg, "Y") # output
 
-        # TODO
-        #  - The current implementation support vectorization on Y only. Support vectorization also for X
-        #  - for the weights, we may want vectorization as well (but this may cut out some transformation such
-        #   as InputToConstant), or, in any case, we want to be more memory-friendly by reading burst of data
-        #   since it is accessed as a transposed matrix
-
+        # bias
         try:
             B = in_desc_with_name(node, state, sdfg, "B")
         except Exception as e:
@@ -991,32 +989,26 @@ class FPGAIm2ColConv_tiled(ONNXForward):
 
         # Take output size: note, tat this accounts for vectorization (if present)
         input_size_y, input_size_x = X.shape[2:]
-        print("X shape:", X.shape)
         output_size_x, output_size_y = Y.shape[2:]
-        padding = node.pads[0] # assume all same padding
-        offset = 2* (filter_hx // 2 - padding) # assumes square kernel, TODO: add test
-        print(f"Padding: {padding}")
-
-        # print("Shape X:", X.shape)
-        # print("Shape Y:", Y.shape)
-        # print("Input Size: {}x{}".format(input_size_x, input_size_y))
-        # print("Output Size: {}x{}".format(output_size_x, output_size_y))
+        padding = node.pads[0] # all same padding
+        offset = 2 * (filter_hx // 2 - padding) # assumes square kernel
 
         new_sdfg = dace.SDFG("fpga_im2col_conv_tiled")
 
         # setup inputs and outputs
         new_state = new_sdfg.add_state()
         new_sdfg.add_datadesc("X", copy.deepcopy(X))
-
         new_sdfg.add_datadesc("W", copy.deepcopy(W))
         new_sdfg.add_datadesc("Y", copy.deepcopy(Y))
-        if B is not None:
-            new_sdfg.add_datadesc("B", copy.deepcopy(B))
-            new_sdfg.arrays["B"].transient = False
 
         new_sdfg.arrays["X"].transient = False
         new_sdfg.arrays["W"].transient = False
         new_sdfg.arrays["Y"].transient = False
+
+        if B is not None:
+            new_sdfg.add_datadesc("B", copy.deepcopy(B))
+            new_sdfg.arrays["B"].transient = False
+
 
         # GEMM Parameters
         vec_width = Y.veclen
@@ -1027,28 +1019,14 @@ class FPGAIm2ColConv_tiled(ONNXForward):
         
 
         # Set number of processing elements
-        if not pe:
-            P = num_filters  # Num PEs  #TODO parametric
-        else:
-            P = pe
-
-        # to ensure no deadlocks, see further below
-        if P > filter_hx * filter_hy * num_channels:
-            P = max(filter_hx * filter_hy * num_channels - 1, 1)
-        
-        # P = math.gcd(num_filters, 4) # restrict number of PEs per convolution
-        # P = 4
-
+        P = num_filters if pe is None else pe
         print(f"Using {P} PEs to compute {num_filters} filters; {num_filters/P} filters per PE")
 
-        # safe delay: see explanation in the make_compute function
-        # L set further below
-        # L = max(11 - M, 0)
-
-        # Set tile size; TODO: parametric or determine
-        # good tile size based on input shapes
+        # default, set tile size to full image (i.e. no tiling)
         if tiles is None:
-            tiles = M # default, set tile size to full image (i.e. no tiling)
+            tiles = M 
+
+        # tiles not larger than entire image and at least vector size 
         tile_size_m = min(tiles, M)
         if Y.dtype.veclen > tile_size_m:
             tile_size_m = Y.dtype.veclen
@@ -1058,30 +1036,6 @@ class FPGAIm2ColConv_tiled(ONNXForward):
             print(f"Given vector length and tile size not compatible ({tile_size_m}, {Y.dtype.veclen}), reset to", end="")
             tile_size_m = np.lcm(tile_size_m, Y.dtype.veclen)
             print(f"{tile_size_m}")
-
-
-        # ==================================
-        # Im2Col from DaCe Master GEMM
-        # ==================================
-        '''
-        Use tiled 1D-Systolic GEMM implementation A @ B + C
-        A: the weights W streamed for Im2Col processing
-        B: the Im2Col converted input X
-        C: the Bias (if applicable)
-        '''
-
-        '''
-        GEMM node expansion.
-        :param node: Node to expand.
-        :param parent_state: State that the node is in.
-        :param parent_sdfg: SDFG that the node is in.
-        :param num_pes: Number of Processing Elements of the systolic array. By default it is set to 32.
-        :param tile_size_m: tiling size considering columns of the input matrix B and resulting matrix C.
-                            If B/C are vectorized, the tile size refers to the vectorized container.
-                            If set to None, no tiling is used, corresponding to setting the tile size
-                            equal to the number of columns of B/C.
-        :return:
-        '''
 
 
         # Get descriptors and sizes
