@@ -363,7 +363,7 @@ if __name__ == "__main__":
     t = args["test"]
 
     if t:
-        # test(input_to_constant, extensive=True)
+        test(input_to_constant, extensive=True)
         test_tiled()
     else:
         run(input_to_constant)
