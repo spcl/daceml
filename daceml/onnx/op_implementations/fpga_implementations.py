@@ -1128,7 +1128,7 @@ to_kernel = data""")
             '''
 
             # Note: for some of the Sacred Mysteries of Intel OpenCL Compiler (TM), if this buffer is smaller
-            # than 24 floats, the II of the pipeline will be 5. Therefore we check this and in case we enlarge it # TODO: verify also necessary here or not?
+            # than 24 floats, the II of the pipeline will be 5. Therefore we check this and in case we enlarge it
 
             kernel_pad = (filter_hy // 2) * 2
             tile_buf_coverage = ((T / output_size_x) + kernel_pad) * (input_size_x * vec_width_in) # works because we currently only allow tile size to be a multiple of output_size_x
