@@ -1020,7 +1020,7 @@ class FPGAIm2ColConv_tiled(ONNXForward):
 
         # matrix dimensions
         K = num_channels * filter_hx * filter_hy
-        M = output_size_y * Y.dtype.veclen * output_size_x # account for vectorization on Y
+        M = output_size_y * vec_width * output_size_x # account for vectorization on Y
         N = num_filters
 
         # Set number of processing elements
@@ -1033,13 +1033,13 @@ class FPGAIm2ColConv_tiled(ONNXForward):
 
         # tiles not larger than entire image and at least vector size 
         tile_size_m = min(tiles, M)
-        if Y.dtype.veclen > tile_size_m:
-            tile_size_m = Y.dtype.veclen
+        if vec_width > tile_size_m:
+            tile_size_m = vec_width
 
         # veclen and tile size need to be compatible
-        if not tile_size_m % Y.dtype.veclen == 0:
-            print(f"Given vector length and tile size not compatible ({tile_size_m}, {Y.dtype.veclen}), reset to", end="")
-            tile_size_m = np.lcm(tile_size_m, Y.dtype.veclen)
+        if not tile_size_m % vec_width == 0:
+            print(f"Given vector length and tile size not compatible ({tile_size_m}, {vec_width}), reset to", end="")
+            tile_size_m = np.lcm(tile_size_m, vec_width)
             print(f"{tile_size_m}")
 
         # fix tile size
@@ -1124,7 +1124,7 @@ to_kernel = data""")
         
         def make_read_B(state):
             '''
-            B is the image data in Im2Col format i.e. *X*
+            B is the image data in Im2Col format i.e. *X* from DaCeML connector
             '''
 
             # Note: for some of the Sacred Mysteries of Intel OpenCL Compiler (TM), if this buffer is smaller
