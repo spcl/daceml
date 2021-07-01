@@ -21,7 +21,6 @@ def get_library_node_by_name(sdfg, name):
 
     for node, state in sdfg.all_nodes_recursive():
         if isinstance(node, dace.sdfg.nodes.LibraryNode):
-            print(node.label)
             if node.label == name:
                 return node, state
 
@@ -73,7 +72,6 @@ def evaluate(in_channels,
 
     #evaluate pytorch model
     torch_output = ptmodel(x)
-    print(torch_output.shape)
 
     #create dace model
     dace_model = DaceModule(ptmodel, dummy_inputs=(x, ), auto_optimize=False)
@@ -180,15 +178,6 @@ def test(input_to_constant=False, extensive=False):
     p.join()
     assert (queue.get() < 1e-6)
 
-    # with tiling
-    queue = Queue()
-    p = Process(target=evaluate,
-                args=(1, 6, 5, 1, (100, 1, 28, 28), input_to_constant, False,
-                      queue, 0, "fpga_tiled"))
-    p.start()
-    p.join()
-    assert (queue.get() < 1e-6)
-
     if extensive:
         p = Process(target=evaluate,
                     args=(10, 1, 5, 1, (100, 10, 20, 20), input_to_constant,
@@ -200,13 +189,6 @@ def test(input_to_constant=False, extensive=False):
         p = Process(target=evaluate,
                     args=(14, 8, 3, 1, (100, 14, 20, 20), input_to_constant,
                           False, queue))
-        p.start()
-        p.join()
-        assert (queue.get() < 1e-6)
-
-        p = Process(target=evaluate,
-            args=(14, 8, 3, 1, (100, 14, 20, 20), input_to_constant,
-                    False, queue, 0, "fpga_tiled"))
         p.start()
         p.join()
         assert (queue.get() < 1e-6)
@@ -223,13 +205,6 @@ def test(input_to_constant=False, extensive=False):
     p = Process(target=evaluate,
                 args=(6, 16, 5, 8, (100, 6, 12, 12), input_to_constant, False,
                       queue))
-    p.start()
-    p.join()
-    assert (queue.get() < 1e-6)
-
-    p = Process(target=evaluate,
-            args=(6, 16, 5, 8, (100, 6, 12, 12), input_to_constant, False,
-                      queue, 0, "fpga_tiled"))
     p.start()
     p.join()
     assert (queue.get() < 1e-6)
@@ -267,14 +242,6 @@ def test(input_to_constant=False, extensive=False):
     p.join()
     assert (queue.get() < 1e-6)
 
-    queue = Queue()
-    p = Process(target=evaluate,
-                args=(1, 6, 3, 4, (100, 1, 28, 28), input_to_constant, False,
-                      queue, 1, "fpga_tiled"))
-    p.start()
-    p.join()
-    assert (queue.get() < 1e-6)
-
     if extensive:
 
         queue = Queue()
@@ -293,6 +260,64 @@ def test(input_to_constant=False, extensive=False):
         p.join()
         assert (queue.get() < 1e-6)
 
+    print("----------- Success! ---------------")
+
+
+
+@pytest.mark.fpga
+def test_tiled():
+    '''
+    Evaluates multiple combination of Convolution/input size
+    using the tiled and vectori aligned implementation
+    :param extensive: True for extensive tests
+    :return:
+    '''
+    print(
+        f"----------- Testing Convolution (tiled and aligned vectors) ---------------"
+    )
+
+    # Run FPGA tests in a different process to avoid issues with Intel OpenCL tools
+    # (But not in parallel)
+
+    # with tiling
+    queue = Queue()
+    p = Process(target=evaluate,
+                args=(1, 6, 5, 1, (100, 1, 28, 28), input_to_constant, False,
+                      queue, 0, "fpga_tiled"))
+    p.start()
+    p.join()
+    assert (queue.get() < 1e-6)
+
+    p = Process(target=evaluate,
+        args=(14, 8, 3, 1, (100, 14, 20, 20), input_to_constant,
+                False, queue, 0, "fpga_tiled"))
+    p.start()
+    p.join()
+    assert (queue.get() < 1e-6)
+
+    # With Vectorization
+    p = Process(target=evaluate,
+            args=(6, 16, 5, 2, (100, 6, 32, 32), input_to_constant, False,
+                      queue, 0, "fpga_tiled"))
+    p.start()
+    p.join()
+    assert (queue.get() < 1e-6)
+
+    p = Process(target=evaluate,
+                    args=(6, 4, 5, 4, (100, 6, 32, 32), input_to_constant,
+                          False, queue, 0, "fpga_tiled"))
+    p.start()
+    p.join()
+    assert (queue.get() < 1e-6)
+
+    # With padding
+    queue = Queue()
+    p = Process(target=evaluate,
+                args=(1, 6, 3, 4, (100, 1, 28, 28), input_to_constant, False,
+                      queue, 1, "fpga_tiled"))
+    p.start()
+    p.join()
+    assert (queue.get() < 1e-6)
 
     # with relu activation on tiled implementation
     queue = Queue()
@@ -302,6 +327,7 @@ def test(input_to_constant=False, extensive=False):
     p.start()
     p.join()
     assert (queue.get() < 1e-6)
+
 
     print("----------- Success! ---------------")
 
@@ -324,5 +350,6 @@ if __name__ == "__main__":
 
     if t:
         test(input_to_constant, extensive=True)
+        test_tiled()
     else:
         run(input_to_constant)
