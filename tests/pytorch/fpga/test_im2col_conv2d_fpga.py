@@ -17,6 +17,7 @@ from dace.transformation.dataflow import streaming_memory as sm
 from dace.transformation.dataflow import PruneConnectors
 from multiprocessing import Process, Queue
 
+
 def get_library_node_by_name(sdfg, name):
 
     for node, state in sdfg.all_nodes_recursive():
@@ -25,6 +26,7 @@ def get_library_node_by_name(sdfg, name):
                 return node, state
 
     raise Exception(f"LibraryNode {name} not found")
+
 
 class Model(nn.Module):
     def __init__(self,
@@ -105,8 +107,12 @@ def evaluate(in_channels,
 
         # pass expansion parameters for tiled implementation
         if "tile" in expansion:
-            node, state  = get_library_node_by_name(sdfg, "Conv_0")
-            node.expand(sdfg, state, tiles=(torch_output.shape[3] * 8), pe=4, activation=activation)
+            node, state = get_library_node_by_name(sdfg, "Conv_0")
+            node.expand(sdfg,
+                        state,
+                        tiles=(torch_output.shape[3] * 8),
+                        pe=4,
+                        activation=activation)
         else:
             sdfg.expand_library_nodes()
         sdfg.apply_transformations_repeated([InlineSDFG])
@@ -128,11 +134,13 @@ def evaluate(in_channels,
         torch_output.shape)
 
     torch_output_numpy = torch_output.detach().numpy()
+
+    # perform additional activation if operator was
+    # configured to perform activation before writing result
     if activation is not None and activation == "relu":
         torch_output_numpy = np.maximum(0, torch_output_numpy)
-    diff = np.linalg.norm(torch_output_numpy -
-                          dace_output_fpga) / np.linalg.norm(
-                              torch_output_numpy)
+    diff = np.linalg.norm(torch_output_numpy - dace_output_fpga
+                          ) / np.linalg.norm(torch_output_numpy)
     print("Difference: ", diff)
     if queue is not None:
         # we are testing
@@ -151,7 +159,15 @@ def run(input_to_constant):
     # Example: second convolutional layer in Lenet
     # evaluate(1, 6, 5, 1, (100, 1, 28, 28), input_to_constant, False, padding=0, expansion="fpga")
 
-    evaluate(1, 6, 3, 4, (100, 1, 28, 28), input_to_constant, False, padding=1, expansion="fpga_tiled", activation="relu")
+    evaluate(1,
+             6,
+             3,
+             4, (100, 1, 28, 28),
+             input_to_constant,
+             False,
+             padding=1,
+             expansion="fpga_tiled",
+             activation="relu")
 
 
 @pytest.mark.fpga
@@ -263,7 +279,6 @@ def test(input_to_constant=False, extensive=False):
     print("----------- Success! ---------------")
 
 
-
 @pytest.mark.fpga
 def test_tiled():
     '''
@@ -289,23 +304,23 @@ def test_tiled():
     assert (queue.get() < 1e-6)
 
     p = Process(target=evaluate,
-        args=(14, 8, 3, 1, (100, 14, 20, 20), input_to_constant,
-                False, queue, 0, "fpga_tiled"))
+                args=(14, 8, 3, 1, (100, 14, 12, 12), input_to_constant, False,
+                      queue, 0, "fpga_tiled"))
     p.start()
     p.join()
     assert (queue.get() < 1e-6)
 
     # With Vectorization
     p = Process(target=evaluate,
-            args=(6, 16, 5, 2, (100, 6, 32, 32), input_to_constant, False,
+                args=(2, 6, 5, 2, (100, 2, 28, 28), input_to_constant, False,
                       queue, 0, "fpga_tiled"))
     p.start()
     p.join()
     assert (queue.get() < 1e-6)
 
     p = Process(target=evaluate,
-                    args=(6, 4, 5, 4, (100, 6, 32, 32), input_to_constant,
-                          False, queue, 0, "fpga_tiled"))
+                args=(6, 4, 5, 4, (100, 6, 32, 32), input_to_constant, False,
+                      queue, 0, "fpga_tiled"))
     p.start()
     p.join()
     assert (queue.get() < 1e-6)
@@ -328,7 +343,6 @@ def test_tiled():
     p.join()
     assert (queue.get() < 1e-6)
 
-
     print("----------- Success! ---------------")
 
 
@@ -349,7 +363,7 @@ if __name__ == "__main__":
     t = args["test"]
 
     if t:
-        test(input_to_constant, extensive=True)
+        # test(input_to_constant, extensive=True)
         test_tiled()
     else:
         run(input_to_constant)
