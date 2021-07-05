@@ -346,6 +346,35 @@ def test_tiled():
     print("----------- Success! ---------------")
 
 
+
+@pytest.mark.xilinx
+def test_tiled_xilinx():
+    '''
+    Test Xilinx specific features:
+        - Prefetching of bias values
+    '''
+    print(
+        f"----------- Testing Convolution (Xilinx) ---------------"
+    )
+
+    queue = Queue()
+    p = Process(target=evaluate,
+                args=(14, 8, 5, 1, (100, 14, 12, 12), input_to_constant, False,
+                      queue, 0, "fpga_tiled"))
+    p.start()
+    p.join()
+    assert (queue.get() < 1e-6)
+
+    p = Process(target=evaluate,
+                args=(3, 6, 3, 4, (100, 3, 28, 28), input_to_constant, False,
+                      queue, 1, "fpga_tiled"))
+    p.start()
+    p.join()
+    assert (queue.get() < 1e-6)
+
+    print("----------- Success! ---------------")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-input_to_constant",
@@ -365,5 +394,6 @@ if __name__ == "__main__":
     if t:
         test(input_to_constant, extensive=True)
         test_tiled()
+        # test_tiled_xilinx()
     else:
         run(input_to_constant)
