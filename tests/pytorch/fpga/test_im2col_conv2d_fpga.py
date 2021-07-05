@@ -346,16 +346,13 @@ def test_tiled():
     print("----------- Success! ---------------")
 
 
-
 @pytest.mark.xilinx
 def test_tiled_xilinx():
     '''
     Test Xilinx specific features:
         - Prefetching of bias values
     '''
-    print(
-        f"----------- Testing Convolution (Xilinx) ---------------"
-    )
+    print(f"----------- Testing Convolution (Xilinx) ---------------")
 
     queue = Queue()
     p = Process(target=evaluate,
