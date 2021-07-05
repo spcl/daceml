@@ -892,10 +892,10 @@ class FPGAIm2ColConv_tiled(ONNXForward):
     # Im2Col Convolution based on DaCe Master GEMM
     # ==================================
     '''
-    Use tiled 1D-Systolic GEMM implementation A @ B + C
+    Use tiled 1D-Systolic GEMM implementation Y = W @ X + B (A @ B + C)
     A: the weights W streamed for Im2Col processing
     B: the Im2Col converted input X
-    C: the Bias (if applicable)
+    C: the Bias B (if applicable)
     '''
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
