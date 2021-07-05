@@ -280,7 +280,7 @@ def test(input_to_constant=False, extensive=False):
 
 
 @pytest.mark.fpga
-def test_tiled():
+def test_tiled(input_to_constant=False):
     '''
     Evaluates multiple combination of Convolution/input size
     using the tiled and vectori aligned implementation
@@ -347,7 +347,7 @@ def test_tiled():
 
 
 @pytest.mark.xilinx
-def test_tiled_xilinx():
+def test_tiled_xilinx(input_to_constant=False):
     '''
     Test Xilinx specific features:
         - Prefetching of bias values
