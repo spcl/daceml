@@ -157,17 +157,14 @@ def run(input_to_constant):
     :return:
     '''
     # Example: second convolutional layer in Lenet
-    # evaluate(1, 6, 5, 1, (100, 1, 28, 28), input_to_constant, False, padding=0, expansion="fpga")
-
     evaluate(1,
              6,
-             3,
-             4, (100, 1, 28, 28),
+             5,
+             1, (100, 1, 28, 28),
              input_to_constant,
              False,
-             padding=1,
-             expansion="fpga_tiled",
-             activation="relu")
+             padding=0,
+             expansion="fpga")
 
 
 @pytest.mark.fpga
