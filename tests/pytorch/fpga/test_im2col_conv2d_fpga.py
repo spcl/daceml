@@ -177,7 +177,6 @@ def test(input_to_constant=False, extensive=False):
     print(
         f"----------- Testing Convolution (extensive: {extensive}) ---------------"
     )
-
     # Run FPGA tests in a different process to avoid issues with Intel OpenCL tools
     # (But not in parallel)
 
