@@ -18,16 +18,6 @@ from dace.transformation.dataflow import PruneConnectors
 from multiprocessing import Process, Queue
 
 
-def get_library_node_by_name(sdfg, name):
-
-    for node, state in sdfg.all_nodes_recursive():
-        if isinstance(node, dace.sdfg.nodes.LibraryNode):
-            if node.label == name:
-                return node, state
-
-    raise Exception(f"LibraryNode {name} not found")
-
-
 class Model(nn.Module):
     def __init__(self,
                  in_channels,
@@ -107,7 +97,7 @@ def evaluate(in_channels,
 
         # pass expansion parameters for tiled implementation
         if "tile" in expansion:
-            node, state = get_library_node_by_name(sdfg, "Conv_0")
+            node, state = utils.get_library_node_by_name(sdfg, "Conv_0")
             node.expand(sdfg,
                         state,
                         tiles=(torch_output.shape[3] * 8),

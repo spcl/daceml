@@ -941,6 +941,8 @@ class FPGAIm2ColConv_tiled(ONNXForward):
             return False
 
         # assume square kernel
+        # simplifies index computation and boundary checks
+        # in the `make_read_X` significantly
         if W.shape[2] != W.shape[3]:
             return False
 
@@ -990,11 +992,13 @@ class FPGAIm2ColConv_tiled(ONNXForward):
         num_channels = X.shape[1]
         batch_size = X.shape[0]
 
-        # Take output size: note, tat this accounts for vectorization (if present)
+        # Take output size: note, that this accounts for vectorization (if present)
         input_size_y, input_size_x = X.shape[2:]
         output_size_x, output_size_y = Y.shape[2:]
         padding = node.pads[0]  # all same padding
-        offset = 2 * (filter_hx // 2 - padding)  # assumes square kernel
+
+        # assumes square kernel
+        offset = 2 * (filter_hx // 2 - padding)
 
         new_sdfg = dace.SDFG("fpga_im2col_conv_tiled")
 
@@ -1072,9 +1076,10 @@ class FPGAIm2ColConv_tiled(ONNXForward):
                 f"Conv Im2Col (tiled): Number of processing elements {P} must be smaller than the K-dimension {K}."
             )
 
-        def make_read_A(state):
+        def make_read_W(state):
             '''
-            A is the weights/features streamed to PEs for Im2Col layout i.e. *W*
+            W is the weights/features streamed to PEs for Im2Col layout
+            It is the A in the GEMM A @ B + C
             '''
 
             # A given row of A must be repeated according to B number of tiles
@@ -1123,9 +1128,12 @@ to_kernel = data""")
                                   src_conn="to_kernel",
                                   memlet=dace.Memlet(f"A_pipe[{P} - n1 - 1]"))
 
-        def make_read_B(state):
+        def make_read_X(state):
             '''
-            B is the image data in Im2Col format i.e. *X* from DaCeML connector
+            X is the image data and is stored in memory in the standart (Batch, Channel, X, Y) format
+            This reader proc. element streams the data to the systolic array as if the sys. array
+            accesses the Im2Col matrix of the image data X. Im2Col data matrix is the B in the 
+            GEMM A @ B + C and has dimensions KxM (num_channels*filter_hx*filter_hy x output_size_y*output_size_x)
             '''
 
             # Note: for some of the Sacred Mysteries of Intel OpenCL Compiler (TM), if this buffer is smaller
@@ -1415,10 +1423,6 @@ else:
 if (not ({load_test})) and (m0 < {T}/{vec_width}):
     # only write data if within bounds
     if (tm*{T} + {m} < {M}) and {padding_test_y_cpp_img} and {padding_test_x_cpp_img}:
-        # if ({access_x_cpp_img} - {padding}) < 0:
-        #     to_kernel = buf_left
-        # else:
-        #     to_kernel = buf
         to_kernel = buf
     # write 0 if out-of-bounds
     else:
@@ -1481,9 +1485,13 @@ if (not ({load_test})) and (m0 < {T}/{vec_width}):
                                   memlet=dace.Memlet("B_pipe[0]",
                                                      dynamic=True))
 
-        def make_write_C(state, add_bias=True):
-            # Receives the results and adds it to C
-            # i.e. receives results, adds Bias input B and outputs into Y
+        def make_write_Y(state, add_bias=True):
+            '''
+            Receives results from the systolic array in Im2Col order, adds bias input B
+            if existent, performs in-place relu activation (if configured)
+            and writes results back to memory in default layout (Batch, Channel, X, Y)
+            It is the C in the GEMM A @ B + C
+            '''
 
             vendor = dace.config.Config.get("compiler", "fpga_vendor")
             xilinx = (vendor == "xilinx")
@@ -1493,7 +1501,6 @@ if (not ({load_test})) and (m0 < {T}/{vec_width}):
                 mem_read = state.add_read("B")
             mem = state.add_write("Y")
 
-            # Because compilers, I don't know
             # On Xilinx compiler 2020.2 had issues properly pipelining
             # the normal loop over the bias buffer with II=1
             # On Xilinx we thus first buffer the complete Bias (or could even use InputToConstant directly)
@@ -1540,7 +1547,6 @@ if (not ({load_test})) and (m0 < {T}/{vec_width}):
                     "n0": f"0:ceiling({N}/{P})",
                     "tm": f"0:ceiling({M}/{T})",
                     "n1": f"0:{P}",
-                    # "m": f"0:{T}"
                     "m":
                     f"0:{T / vec_width}"  # vectorization support on output
                 },
@@ -1907,10 +1913,10 @@ else:
                             buffer_size=T,
                             storage=dace.dtypes.StorageType.FPGA_Local)
 
-        make_read_A(new_state)
-        make_read_B(new_state)
+        make_read_W(new_state)
+        make_read_X(new_state)
         make_compute(new_sdfg, new_state)
-        make_write_C(new_state, add_bias=(B is not None))
+        make_write_Y(new_state, add_bias=(B is not None))
         return new_sdfg
 
 
