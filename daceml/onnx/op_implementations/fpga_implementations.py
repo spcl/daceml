@@ -896,6 +896,32 @@ class FPGAIm2ColConv_tiled(ONNXForward):
     A: the weights W streamed for Im2Col processing
     B: the Im2Col converted input X
     C: the Bias B (if applicable)
+
+    Let:        
+    K = num_channels * filter_hx * filter_hy
+    M = output_size_y * output_size_x
+    N = num_filters
+
+
+    General outline of the implementation:
+    The convolution is performed using the Im2Col approach i.e. by performing a GEMM
+    on a matrix constructed from the input data, which is stored in
+    (Batch, Channel, X, Y) layout. As the Im2Col matrix contains a lot of duplicate values,
+    we do not materialize it in memory, but read from the normal data layout in memory and
+    stream the virtual matrix to the systolic array. The weights W matrix i.e. the A in the GEMM
+    has dimensions NxK and the data matrix X i.e. the B in the GEMM has layout KxM, which results
+    in a matrix of dimensions NxM.
+
+    To scale the convolution up to high-resolution image data, we use tiling. The tiling happens
+    on the virtual Im2Col matrix, thus all loops are with respect to the GEMM computation, to be
+    able to tile on the GEMM itself. Having the loop bounds w.r.t to the GEMM requires index
+    translation, when reading data (weights and image in `make_read_W` and `make_read_X`) from DRAM, because
+    the GEMM accesses the Im2Col matrix, but the data layout is (b, c, x, y).
+
+    Tiling happens along two dimensions. Along the N dimension, which is computed in parallel by the systolic
+    array and there will be `ceil(N / P)` many tiles. The second tiling happens along the dimension M, which is
+    the product of the output image dimensions. To simplify the tiling scheme implementation only multiples of the
+    image width are allowed as a tile size (but it does not need to evenly divide the whole image).
     '''
     @staticmethod
     def forward_can_be_applied(node: ONNXOp, state: SDFGState,
@@ -1080,6 +1106,13 @@ class FPGAIm2ColConv_tiled(ONNXForward):
             '''
             W is the weights/features streamed to PEs for Im2Col layout
             It is the A in the GEMM A @ B + C
+
+            It is stored in memory in a (output_filter, in_channel, hx, hy)
+            format and accessed by the Im2col approach in a matrix, which has
+            NxK dimensions.
+
+            K = num_channels * filter_hx * filter_hy
+            N = num_filters
             '''
 
             # A given row of A must be repeated according to B number of tiles
@@ -1107,12 +1140,19 @@ class FPGAIm2ColConv_tiled(ONNXForward):
 data = from_memory if n0 * {P} + n1 < {N} else 0
 to_kernel = data""")
 
-            # Access mapping for Im2Col
-            filter = f"n0 * {P} + n1"  # directly corresponds to rows of Im2Col matrix
+            # Index translation from Im2Col loop variables to (b,c,x,y) layout in memory.
+            # translate matrix N dimension to filter index, we tile and parallelize this
+            # dimension across the PEs with #PEs = P
+            filter = f"n0 * {P} + n1"
+
+            # extract input channel index from matrix K dimension loop
             in_channel = f"int_floor(k,({filter_hx} * {filter_hy}))"
+
+            # extract kernel access index from matrix K dimension loop
             hy = f"int_floor((k % ({filter_hx} * {filter_hy})), {filter_hx})"
             hx = f"(k % ({filter_hx} * {filter_hy})) % {filter_hx}"
 
+            # compose memory access from extracted indeces
             access = f"[{filter}, {in_channel}, {hy}, {hx}]"
 
             state.add_memlet_path(mem,
@@ -1133,16 +1173,39 @@ to_kernel = data""")
             X is the image data and is stored in memory in the standart (Batch, Channel, X, Y) format
             This reader proc. element streams the data to the systolic array as if the sys. array
             accesses the Im2Col matrix of the image data X. Im2Col data matrix is the B in the 
-            GEMM A @ B + C and has dimensions KxM (num_channels*filter_hx*filter_hy x output_size_y*output_size_x)
+            GEMM A @ B + C and has dimensions KxM.
+
+            K = num_channels * filter_hx * filter_hy
+            M = output_size_y * output_size_x
+
+            The computation is tiled across the M dimension of the matrix with the tile size restricted to
+            being a multiple of the image width. Thus each tile computes an integer number of rows of the output
+            image. The Im2Col approach performs exactly hx*hy many passes over the each tile. In the first pass
+            we feed in all image pixels, which are hit by the first filter element, then all pixels hit by the second
+            element etc. When using vectorization this leads to many unaligned accesses in the (b,c,x,y) layout. To support
+            Xilinx and Intel targets we thus use a buffering scheme.
+
+            For each tile, we perform an additional pass over the tile (before doing any computation) and buffer all the
+            input pixels, which will be hit by the computation of the current tile of the output. In this pass we can
+            read aligned vectors from memory.
+
+            In subsequent hx*hy numbers of compute passes we can perform unaligend vector accesses, because we read
+            the buffered data from BRAM. As we want to perform vector_width many unrolled reads from this buffer, we
+            reduce BRAM duplication. We keep two duplicate buffers of the tile data. These buffers store vectors.
+            When performing an unaligned read, we read (unrolled) the two aligend vectors from the two buffers into
+            registers and compose the final vector out of the two and then stream it to the sys. array.
             '''
 
-            # Note: for some of the Sacred Mysteries of Intel OpenCL Compiler (TM), if this buffer is smaller
-            # than 24 floats, the II of the pipeline will be 5. Therefore we check this and in case we enlarge it
-
+            # Compute how far the kernel extends beyond the image
             kernel_pad = (filter_hy // 2) * 2
+
+            # compute tile coverage on the input (as the tile is w.r.t to the output)
             tile_buf_coverage = ((T / output_size_x) + kernel_pad) * (
                 input_size_x * vec_width_in
             )  # works because we currently only allow tile size to be a multiple of output_size_x
+
+            # Note: for some of the Sacred Mysteries of Intel OpenCL Compiler (TM), if this buffer is smaller
+            # than 24 floats, the II of the pipeline will be 5. Therefore we check this and in case we enlarge it
             buffer_size = max(tile_buf_coverage, 24)
 
             # buffer for tile data
@@ -1204,7 +1267,8 @@ to_kernel = data""")
                     "n":
                     f"0:ceiling({N}/{P})",  # send whole image for every row tile (block of PEs)
                     "tm": f"0:ceiling({M}/{T})",  # number of tiles
-                    "k": f"0:{K + num_channels}",
+                    "k":
+                    f"0:{K + num_channels}",  # with additional buffering passes over the tile
                     "m0":
                     f"0:{tile_buf_coverage}/{vec_width}",  # f"0:{T}/{vec_width}" # go over tile
                 },
@@ -1217,17 +1281,24 @@ to_kernel = data""")
             # load the data we have to handle the loading phase separately
             # Some accesses/booleans need to be in C++ within tasklets
 
-            # Access mapping for Im2Col
-            k_load = f"(k - (int_floor(k, {filter_hx * filter_hy + 1})))"  # k for loading phases
-            k_img = f"(k - (int_floor(k, {filter_hx * filter_hy + 1})) - 1)"  # k for compute phases
+            # as we introduce additional iterations over the tile to perform the Buffering
+            # we have to compute the actual iteration k we are in w.r.t to the computation.
+
+            # actual k used for buffering phase
+            k_load = f"(k - (int_floor(k, {filter_hx * filter_hy + 1})))"
+            # actual k used for compute phase
+            k_img = f"(k - (int_floor(k, {filter_hx * filter_hy + 1})) - 1)"
             k_img_cpp = f"(k - ((k / {filter_hx * filter_hy + 1})) - 1)"
-            load_test = f"(k % {filter_hx * filter_hy + 1} == 0)"  # checks if we are in a load phase
 
+            # check if we are in a compute phase or a buffering phase
+            load_test = f"(k % {filter_hx * filter_hy + 1} == 0)"
+
+            # compute the input channel index for DRAM using the corrected k for buffering phase
             channel_load = f"int_floor({k_load}, ({filter_hx * filter_hy}))"
-            m = f"(m0 * {vec_width})"
 
-            # Output pixel to compute for
-            matrix_col = f"(tm*{T} + {m})"  # matrix column access
+            # Translate from matrix location to pixel stored in (b,c,x,y)
+            m = f"(m0 * {vec_width})"
+            matrix_col = f"(tm*{T} + {m})"  # untiled matrix column access
             out_y = f"int_floor({matrix_col}, {output_size_x})"  # y position in output
             out_y_cpp = f"{matrix_col} / {output_size_x}"  # y position in output
             out_x = f"{matrix_col} % {output_size_x}"  # x position in output
@@ -1244,13 +1315,18 @@ to_kernel = data""")
             access_x_img = f"({out_x}) + {filter_off_x_img}"
             access_x_cpp_img = f"({out_x}) + {filter_off_x_cpp_img}"
 
-            # tile input coverage
+            # Compute coverage of a tile
             tile_input_coverage = f"(int_floor({T}, {output_size_x}) * {input_size_x * vec_width_in})"
             tile_input_coverage_cpp = f"(({T}/ {output_size_x}) * {input_size_x * vec_width_in})"
 
-            # accessed vector
+            # Compute accessed pixel index in the buffering phase
+            # During buffering we can read aligned and sequentially from memory using the
+            # loop variable `m0` but we have to know how much of the image has already
+            # been covered by previous tiles.
             accessed_pixel = f"(tm*int_floor({tile_input_coverage}, {vec_width_in}) + m0)"
             accessed_pixel_cpp = f"(tm*({tile_input_coverage_cpp}/ {vec_width_in}) + m0)"
+
+            # Compute final access on the (b,c,x,y) data layout considering padding.
             access_load = f"[b, {channel_load},  min({input_size_y - 1 + (2 * padding)}, int_floor({accessed_pixel}, {input_size_x})) - {padding}, {accessed_pixel} % {input_size_x}]"
 
             # access within the local BRAM buffer
@@ -1490,7 +1566,10 @@ if (not ({load_test})) and (m0 < {T}/{vec_width}):
             Receives results from the systolic array in Im2Col order, adds bias input B
             if existent, performs in-place relu activation (if configured)
             and writes results back to memory in default layout (Batch, Channel, X, Y)
-            It is the C in the GEMM A @ B + C
+            It is the C in the GEMM A @ B + C and has dimensions NxM
+
+            M = output_size_y * output_size_x
+            N = num_filters
             '''
 
             vendor = dace.config.Config.get("compiler", "fpga_vendor")
@@ -1552,6 +1631,9 @@ if (not ({load_test})) and (m0 < {T}/{vec_width}):
                 },
                 schedule=dace.ScheduleType.FPGA_Device)
 
+            # ----------------------------------------
+            # Bias
+            # ----------------------------------------
             # Output vectors
             # write in memory by adding C when we copy that to memory
             # deal with out-of-bound accesses
@@ -1560,6 +1642,9 @@ if (not ({load_test})) and (m0 < {T}/{vec_width}):
             else:
                 add_prev_c = ""
 
+            # ----------------------------------------
+            # Activation
+            # ----------------------------------------
             # support activations before writing out to global memory
             pre_activation = f"from_kernel{add_prev_c}"
             if activation is not None and activation == "relu":
@@ -1593,7 +1678,9 @@ if (not ({load_test})) and (m0 < {T}/{vec_width}):
             if activation is not None and activation == "relu":
                 tasklet_inputs.add("zero")
 
+            # ----------------------------------------
             # final tasklet with out-of-bounds check
+            # ----------------------------------------
             tasklet = state.add_tasklet(
                 "write_C", tasklet_inputs, {"to_memory"}, f"""\
 if tm * {T} + m * {vec_width} < {M}  and  n0 * {P} + n1 < {N} :                                               
@@ -1606,13 +1693,18 @@ if tm * {T} + m * {vec_width} < {M}  and  n0 * {P} + n1 < {N} :
                                   dst_conn="from_kernel",
                                   memlet=dace.Memlet(f"C_pipe[{P}-1]"))
 
-            # Access conversion Im2Col to memory data layout
+            # ----------------------------------------
+            # Index Translation
+            # ----------------------------------------
             matrix_col = f"(tm*{T} + m * {vec_width})"  # matrix column access
-            out_filter = f"n0 * {P} + n1"  # out_filter is equal to row of Im2Col output
+            out_filter = f"n0 * {P} + n1"  # extract output filter from N dim.
             out_y = f"int_floor({matrix_col}, {output_size_x})"  # y position in output
             out_x = f"(({matrix_col} % {output_size_x}) / {vec_width})"  # x position in output
-            access = f"[b, {out_filter}, {out_y}, {out_x}]"
+            access = f"[b, {out_filter}, {out_y}, {out_x}]"  # final access in (b,c,x,y) layout
 
+            # ----------------------------------------
+            # Memlets
+            # ----------------------------------------
             # connect dummy 0 value for relu activation
             if activation is not None and activation == "relu":
 
