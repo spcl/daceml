@@ -36,7 +36,7 @@ class CompiledTorchFunction:
     ptr: List[torch.Tensor]
 
 
-_REPLACED_CTYPES = {dace.int64: "int64_t", dace.uint64: "uint64_t"}
+_REPLACED_CTYPES = {dace.int64: "int64_t", dace.uint64: "uint64_t", dace.float16: "at::Half"}
 
 
 def torch_ctype(dtype: dace.typeclass) -> str:
@@ -205,6 +205,9 @@ def item_to_cpp_literal(item) -> str:
         return f"{item}f"
     elif dtype == "int64":
         return f"{item}l"
+    elif dtype == "float16":
+        ctype = dace.dtypes._CTYPES[item.dtype.type]
+        return f"(({ctype}){item})"
     elif dtype in ["float64", "int32", "int16", "int8"]:
         return str(item)
     else:
