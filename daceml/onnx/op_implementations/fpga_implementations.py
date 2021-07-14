@@ -1334,23 +1334,6 @@ to_kernel = data""")
             # access within the local BRAM buffer
             store_local_index_img = f"(({access_y_img}) * {input_size_x * vec_width_in} + ({access_x_img}) - {padding}) - ({tile_input_coverage} * tm)"
 
-            # If we are out-of bound, use a dummy value
-            new_sdfg.add_array("B_dummy",
-                               dtype=base_type,
-                               shape=[1],
-                               transient=True,
-                               storage=dace.dtypes.StorageType.FPGA_Registers)
-            b_dummy = state.add_access("B_dummy")
-
-            init_tasklet = state.add_tasklet("init_zero", {}, {"init_dummy"},
-                                             """
-init_dummy = 0""")
-
-            state.add_memlet_path(init_tasklet,
-                                  b_dummy,
-                                  src_conn="init_dummy",
-                                  memlet=dace.Memlet("B_dummy[0]"))
-
             # Padding: out of image bounds tests
             padding_test_y_cpp_load = f"((({accessed_pixel_cpp}/ {input_size_x})) - {padding} < {output_size_y * vec_width} + {offset} and (({accessed_pixel_cpp}/ {input_size_x}))  - {padding} >= 0)"
             padding_test_x_cpp_img = f"(({access_x_cpp_img}) + m1 - {padding} < {output_size_x} + {offset} and ({access_x_cpp_img}) + m1  - {padding} >= 0)"
@@ -1494,8 +1477,7 @@ else:
             # write to output vector buffer
             # ----------------------------------------
             write_pipe_task = state.add_tasklet(
-                "write_pipe", {"buf", "dummy_value", "dummy_con"},
-                {"to_kernel"}, f"""
+                "write_pipe", {"buf", "dummy_con"}, {"to_kernel"}, f"""
 # a send cycle
 # and actually within compute region of tile
 if (not ({load_test})) and (m0 < {T}/{vec_width}):
@@ -1504,7 +1486,7 @@ if (not ({load_test})) and (m0 < {T}/{vec_width}):
         to_kernel = buf
     # write 0 if out-of-bounds
     else:
-        to_kernel = dummy_value
+        to_kernel = 0
                 """)
 
             vector_out_entry, vector_out_exit = state.add_map(
@@ -1521,13 +1503,6 @@ if (not ({load_test})) and (m0 < {T}/{vec_width}):
                     f"vec_buf_data[((({store_local_index_img}) - (int_floor({store_local_index_img}, {vec_width_in}) * {vec_width_in})) + m1)]",
                     dynamic=True,
                 ))
-
-            state.add_memlet_path(b_dummy,
-                                  map_entry,
-                                  vector_out_entry,
-                                  write_pipe_task,
-                                  dst_conn="dummy_value",
-                                  memlet=dace.Memlet("B_dummy[0]"))
 
             state.add_memlet_path(write_pipe_task,
                                   vector_out_exit,
