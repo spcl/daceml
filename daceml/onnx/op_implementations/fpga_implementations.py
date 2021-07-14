@@ -930,9 +930,11 @@ class FPGAIm2ColConv_tiled(ONNXForward):
         W = in_desc_with_name(node, state, sdfg, "W")
         Y = out_desc_with_name(node, state, sdfg, "Y")
 
+        # A `ValueError` is thrown by `in_desc_with_name` if there is no
+        # node with the given name in the resp. library node
         try:
             B = in_desc_with_name(node, state, sdfg, "B")
-        except Exception as e:
+        except ValueError as e:
             B = None
 
         image_dims = len(X.shape) - 2
@@ -1170,7 +1172,7 @@ to_kernel = data""")
 
         def make_read_X(state):
             '''
-            X is the image data and is stored in memory in the standart (Batch, Channel, X, Y) format
+            X is the image data and is stored in memory in the standard (Batch, Channel, X, Y) format
             This reader proc. element streams the data to the systolic array as if the sys. array
             accesses the Im2Col matrix of the image data X. Im2Col data matrix is the B in the 
             GEMM A @ B + C and has dimensions KxM.
