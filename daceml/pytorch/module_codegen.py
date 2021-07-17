@@ -217,8 +217,13 @@ def item_to_cpp_literal(item) -> str:
 def constant_initializer_code(name: str, desc: data.Data, value) -> str:
     gpu_storage = dt.can_access(dt.ScheduleType.GPU_Device, desc.storage)
 
-    if isinstance(desc, data.Array) or gpu_storage:
-        iterator = np.nditer(value.cpu().numpy(), order="C")
+    if desc.total_size == 0:
+        return f"{desc.dtype.ctype} *{name}_ptr = nullptr;"
+    elif isinstance(desc, data.Array) or gpu_storage:
+        numpyval = value.cpu().numpy()
+        if len(numpyval.shape) == 0:
+            numpyval = numpyval.reshape((1,))
+        iterator = np.nditer(numpyval, order="C")
         gpu_copy_code = f"""
         Tensor {name} = torch::from_blob({name}_ptr_cpu, {{{', '.join(sym2cpp(s) for s in desc.shape)}}},
             {{{', '.join(sym2cpp(s) for s in desc.strides)}}}, torch::{typeclass_to_torch_cpp_type(desc.dtype)})
