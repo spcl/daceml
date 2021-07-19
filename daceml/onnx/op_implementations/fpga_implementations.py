@@ -886,6 +886,1109 @@ else:
         return new_sdfg
 
 
+@op_implementation(op="Conv", name="fpga_tiled")
+class FPGAIm2ColConv_tiled(ONNXForward):
+    # ==================================
+    # Im2Col Convolution based on DaCe Master GEMM
+    # ==================================
+    '''
+    Use tiled 1D-Systolic GEMM implementation Y = W @ X + B (A @ B + C)
+    A: the weights W streamed for Im2Col processing
+    B: the Im2Col converted input X
+    C: the Bias B (if applicable)
+
+    Let:        
+    K = num_channels * filter_hx * filter_hy
+    M = output_size_y * output_size_x
+    N = num_filters
+
+
+    General outline of the implementation:
+    The convolution is performed using the Im2Col approach i.e. by performing a GEMM
+    on a matrix constructed from the input data, which is stored in
+    (Batch, Channel, X, Y) layout. As the Im2Col matrix contains a lot of duplicate values,
+    we do not materialize it in memory, but read from the normal data layout in memory and
+    stream the virtual matrix to the systolic array. The weights W matrix i.e. the A in the GEMM
+    has dimensions NxK and the data matrix X i.e. the B in the GEMM has layout KxM, which results
+    in a matrix of dimensions NxM.
+
+    To scale the convolution up to high-resolution image data, we use tiling. The tiling happens
+    on the virtual Im2Col matrix, thus all loops are with respect to the GEMM computation, to be
+    able to tile on the GEMM itself. Having the loop bounds w.r.t to the GEMM requires index
+    translation, when reading data (weights and image in `make_read_W` and `make_read_X`) from DRAM, because
+    the GEMM accesses the Im2Col matrix, but the data layout is (b, c, x, y).
+
+    Tiling happens along two dimensions. Along the N dimension, which is computed in parallel by the systolic
+    array and there will be `ceil(N / P)` many tiles. The second tiling happens along the dimension M, which is
+    the product of the output image dimensions. To simplify the tiling scheme implementation only multiples of the
+    image width are allowed as a tile size (but it does not need to evenly divide the whole image).
+    '''
+    @staticmethod
+    def forward_can_be_applied(node: ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
+        X = in_desc_with_name(node, state, sdfg, "X")
+        W = in_desc_with_name(node, state, sdfg, "W")
+        Y = out_desc_with_name(node, state, sdfg, "Y")
+
+        # A `ValueError` is thrown by `in_desc_with_name` if there is no
+        # node with the given name in the resp. library node
+        try:
+            B = in_desc_with_name(node, state, sdfg, "B")
+        except ValueError as e:
+            B = None
+
+        image_dims = len(X.shape) - 2
+        num_filters = W.shape[0]
+        num_channels = X.shape[1]
+
+        # only do 2D for now
+        if len(X.shape) != 4 or len(W.shape) != 4:
+            return False
+
+        if node.group != 1:
+            return False
+
+        if num_channels != W.shape[1]:
+            return False
+
+        if node.dilations is not None and (not all(d == 1
+                                                   for d in node.dilations) or
+                                           len(node.dilations) != image_dims):
+            return False
+
+        # Support all same padding
+        if node.pads is not None and (not all(p == node.pads[0]
+                                              for p in node.pads)
+                                      or len(node.pads) != image_dims * 2):
+            return False
+
+        if Y.dtype.veclen != X.dtype.veclen:
+            return False
+
+        if node.pads[0] > W.shape[2] // 2:
+            return False
+
+        # assume square kernel
+        # simplifies index computation and boundary checks
+        # in the `make_read_X` significantly
+        if W.shape[2] != W.shape[3]:
+            return False
+
+        # Weights cannot be vectorized
+        if W.dtype.veclen > 1:
+            return False
+
+        if node.strides is not None and len(node.strides) != image_dims:
+            return False
+
+        if B is not None and B.shape[0] != num_filters:
+            return False
+
+        if node.auto_pad != "NOTSET":
+            return False
+        return True
+
+    @staticmethod
+    def forward(node: ONNXOp,
+                state: SDFGState,
+                sdfg: SDFG,
+                tiles=None,
+                pe=None,
+                activation=None) -> typing.Union[nodes.Node, SDFG]:
+
+        X = in_desc_with_name(node, state, sdfg, "X")  # input image
+        W = in_desc_with_name(node, state, sdfg, "W")  # weights/features
+        Y = out_desc_with_name(node, state, sdfg, "Y")  # output
+
+        # bias
+        try:
+            B = in_desc_with_name(node, state, sdfg, "B")
+        except Exception as e:
+            B = None
+
+        image_dims = len(X.shape) - 2
+        strides = node.strides if node.strides is not None else [
+            1 for _ in range(image_dims)
+        ]
+
+        if node.kernel_shape is not None:
+            filter_hx, filter_hy = node.kernel_shape
+        else:
+            filter_hx, filter_hy = W.shape[2:]
+
+        num_filters = W.shape[0]
+        num_channels = X.shape[1]
+        batch_size = X.shape[0]
+
+        # Take output size: note, that this accounts for vectorization (if present)
+        input_size_y, input_size_x = X.shape[2:]
+        output_size_x, output_size_y = Y.shape[2:]
+        padding = node.pads[0]  # all same padding
+
+        # assumes square kernel
+        offset = 2 * (filter_hx // 2 - padding)
+
+        new_sdfg = dace.SDFG("fpga_im2col_conv_tiled")
+
+        # setup inputs and outputs
+        new_state = new_sdfg.add_state()
+        new_sdfg.add_datadesc("X", copy.deepcopy(X))
+        new_sdfg.add_datadesc("W", copy.deepcopy(W))
+        new_sdfg.add_datadesc("Y", copy.deepcopy(Y))
+
+        new_sdfg.arrays["X"].transient = False
+        new_sdfg.arrays["W"].transient = False
+        new_sdfg.arrays["Y"].transient = False
+
+        if B is not None:
+            new_sdfg.add_datadesc("B", copy.deepcopy(B))
+            new_sdfg.arrays["B"].transient = False
+
+        # GEMM Parameters
+        vec_width = Y.dtype.veclen
+        vec_width_in = X.dtype.veclen
+        base_type = Y.dtype.base_type
+        vec_type = dace.vector(base_type, vec_width)
+
+        # matrix dimensions
+        K = num_channels * filter_hx * filter_hy
+        M = output_size_y * vec_width * output_size_x  # account for vectorization on Y
+        N = num_filters
+
+        # Set number of processing elements
+        P = num_filters if pe is None else pe
+
+        # default, set tile size to full image (i.e. no tiling)
+        if tiles is None:
+            tiles = M
+
+        # tiles not larger than entire image and at least vector size
+        tile_size_m = min(tiles, M)
+        if vec_width > tile_size_m:
+            tile_size_m = vec_width
+
+        # veclen and tile size need to be compatible
+        if not tile_size_m % vec_width == 0:
+            print(
+                f"Given vector length and tile size not compatible ({tile_size_m}, {vec_width}), reset to",
+                end="")
+            tile_size_m = np.lcm(tile_size_m, vec_width)
+            print(f"{tile_size_m}")
+
+        # fix tile size
+        T = tile_size_m
+
+        if T % output_size_x != 0:
+            raise NotImplementedError(
+                f"Currently tile size ({tile_size_m}) must \
+                be a multiple of the output image width {output_size_x}")
+
+        # Safe delay: this will be used in the compute state, pipeline scope, to insert
+        # a delay between accumulation on the same result if needed.
+        # Further explanations are provided in the compute state.
+
+        # Note: this is a platform and type dependent parameter.
+        L = max(16 - T / vec_width, 0)
+
+        # This implementation uses a flattened nested loop, that overlaps feeding,
+        # computing and draining phases. Each PE is responsible for computing one
+        # tile of one row of the final result C. With the current implementation,
+        # A PE needs K*T cycles to compute the results and then P*T clock cycles
+        # to fully drain them (draining is distributed across PEs).
+        # Therefore, in order to guarantee correctness and deadlock free we have
+        # to ensure that the number of cycles needed to drain the results is less
+        # or equal to the number of cycles needed to compute them.
+        # That is PT <= KT.
+        if K is not None and P > K:
+            raise ValueError(
+                f"Conv Im2Col (tiled): Number of processing elements {P} must be smaller than the K-dimension {K}."
+            )
+
+        def make_read_W(state):
+            '''
+            W is the weights/features streamed to PEs for Im2Col layout
+            It is the A in the GEMM A @ B + C
+
+            It is stored in memory in a (output_filter, in_channel, hx, hy)
+            format and accessed by the Im2col approach in a matrix, which has
+            NxK dimensions.
+
+            K = num_channels * filter_hx * filter_hy
+            N = num_filters
+            '''
+
+            # A given row of A must be repeated according to B number of tiles
+            # Both N and M can be not a multiple of P and T respectively
+            entry, exit = state.add_map(
+                "read_A",
+                {
+                    "b": f"0:{batch_size}",  # additional batch map
+                    "n0": f"0:ceiling({N}/{P})",
+                    "tm": f"0:ceiling({M}/{T})",
+                    "k": f"0:{K}",
+                    "n1": f"0:{P}"
+                },
+                schedule=dace.ScheduleType.FPGA_Device)
+
+            # The reader of A reads one element per clock cycle.
+            # Note that if P > T+L, then this will be the bottleneck
+            mem = state.add_read("W")
+            pipe = state.add_write("A_pipe")
+
+            # Read data from memory: if we are out-of-bound do not read from memory
+            # but inject dummy data
+            tasklet = state.add_tasklet(
+                "read_A", {"from_memory"}, {"to_kernel"}, f"""\
+data = from_memory if n0 * {P} + n1 < {N} else 0
+to_kernel = data""")
+
+            # Index translation from Im2Col loop variables to (b,c,x,y) layout in memory.
+            # translate matrix N dimension to filter index, we tile and parallelize this
+            # dimension across the PEs with #PEs = P
+            filter = f"n0 * {P} + n1"
+
+            # extract input channel index from matrix K dimension loop
+            in_channel = f"int_floor(k,({filter_hx} * {filter_hy}))"
+
+            # extract kernel access index from matrix K dimension loop
+            hy = f"int_floor((k % ({filter_hx} * {filter_hy})), {filter_hx})"
+            hx = f"(k % ({filter_hx} * {filter_hy})) % {filter_hx}"
+
+            # compose memory access from extracted indeces
+            access = f"[{filter}, {in_channel}, {hy}, {hx}]"
+
+            state.add_memlet_path(mem,
+                                  entry,
+                                  tasklet,
+                                  dst_conn="from_memory",
+                                  memlet=dace.Memlet(f"W{access}",
+                                                     dynamic=True,
+                                                     allow_oob=True))
+            state.add_memlet_path(tasklet,
+                                  exit,
+                                  pipe,
+                                  src_conn="to_kernel",
+                                  memlet=dace.Memlet(f"A_pipe[{P} - n1 - 1]"))
+
+        def make_read_X(state):
+            '''
+            X is the image data and is stored in memory in the standard (Batch, Channel, X, Y) format
+            This reader proc. element streams the data to the systolic array as if the sys. array
+            accesses the Im2Col matrix of the image data X. Im2Col data matrix is the B in the 
+            GEMM A @ B + C and has dimensions KxM.
+
+            K = num_channels * filter_hx * filter_hy
+            M = output_size_y * output_size_x
+
+            The computation is tiled across the M dimension of the matrix with the tile size restricted to
+            being a multiple of the image width. Thus each tile computes an integer number of rows of the output
+            image. The Im2Col approach performs exactly hx*hy many passes over the each tile. In the first pass
+            we feed in all image pixels, which are hit by the first filter element, then all pixels hit by the second
+            element etc. When using vectorization this leads to many unaligned accesses in the (b,c,x,y) layout. To support
+            Xilinx and Intel targets we thus use a buffering scheme.
+
+            For each tile, we perform an additional pass over the tile (before doing any computation) and buffer all the
+            input pixels, which will be hit by the computation of the current tile of the output. In this pass we can
+            read aligned vectors from memory.
+
+            In subsequent hx*hy numbers of compute passes we can perform unaligend vector accesses, because we read
+            the buffered data from BRAM. As we want to perform vector_width many unrolled reads from this buffer, we
+            reduce BRAM duplication. We keep two duplicate buffers of the tile data. These buffers store vectors.
+            When performing an unaligned read, we read (unrolled) the two aligend vectors from the two buffers into
+            registers and compose the final vector out of the two and then stream it to the sys. array.
+            '''
+
+            # Compute how far the kernel extends beyond the image
+            kernel_pad = (filter_hy // 2) * 2
+
+            # compute tile coverage on the input (as the tile is w.r.t to the output)
+            tile_buf_coverage = ((T / output_size_x) + kernel_pad) * (
+                input_size_x * vec_width_in
+            )  # works because we currently only allow tile size to be a multiple of output_size_x
+
+            # Note: for some of the Sacred Mysteries of Intel OpenCL Compiler (TM), if this buffer is smaller
+            # than 24 floats, the II of the pipeline will be 5. Therefore we check this and in case we enlarge it
+            buffer_size = max(tile_buf_coverage, 24)
+
+            # buffer for tile data
+            new_sdfg.add_array("img_buffer", [buffer_size // vec_width_in],
+                               dtype=vec_type,
+                               transient=True,
+                               storage=dace.dtypes.StorageType.FPGA_Local)
+            img_buffer_write = state.add_write("img_buffer")
+            img_buffer_read = state.add_read("img_buffer")
+
+            # second buffer holding tile data for 2 unrolled reads per cycle
+            new_sdfg.add_array("img_buffer2", [buffer_size // vec_width_in],
+                               dtype=vec_type,
+                               transient=True,
+                               storage=dace.dtypes.StorageType.FPGA_Local)
+            img_buffer2_write = state.add_write("img_buffer2")
+            img_buffer2_read = state.add_read("img_buffer2")
+
+            # local vector buffer to hold vector data from global memory
+            new_sdfg.add_array("vec_buf_B",
+                               shape=[1],
+                               dtype=vec_type,
+                               transient=True,
+                               storage=dace.dtypes.StorageType.FPGA_Registers)
+            vec_buf_B = state.add_access("vec_buf_B")
+
+            # vector buffer to hold both vectors targeted by
+            # the access which crosses aligned vector boundaries
+            new_sdfg.add_array("vec_buf_data",
+                               shape=[vec_width_in * 2],
+                               dtype=base_type,
+                               transient=True,
+                               storage=dace.dtypes.StorageType.FPGA_Registers)
+            vec_buf_data = state.add_access("vec_buf_data")
+
+            # local vector buffer to hold data to send to stream
+            new_sdfg.add_array("vec_buf_out",
+                               shape=[vec_width_in],
+                               dtype=base_type,
+                               transient=True,
+                               storage=dace.dtypes.StorageType.FPGA_Registers)
+            vec_buf_out = state.add_access("vec_buf_out")
+
+            # dummy container for graph connectivity
+            new_sdfg.add_array("dummy_container",
+                               shape=[1],
+                               dtype=base_type,
+                               transient=True,
+                               storage=dace.dtypes.StorageType.FPGA_Registers)
+            dummy_container = state.add_access("dummy_container")
+
+            # Also while reading B, we have to consider that T and P could not divide
+            # M and N
+            map_entry, map_exit = state.add_map(
+                "read_B",
+                {
+                    "b":
+                    f"0:{batch_size}",  # additional batch map to loop over images in batch
+                    "n":
+                    f"0:ceiling({N}/{P})",  # send whole image for every row tile (block of PEs)
+                    "tm": f"0:ceiling({M}/{T})",  # number of tiles
+                    "k":
+                    f"0:{K + num_channels}",  # with additional buffering passes over the tile
+                    "m0":
+                    f"0:{tile_buf_coverage}/{vec_width}",  # f"0:{T}/{vec_width}" # go over tile
+                },
+                schedule=dace.ScheduleType.FPGA_Device)
+
+            # Index remapping to perform virtual tiled Im2Col
+            # i.e. read data as in memory but stream the Im2Col matrix
+            # Loop variables are w.r.t to Im2Col data
+            # As for each tile we have an additional pass over the tile to
+            # load the data we have to handle the loading phase separately
+            # Some accesses/booleans need to be in C++ within tasklets
+
+            # as we introduce additional iterations over the tile to perform the Buffering
+            # we have to compute the actual iteration k we are in w.r.t to the computation.
+
+            # actual k used for buffering phase
+            k_load = f"(k - (int_floor(k, {filter_hx * filter_hy + 1})))"
+            # actual k used for compute phase
+            k_img = f"(k - (int_floor(k, {filter_hx * filter_hy + 1})) - 1)"
+            k_img_cpp = f"(k - ((k / {filter_hx * filter_hy + 1})) - 1)"
+
+            # check if we are in a compute phase or a buffering phase
+            load_test = f"(k % {filter_hx * filter_hy + 1} == 0)"
+
+            # compute the input channel index for DRAM using the corrected k for buffering phase
+            channel_load = f"int_floor({k_load}, ({filter_hx * filter_hy}))"
+
+            # Translate from matrix location to pixel stored in (b,c,x,y)
+            m = f"(m0 * {vec_width})"
+            matrix_col = f"(tm*{T} + {m})"  # untiled matrix column access
+            out_y = f"int_floor({matrix_col}, {output_size_x})"  # y position in output
+            out_y_cpp = f"{matrix_col} / {output_size_x}"  # y position in output
+            out_x = f"{matrix_col} % {output_size_x}"  # x position in output
+
+            # Filter offsets
+            filter_off_y_img = f"int_floor(({k_img} % ({filter_hx} * {filter_hy})), {filter_hx})"
+            filter_off_y_cpp_img = f"({k_img_cpp} % ({filter_hx} * {filter_hy})) / {filter_hx}"
+            filter_off_x_img = f"({k_img} % ({filter_hx} * {filter_hy})) % {filter_hx}"
+            filter_off_x_cpp_img = f"({k_img_cpp} % ({filter_hx} * {filter_hy})) % {filter_hx}"
+
+            # Actual data element to access
+            access_y_img = f"({out_y}) + {filter_off_y_img}"
+            access_y_cpp_img = f"({out_y_cpp}) + {filter_off_y_cpp_img}"
+            access_x_img = f"({out_x}) + {filter_off_x_img}"
+            access_x_cpp_img = f"({out_x}) + {filter_off_x_cpp_img}"
+
+            # Compute coverage of a tile
+            tile_input_coverage = f"(int_floor({T}, {output_size_x}) * {input_size_x * vec_width_in})"
+            tile_input_coverage_cpp = f"(({T}/ {output_size_x}) * {input_size_x * vec_width_in})"
+
+            # Compute accessed pixel index in the buffering phase
+            # During buffering we can read aligned and sequentially from memory using the
+            # loop variable `m0` but we have to know how much of the image has already
+            # been covered by previous tiles.
+            accessed_pixel = f"(tm*int_floor({tile_input_coverage}, {vec_width_in}) + m0)"
+            accessed_pixel_cpp = f"(tm*({tile_input_coverage_cpp}/ {vec_width_in}) + m0)"
+
+            # Compute final access on the (b,c,x,y) data layout considering padding.
+            access_load = f"[b, {channel_load},  min({input_size_y - 1 + (2 * padding)}, int_floor({accessed_pixel}, {input_size_x})) - {padding}, {accessed_pixel} % {input_size_x}]"
+
+            # access within the local BRAM buffer
+            store_local_index_img = f"(({access_y_img}) * {input_size_x * vec_width_in} + ({access_x_img}) - {padding}) - ({tile_input_coverage} * tm)"
+
+            # Padding: out of image bounds tests
+            padding_test_y_cpp_load = f"((({accessed_pixel_cpp}/ {input_size_x})) - {padding} < {output_size_y * vec_width} + {offset} and (({accessed_pixel_cpp}/ {input_size_x}))  - {padding} >= 0)"
+            padding_test_x_cpp_img = f"(({access_x_cpp_img}) + m1 - {padding} < {output_size_x} + {offset} and ({access_x_cpp_img}) + m1  - {padding} >= 0)"
+            padding_test_y_cpp_img = f"(({access_y_cpp_img}) - {padding} < {output_size_y * vec_width} + {offset} and {access_y_cpp_img}  - {padding} >= 0)"
+
+            # Connectors for global memory
+            mem = state.add_read("X")
+            pipe = state.add_write("B_pipe")
+
+            # ----------------------------
+            # read from global memory
+            # ----------------------------
+            read_global_task = state.add_tasklet(
+                "read_global", {"load_read"},
+                {"buf": dace.vector(base_type, vec_width_in)}, f"""
+# load cycle, read data from memory
+if {load_test} and {padding_test_y_cpp_load}:
+    buf = load_read
+""")
+
+            # Loading complete tile from memory
+            state.add_memlet_path(mem,
+                                  map_entry,
+                                  read_global_task,
+                                  dst_conn="load_read",
+                                  memlet=dace.Memlet(f"X{access_load}",
+                                                     dynamic=True,
+                                                     allow_oob=True))
+
+            # Store in Vector Buffer
+            state.add_memlet_path(read_global_task,
+                                  vec_buf_B,
+                                  src_conn="buf",
+                                  memlet=dace.Memlet("vec_buf_B", ))
+
+            # ----------------------------------------
+            # move from input buffer into local buffer
+            # ----------------------------------------
+            copy_to_local_task = state.add_tasklet(
+                "move_to_local", {"buf"},
+                {"load_write", "load_write2", "dummy_con"}, f"""
+# only write if within bounds
+# load cycle, fill buffer
+if {load_test}:
+    if {padding_test_y_cpp_load}:
+        load_write = buf
+        load_write2 = buf
+    else:
+        load_write = 0
+        load_write2 = 0
+""")
+
+            # Read from buffer
+            state.add_memlet_path(
+                vec_buf_B,
+                # vector_map_entry,
+                copy_to_local_task,
+                dst_conn="buf",
+                memlet=dace.Memlet("vec_buf_B", ))
+
+            # Store in buffer, load cycle
+            state.add_memlet_path(copy_to_local_task,
+                                  map_exit,
+                                  img_buffer_write,
+                                  src_conn="load_write",
+                                  memlet=dace.Memlet(
+                                      f"img_buffer[m0]",
+                                      dynamic=True,
+                                  ))
+
+            # Store in duplicate buffer, load cycle
+            # Second buffer so we can perform to reads per cycle
+            # Needs to be explicit for Xilinx as there is no
+            # automatic BRAM buffer duplication
+            state.add_memlet_path(copy_to_local_task,
+                                  map_exit,
+                                  img_buffer2_write,
+                                  src_conn="load_write2",
+                                  memlet=dace.Memlet(
+                                      f"img_buffer2[m0]",
+                                      dynamic=True,
+                                  ))
+
+            # connect graph reader and writer sections
+            state.add_memlet_path(copy_to_local_task,
+                                  dummy_container,
+                                  src_conn="dummy_con",
+                                  memlet=dace.Memlet("dummy_container[0]"))
+
+            # ----------------------------------------
+            # unrolled read from vectorized buffer
+            # into register for unaligned access
+            # ----------------------------------------
+            buffer_read_task = state.add_tasklet(
+                "move_to_local", {"buf", "buf2"},
+                {"vector": dace.vector(base_type, vec_width_in)}, f"""
+if m1 == 0:
+    vector = buf
+else:
+    vector = buf2
+                """)
+
+            vector_map_entry, vector_map_exit = state.add_map(
+                "unrolled_to_local",
+                {"m1": f"0:2"
+                 },  # always read two vectors (might cross alignment boundary)
+                schedule=dace.ScheduleType.FPGA_Device,
+                unroll=True)
+
+            # Read from buffer
+            state.add_memlet_path(
+                img_buffer_read,
+                map_entry,
+                vector_map_entry,
+                buffer_read_task,
+                dst_conn="buf",
+                memlet=dace.Memlet(
+                    f"img_buffer[min({buffer_size // vec_width_in} - 1, int_floor({store_local_index_img}, {vec_width_in}) + 0)]",
+                    dynamic=True))
+
+            # Read from second buffer
+            state.add_memlet_path(
+                img_buffer2_read,
+                map_entry,
+                vector_map_entry,
+                buffer_read_task,
+                dst_conn="buf2",
+                memlet=dace.Memlet(
+                    f"img_buffer2[min({buffer_size // vec_width_in} - 1, int_floor({store_local_index_img}, {vec_width_in}) + 1)]",
+                    dynamic=True))
+
+            # Store in buffer, load cycle
+            state.add_memlet_path(
+                buffer_read_task,
+                vector_map_exit,
+                vec_buf_data,
+                src_conn="vector",
+                memlet=dace.Memlet(f"vec_buf_data[m1 * {vec_width_in}]"))
+
+            # ----------------------------------------
+            # write to output vector buffer
+            # ----------------------------------------
+            write_pipe_task = state.add_tasklet(
+                "write_pipe", {"buf", "dummy_con"}, {"to_kernel"}, f"""
+# a send cycle
+# and actually within compute region of tile
+if (not ({load_test})) and (m0 < {T}/{vec_width}):
+    # only write data if within bounds
+    if (tm*{T} + {m} < {M}) and {padding_test_y_cpp_img} and {padding_test_x_cpp_img}:
+        to_kernel = buf
+    # write 0 if out-of-bounds
+    else:
+        to_kernel = 0
+                """)
+
+            vector_out_entry, vector_out_exit = state.add_map(
+                "unrolled_to_out", {"m1": f"0:{vec_width_in}"},
+                schedule=dace.ScheduleType.FPGA_Device,
+                unroll=True)
+
+            state.add_memlet_path(
+                vec_buf_data,
+                vector_out_entry,
+                write_pipe_task,
+                dst_conn="buf",
+                memlet=dace.Memlet(
+                    f"vec_buf_data[((({store_local_index_img}) - (int_floor({store_local_index_img}, {vec_width_in}) * {vec_width_in})) + m1)]",
+                    dynamic=True,
+                ))
+
+            state.add_memlet_path(write_pipe_task,
+                                  vector_out_exit,
+                                  vec_buf_out,
+                                  src_conn="to_kernel",
+                                  memlet=dace.Memlet("vec_buf_out[m1]", ))
+
+            # connect graph reader and writer sections
+            state.add_memlet_path(dummy_container,
+                                  vector_out_entry,
+                                  write_pipe_task,
+                                  dst_conn="dummy_con",
+                                  memlet=dace.Memlet("dummy_container[0]"))
+
+            # ----------------------------------------
+            # write to output vector buffer
+            # ----------------------------------------
+            write_out_task = state.add_tasklet(
+                "write_out", {"in_con": dace.vector(base_type, vec_width_in)},
+                {"out_con"},
+                f"if (not ({load_test})) and (m0 < {T}/{vec_width}): out_con = in_con"
+            )
+
+            state.add_memlet_path(vec_buf_out,
+                                  write_out_task,
+                                  dst_conn="in_con",
+                                  memlet=dace.Memlet("vec_buf_out"))
+
+            state.add_memlet_path(write_out_task,
+                                  map_exit,
+                                  pipe,
+                                  src_conn="out_con",
+                                  memlet=dace.Memlet("B_pipe[0]",
+                                                     dynamic=True))
+
+        def make_write_Y(state, add_bias=True):
+            '''
+            Receives results from the systolic array in Im2Col order, adds bias input B
+            if existent, performs in-place relu activation (if configured)
+            and writes results back to memory in default layout (Batch, Channel, X, Y)
+            It is the C in the GEMM A @ B + C and has dimensions NxM
+
+            M = output_size_y * output_size_x
+            N = num_filters
+            '''
+
+            vendor = dace.config.Config.get("compiler", "fpga_vendor")
+            xilinx = (vendor == "xilinx")
+
+            pipe = state.add_read("C_pipe")
+            if add_bias:
+                mem_read = state.add_read("B")
+            mem = state.add_write("Y")
+
+            # On Xilinx compiler 2020.2 had issues properly pipelining
+            # the normal loop over the bias buffer with II=1
+            # On Xilinx we thus first buffer the complete Bias (or could even use InputToConstant directly)
+            # Overhead is minimal as bias weights are few and buffering has finished in any reasonable scenario,
+            # when the first computed values arrive from the compute PEs
+            # ----------------------------------------
+            # Bias Buffering (Xilinx only)
+            # ----------------------------------------
+            if xilinx:
+                new_sdfg.add_array("bias_buffer", [num_filters],
+                                   dtype=base_type,
+                                   transient=True,
+                                   storage=dace.dtypes.StorageType.FPGA_Local)
+
+                bias_buffer = state.add_access("bias_buffer")
+
+                bias_read_task = state.add_tasklet("read_bias_task", {"mem"},
+                                                   {"buf"}, f"buf = mem")
+
+                bias_map_entry, bias_map_exit = state.add_map(
+                    "read_bias_map", {"b_i": f"0:{num_filters}"},
+                    schedule=dace.ScheduleType.FPGA_Device)
+
+                state.add_memlet_path(mem_read,
+                                      bias_map_entry,
+                                      bias_read_task,
+                                      dst_conn="mem",
+                                      memlet=dace.Memlet("B[b_i]"))
+
+                state.add_memlet_path(bias_read_task,
+                                      bias_map_exit,
+                                      bias_buffer,
+                                      src_conn="buf",
+                                      memlet=dace.Memlet("bias_buffer[b_i]"))
+
+            # ----------------------------------------
+            # Write out to global memory
+            # ----------------------------------------
+            entry_map, exit_map = state.add_map(
+                "write_C",
+                {
+                    "b":
+                    f"0:{batch_size}",  # additional batch map to loop over images in batch
+                    "n0": f"0:ceiling({N}/{P})",
+                    "tm": f"0:ceiling({M}/{T})",
+                    "n1": f"0:{P}",
+                    "m":
+                    f"0:{T / vec_width}"  # vectorization support on output
+                },
+                schedule=dace.ScheduleType.FPGA_Device)
+
+            # ----------------------------------------
+            # Bias
+            # ----------------------------------------
+            # Output vectors
+            # write in memory by adding C when we copy that to memory
+            # deal with out-of-bound accesses
+            if add_bias:
+                add_prev_c = " + prev_c"
+            else:
+                add_prev_c = ""
+
+            # ----------------------------------------
+            # Activation
+            # ----------------------------------------
+            # support activations before writing out to global memory
+            pre_activation = f"from_kernel{add_prev_c}"
+            if activation is not None and activation == "relu":
+
+                # 0 value for all different data types
+                new_sdfg.add_array(
+                    "relu_zero",
+                    dtype=vec_type,
+                    shape=[1],
+                    transient=True,
+                    storage=dace.dtypes.StorageType.FPGA_Registers)
+                relu_zero = state.add_access("relu_zero")
+
+                init_tasklet = state.add_tasklet("init_zero", {},
+                                                 {"init_dummy"},
+                                                 """init_dummy = 0""")
+
+                state.add_memlet_path(init_tasklet,
+                                      relu_zero,
+                                      src_conn="init_dummy",
+                                      memlet=dace.Memlet("relu_zero[0]"))
+
+                # tasklet with relu activation
+                tasklet_code = f"to_memory = max(zero, {pre_activation})"
+            else:
+                # tasklet without activation
+                tasklet_code = f"to_memory = {pre_activation}"
+
+            tasklet_inputs = {"from_kernel", "prev_c"
+                              } if add_bias else {"from_kernel"}
+            if activation is not None and activation == "relu":
+                tasklet_inputs.add("zero")
+
+            # ----------------------------------------
+            # final tasklet with out-of-bounds check
+            # ----------------------------------------
+            tasklet = state.add_tasklet(
+                "write_C", tasklet_inputs, {"to_memory"}, f"""\
+if tm * {T} + m * {vec_width} < {M}  and  n0 * {P} + n1 < {N} :                                               
+    {tasklet_code}
+""")
+
+            state.add_memlet_path(pipe,
+                                  entry_map,
+                                  tasklet,
+                                  dst_conn="from_kernel",
+                                  memlet=dace.Memlet(f"C_pipe[{P}-1]"))
+
+            # ----------------------------------------
+            # Index Translation
+            # ----------------------------------------
+            matrix_col = f"(tm*{T} + m * {vec_width})"  # matrix column access
+            out_filter = f"n0 * {P} + n1"  # extract output filter from N dim.
+            out_y = f"int_floor({matrix_col}, {output_size_x})"  # y position in output
+            out_x = f"(({matrix_col} % {output_size_x}) / {vec_width})"  # x position in output
+            access = f"[b, {out_filter}, {out_y}, {out_x}]"  # final access in (b,c,x,y) layout
+
+            # ----------------------------------------
+            # Memlets
+            # ----------------------------------------
+            # connect dummy 0 value for relu activation
+            if activation is not None and activation == "relu":
+
+                state.add_memlet_path(relu_zero,
+                                      entry_map,
+                                      tasklet,
+                                      dst_conn="zero",
+                                      memlet=dace.Memlet("relu_zero[0]"))
+
+            # load bias if necessary (either from DRAM or BRAM)
+            if add_bias:
+                bias_read = bias_buffer if xilinx else mem_read
+                bias_access = f"bias_buffer[{out_filter}]" if xilinx else f"B[{out_filter}]"
+                state.add_memlet_path(
+                    bias_read,
+                    entry_map,
+                    tasklet,
+                    dst_conn="prev_c",
+                    memlet=dace.Memlet(
+                        bias_access,  # single Bias value per filter
+                        dynamic=True,
+                        allow_oob=True))
+
+            # write result
+            state.add_memlet_path(tasklet,
+                                  exit_map,
+                                  mem,
+                                  src_conn="to_memory",
+                                  memlet=dace.Memlet(f"Y{access}",
+                                                     dynamic=True,
+                                                     allow_oob=True))
+
+        def make_compute(sdfg, state):
+
+            A_pipe_in = state.add_read("A_pipe")
+            B_pipe_in = state.add_read("B_pipe")
+            B_pipe_out = state.add_write("B_pipe")
+            C_pipe_in = state.add_read("C_pipe")
+            C_pipe_out = state.add_write("C_pipe")
+
+            # The computation is expressed a single, flattened loop, which is generated by the following
+            # pipeline scope. Each PE accumulates over T partial results. The drain phase last P*T clock cycles.
+            # Draining and compute are overlapped.
+            # We are generating the loop by explicitly ignoring loop carried dependencies. Therefore, we have
+            # to guarantee that the PE will accumulate on the same partial result only when its value is consolidated.
+            # The + L is a safe delay between accumulation between the same partial result.
+            # It must be computed by considering T and the latency needed to consolidate a partial result
+            # (which is the latency of the add + latency for reading and writing to BRAM).
+
+            entry_pipeline, exit_pipeline = state.add_pipeline(
+                "compute_and_drain",
+                {
+                    "b":
+                    f"0:{batch_size}",  # additional batch map to loop over images in batch
+                    "n0": f"0:ceiling({N}/{P})",
+                    "tm": f"0:ceiling({M}/{T})",
+                    "k": f"0:{K}",
+                    "m": f"0:{T / vec_width} + {L}"
+                },
+                drain_size=P * (T / vec_width),
+                drain_overlap=False,
+                additional_iterators={
+                    'm_drain': 0,
+                    'k_drain': 0
+                },
+                schedule=dace.ScheduleType.FPGA_Device)
+
+            # Instantiate buffers
+            sdfg.add_scalar("A_reg",
+                            dtype=base_type,
+                            transient=True,
+                            storage=dace.dtypes.StorageType.FPGA_Registers)
+            A_reg = state.add_write("A_reg")
+            A_reg_init = state.add_access("A_reg")
+
+            # For C result we are going to use vectorized data type
+
+            # Note: for some of the Sacred Mysteries of Intel OpenCL Compiler (TM), if this buffer is smaller
+            # than 24 floats, the II of the pipeline will be 5. Therefore we check this and in case we enlarge it
+            buffer_size = max(T / vec_width, 24)
+            sdfg.add_array("C_buffer", [buffer_size],
+                           dtype=vec_type,
+                           transient=True,
+                           storage=dace.dtypes.StorageType.FPGA_Local)
+            C_buffer_in = state.add_read("C_buffer")
+            C_buffer_out = state.add_write("C_buffer")
+
+            # Init data to reset partial results
+            new_sdfg.add_array("C_init",
+                               dtype=vec_type,
+                               shape=[1],
+                               transient=True,
+                               storage=dace.dtypes.StorageType.FPGA_Registers)
+            C_init = state.add_access("C_init")
+            C_init_tasklet = state.add_tasklet("C_data_init", {},
+                                               {"init_data"}, "init_data = 0")
+
+            state.add_memlet_path(C_init_tasklet,
+                                  C_init,
+                                  src_conn="init_data",
+                                  memlet=dace.Memlet("C_init[0]"))
+            state.add_memlet_path(entry_pipeline,
+                                  C_init_tasklet,
+                                  memlet=dace.Memlet())
+
+            # Feed A
+            # every PE: reads input data, buffer the data assigned to it
+            buffer_a_tasklet = state.add_tasklet(
+                "buffer_a", {"a_in"}, {
+                    "a_reg",
+                }, f"""\
+if m == 0 and not {entry_pipeline.pipeline.drain_condition()}:
+    a_reg = a_in""")
+
+            state.add_memlet_path(A_pipe_in,
+                                  entry_pipeline,
+                                  buffer_a_tasklet,
+                                  memlet=dace.Memlet("A_pipe[p]",
+                                                     dynamic=True),
+                                  dst_conn="a_in")
+            state.add_memlet_path(buffer_a_tasklet,
+                                  A_reg,
+                                  memlet=dace.Memlet("A_reg[0]", dynamic=True),
+                                  src_conn="a_reg")
+
+            # Feed B
+            sdfg.add_array("B_reg",
+                           shape=[1],
+                           dtype=vec_type,
+                           transient=True,
+                           storage=dace.dtypes.StorageType.FPGA_Local)
+            B_reg = state.add_access("B_reg")
+            buffer_b_tasklet = state.add_tasklet(
+                "buffer_b", {"b_in"}, {"b_reg_out"}, f"""\
+if  m>={L} and not {entry_pipeline.pipeline.drain_condition()}:
+    b_reg_out = b_in""")
+
+            state.add_memlet_path(B_pipe_in,
+                                  entry_pipeline,
+                                  buffer_b_tasklet,
+                                  memlet=dace.Memlet("B_pipe[p]",
+                                                     dynamic=True),
+                                  dst_conn="b_in")
+            state.add_memlet_path(buffer_b_tasklet,
+                                  B_reg,
+                                  memlet=dace.Memlet("B_reg[0]", dynamic=True),
+                                  src_conn="b_reg_out")
+
+            # Compute, Forward B, and Drain
+            compute_tasklet = state.add_tasklet(
+                "compute_and_drain",
+                {"a_in", "b_in", "c_in", "forward_in", "c_init_data"},
+                {"b_out", "c_out", "c_pipe_out"}, f"""\
+result = c_in
+if m >= {int(L)} and not {entry_pipeline.pipeline.drain_condition()}:
+    c_prev = c_init_data if k == 0 else c_in
+    result =  c_prev + a_in * b_in
+    c_out = result
+    if p < {P} - 1:
+        b_out = b_in
+# Drain
+# when we have to drain:
+# - if we are working on second assigned row or second tile and we have something to drain
+# - if k = K-1 and m>=L: each PE has just finished to compute something
+# - if we are in the draining phase
+# How: 
+# - if k = K-1 and m>=L: then the PE drains its own result
+#-  otherwise, if k_drain<p forward data coming from previous PEs (this could happens also in the drain phase)
+if((b > 0 or n0 > 0 or tm > 0)  and k_drain <p and m_drain <{int(T / vec_width)}) or  (k=={K}-1 and m>= {int(L)}) or ({entry_pipeline.pipeline.drain_condition()} and k_drain < p): # modification to standard GEMM, also consider b
+    c_pipe_out = result if (p==0 or (k_drain=={K}-1 and not {entry_pipeline.pipeline.drain_condition()})) else forward_in
+# adjust draining iterators
+if not {entry_pipeline.pipeline.drain_condition()}:
+    if m_drain >= {int(L)} +  {int(T / vec_width)} -1:
+        m_drain = 0
+        if k_drain >= {K} - 1:
+            k_drain = 0
+        else:
+            k_drain = k_drain +1
+    else:
+        m_drain = m_drain + 1
+else:
+    if m_drain >=  {int(T / vec_width)} -1:
+        m_drain = 0
+        if k_drain >= {K} - 1:
+            k_drain = 0
+        else:
+            k_drain = k_drain +1
+    else:
+        m_drain = m_drain + 1
+    """)
+
+            state.add_memlet_path(A_reg,
+                                  compute_tasklet,
+                                  dst_conn="a_in",
+                                  memlet=dace.Memlet("A_reg[0]"))
+            state.add_memlet_path(B_reg,
+                                  compute_tasklet,
+                                  memlet=dace.Memlet("B_reg[0]",
+                                                     dynamic=False),
+                                  dst_conn="b_in")
+            state.add_memlet_path(C_init,
+                                  compute_tasklet,
+                                  memlet=dace.Memlet("C_init[0]"),
+                                  dst_conn="c_init_data")
+
+            state.add_memlet_path(compute_tasklet,
+                                  exit_pipeline,
+                                  B_pipe_out,
+                                  memlet=dace.Memlet("B_pipe[p + 1]",
+                                                     dynamic=True),
+                                  src_conn="b_out")
+            state.add_memlet_path(C_buffer_in,
+                                  entry_pipeline,
+                                  compute_tasklet,
+                                  dst_conn="c_in",
+                                  memlet=dace.Memlet(f"C_buffer[m-{L}]",
+                                                     allow_oob=True))
+
+            state.add_memlet_path(compute_tasklet,
+                                  exit_pipeline,
+                                  C_buffer_out,
+                                  memlet=dace.Memlet(f"C_buffer[m-{L}]",
+                                                     allow_oob=True,
+                                                     dynamic=True),
+                                  src_conn="c_out")
+
+            state.add_memlet_path(C_pipe_in,
+                                  entry_pipeline,
+                                  compute_tasklet,
+                                  memlet=dace.Memlet("C_pipe[p-1]",
+                                                     dynamic=True),
+                                  dst_conn="forward_in")
+            state.add_memlet_path(compute_tasklet,
+                                  exit_pipeline,
+                                  C_pipe_out,
+                                  memlet=dace.Memlet("C_pipe[p]",
+                                                     dynamic=True),
+                                  src_conn="c_pipe_out")
+
+            # Unroll processing elements
+            compute_entry, compute_exit = state.add_map(
+                "unroll_compute", {"p": "0:{}".format(P)},
+                schedule=dace.ScheduleType.FPGA_Device,
+                unroll=True)
+
+            # Bring data nodes into scope
+            state.add_memlet_path(compute_entry,
+                                  A_pipe_in,
+                                  memlet=dace.memlet.Memlet())
+            state.add_memlet_path(compute_entry,
+                                  B_pipe_in,
+                                  memlet=dace.memlet.Memlet())
+            state.add_memlet_path(compute_entry,
+                                  C_pipe_in,
+                                  memlet=dace.memlet.Memlet())
+
+            state.add_memlet_path(B_pipe_out,
+                                  compute_exit,
+                                  memlet=dace.memlet.Memlet())
+
+            state.add_memlet_path(C_pipe_out,
+                                  compute_exit,
+                                  memlet=dace.memlet.Memlet())
+
+            state.add_memlet_path(compute_entry,
+                                  A_reg_init,
+                                  memlet=dace.memlet.Memlet())
+            state.add_memlet_path(A_reg_init,
+                                  entry_pipeline,
+                                  memlet=dace.memlet.Memlet())
+            b_init = state.add_access("B_reg")
+            state.add_memlet_path(compute_entry, b_init, memlet=dace.Memlet())
+            state.add_memlet_path(b_init, entry_pipeline, memlet=dace.Memlet())
+            state.add_memlet_path(compute_entry,
+                                  C_buffer_in,
+                                  memlet=dace.Memlet())
+            state.add_memlet_path(C_buffer_out,
+                                  compute_exit,
+                                  memlet=dace.Memlet())
+
+        # build the compute State
+        new_sdfg.add_stream("A_pipe",
+                            base_type,
+                            transient=True,
+                            shape=(P, ),
+                            storage=dace.dtypes.StorageType.FPGA_Local,
+                            buffer_size=str(P))
+        new_sdfg.add_stream("B_pipe",
+                            vec_type,
+                            transient=True,
+                            shape=(P + 1, ),
+                            buffer_size=1,
+                            storage=dace.dtypes.StorageType.FPGA_Local)
+        new_sdfg.add_stream("C_pipe",
+                            vec_type,
+                            transient=True,
+                            shape=(P + 1, ),
+                            buffer_size=T,
+                            storage=dace.dtypes.StorageType.FPGA_Local)
+
+        make_read_W(new_state)
+        make_read_X(new_state)
+        make_compute(new_sdfg, new_state)
+        make_write_Y(new_state, add_bias=(B is not None))
+        return new_sdfg
+
+
 @op_implementation(op="Relu", name="fpga")
 class FPGARelu(ONNXForward):
     @staticmethod

@@ -654,13 +654,14 @@ for schema in _get_schemas_from_version(12):
                 forward_impl: ONNXForward = impl
 
                 @classmethod
-                def expansion(cls, node, state, sdfg):
+                def expansion(cls, node, state, sdfg, **kwargs):
                     # validate
                     node.validate(sdfg, state)
 
                     if cls.forward_impl.forward_can_be_applied(
                             node, state, sdfg):
-                        result = cls.forward_impl.forward(node, state, sdfg)
+                        result = cls.forward_impl.forward(
+                            node, state, sdfg, **kwargs)
                         if hasattr(cls.forward_impl, "environments"):
                             cls.environments.extend(
                                 cls.forward_impl.environments)

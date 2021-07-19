@@ -57,6 +57,10 @@ test-gpu:
 test-intel-fpga:
 	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests/pytorch/fpga/
 
+test-xilinx:
+	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests/pytorch/fpga/
+
+
 codecov:
 	curl -s https://codecov.io/bash | bash
 
