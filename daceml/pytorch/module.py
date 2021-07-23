@@ -26,6 +26,36 @@ from daceml.util import utils, find_str_not_in_set
 log = logging.getLogger(__name__)
 
 
+def enlarge_reduction_accumulators(fwd_sdfg, bwd_sdfg):
+    for target_sdfg in (fwd_sdfg, bwd_sdfg):
+
+        # dtype of accumulator should have at least single precision
+        for n, s in target_sdfg.all_nodes_recursive():
+            if isinstance(n, dace.nodes.AccessNode):
+                if any(e.data.wcr for e in s.in_edges(n)):
+                    dst_array = s.parent.arrays[n.data]
+                    if dst_array.dtype == dace.dtypes.float16:
+                        dst_array.dtype = dace.dtypes.float32
+                        
+        # propagate datatype to outer sdfgs
+
+        for state, sdfg in target_sdfg.all_nodes_recursive():
+            if not isinstance(sdfg, dace.SDFG):
+                continue
+            if sdfg.parent is None:
+                continue
+            for data, arr in sdfg.arrays.items():
+                pnode = sdfg.parent_nsdfg_node
+                pstate = sdfg.parent
+                psdfg = sdfg.parent_sdfg
+                if data not in pnode.out_connectors:
+                    continue
+                for edge in pstate.out_edges(pnode):
+                    if not isinstance(edge.dst, dace.nodes.AccessNode):
+                        continue
+                    psdfg.arrays[edge.dst.data].dtype = arr.dtype
+
+
 class DaceModule(nn.Module):
     """ A wrapper that converts a PyTorch ``nn.Module`` to a PyTorch compatible data-centric ``nn.Module``.
 
@@ -145,6 +175,8 @@ class DaceModule(nn.Module):
                 self.append_post_onnx_hook(
                     "apply_strict", lambda dace_module: dace_module.sdfg.
                     apply_strict_transformations())
+
+        self.append_post_autodiff_hook("enlarge_reduction_accumulators", enlarge_reduction_accumulators)
 
     def reset_sdfg(self):
         """ Clear the sdfg so that optimizations are reapplied. """
