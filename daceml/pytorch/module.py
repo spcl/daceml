@@ -53,6 +53,8 @@ def enlarge_reduction_accumulators(fwd_sdfg, bwd_sdfg):
                 for edge in pstate.out_edges(pnode):
                     if not isinstance(edge.dst, dace.nodes.AccessNode):
                         continue
+                    if edge.src_conn != data:
+                        continue
                     psdfg.arrays[edge.dst.data].dtype = arr.dtype
 
 
