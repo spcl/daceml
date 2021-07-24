@@ -279,3 +279,18 @@ def remove_output_connector(sdfg: dace.SDFG, state: dace.SDFGState,
                 )
 
             queue.append(e.dst)
+
+
+def get_library_node_by_name(sdfg, name):
+    '''
+    Searches for a library node with @param name
+    in the SDFG @param sdfg and returns the library
+    node and the associated state
+    '''
+
+    for node, state in sdfg.all_nodes_recursive():
+        if isinstance(node, dace.sdfg.nodes.LibraryNode):
+            if node.label == name:
+                return node, state
+
+    raise Exception(f"LibraryNode {name} not found")
