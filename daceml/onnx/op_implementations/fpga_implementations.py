@@ -2109,8 +2109,11 @@ class FPGAMaxPool2D(ONNXForward):
         X = in_desc_with_name(node, state, sdfg, "X")
         Y = out_desc_with_name(node, state, sdfg, "Y")
 
-        if Y.veclen != 1:  #NYI
-            return False
+        if Y.veclen != 1:  # if output vectorized must match
+            _, filter_width = node.kernel_shape
+            if not (X.veclen == Y.veclen or X.veclen == filter_width * Y.veclen
+                    ):  # support reducing vector size proportionally to filter
+                return False
 
         if "Indices" in {e.src_conn for e in state.out_edges(node)}:
             return False
@@ -2154,6 +2157,15 @@ class FPGAMaxPool2D(ONNXForward):
         X = in_desc_with_name(node, state, sdfg, "X")
         Y = out_desc_with_name(node, state, sdfg, "Y")
         vec_width = X.veclen
+        out_vec_width = Y.veclen
+
+        # Xilinx implementation specific
+        vendor = dace.config.Config.get("compiler", "fpga_vendor")
+        xilinx = True if vendor == "xilinx" else False
+
+        # use registers for now, careful with large images
+        # the buffer covers approximately an entire row of the image
+        xilinx_buffer_type = dace.StorageType.FPGA_Registers
 
         image_dims = len(X.shape) - 2
         batch_size = X.shape[0]
@@ -2180,9 +2192,10 @@ class FPGAMaxPool2D(ONNXForward):
         shift_register_size = input_size_width * vec_width * (
             filter_height - 1) + (filter_width - 1) + 1
 
+        buffer_type = xilinx_buffer_type if xilinx else dace.StorageType.FPGA_ShiftRegister
         new_sdfg.add_array("shift_register", [shift_register_size],
                            X.dtype.type,
-                           storage=dace.StorageType.FPGA_ShiftRegister,
+                           storage=buffer_type,
                            transient=True)
         # variable for reduction
         new_sdfg.add_array("max_res", [1],
@@ -2197,6 +2210,18 @@ class FPGAMaxPool2D(ONNXForward):
                            transient=True,
                            storage=dace.dtypes.StorageType.FPGA_Registers)
         # temporary storage for unpacked vector data type
+
+        # Buffer for vectorized output
+        if Y.veclen > 1:
+            new_sdfg.add_array("vec_data_out",
+                               shape=[
+                                   out_vec_width,
+                               ],
+                               dtype=Y.dtype.type,
+                               transient=True,
+                               storage=dace.dtypes.StorageType.FPGA_Registers)
+            # temporary storage for unpacked output vector
+            vec_out = new_state.add_access("vec_data_out")
 
         # the outer map loops over every entry in the input array
         # (useful also in the case of streaming input, we can't skip data
@@ -2229,7 +2254,7 @@ class FPGAMaxPool2D(ONNXForward):
                                                 inputs={"image_in", "max_in"},
                                                 outputs={"output", "max_out"},
                                                 code=f"""\
-if hx == 0 and hy == 0: max_in = {dtypes.min_value(Y.dtype)}  #init
+if hx == 0 and hy == 0: max_in = {dtypes.min_value(Y.dtype.base_type)}  #init
 max_out = float(max(max_in, image_in))
 if hy == {filter_height} - 1 and hx == {filter_width} -1 and  in_y % {filter_height} == {filter_height} - 1 and (in_x *{vec_width}+w) % {filter_width} == {filter_width} -1: 
     output = max_out""")
@@ -2249,10 +2274,16 @@ if hy == {filter_height} - 1 and hx == {filter_width} -1 and  in_y % {filter_hei
                                   memlet=dace.Memlet("X[b, c, in_y, in_x]"))
 
         # memlet: from input image to shift register
+        other_subset = f"{shift_register_size - 1}"
+        if xilinx:
+            other_subset = f"(in_y * {(input_size_width * vec_width)} + (in_x * {vec_width}) + w) % {shift_register_size}"
+
         to_shift_register_memlet = dace.Memlet(
-            f"vec_data[{'0' if vec_width == 1 else 'w'}]",
-            other_subset=f"{shift_register_size - 1}",
-            allow_oob=True)
+            "vec_data[{}]".format('0' if vec_width == 1 else 'w'),
+            other_subset=other_subset)
+
+        # explicitly set oob otherwise it is not taken
+        to_shift_register_memlet.allow_oob = True
         new_state.add_memlet_path(vec_data,
                                   vect_me,
                                   shift_register,
@@ -2267,15 +2298,24 @@ if hy == {filter_height} - 1 and hx == {filter_width} -1 and  in_y % {filter_hei
                                   outer_me,
                                   memlet=dace.Memlet())
 
+        # create vector output buffer outside map, empty memlet path
+        if Y.veclen != 1:
+            vec_out_read = new_state.add_read("vec_data_out")
+            new_state.add_memlet_path(vec_out_read,
+                                      outer_me,
+                                      memlet=dace.Memlet())
+
         # memlet from shift register to max tasklet
         # NOTE: vec width
-        new_state.add_memlet_path(
-            shift_register,
-            inner_me,
-            compute_tasklet,
-            dst_conn="image_in",
-            memlet=dace.Memlet(
-                f"shift_register[hy*{input_size_width * vec_width}+hx]"))
+        element = f"(hy*{input_size_width * vec_width}+hx)"
+        access = f"shift_register[{element}]"
+        if xilinx:
+            access = f"shift_register[(in_y * {(input_size_width * vec_width)} + (in_x * {vec_width} + w + 1) + {element}) % {shift_register_size}]"
+        new_state.add_memlet_path(shift_register,
+                                  inner_me,
+                                  compute_tasklet,
+                                  dst_conn="image_in",
+                                  memlet=dace.Memlet(access))
 
         #memlets for max
         new_state.add_memlet_path(read_max_res,
@@ -2294,23 +2334,80 @@ if hy == {filter_height} - 1 and hx == {filter_width} -1 and  in_y % {filter_hei
         #empty memlet
         new_state.add_memlet_path(write_max_res, vect_mx, memlet=dace.Memlet())
         #Attention, the storing location must take into account that the input was vectorized
-        if vec_width != 1:
+        if vec_width != 1 and Y.veclen == 1:
             y_memlet = dace.Memlet(
                 f"Y[b,c, in_y//{filter_height}, (in_x*{vec_width}+w)//{filter_width}]"
             )
-        else:
+        elif vec_width == 1 and Y.veclen == 1:
             y_memlet = dace.Memlet(
                 f"Y[b,c, in_y//{filter_height}, in_x//{filter_width}]")
-        # dynamic memlet (to access only when needed) from compute tasklet to out image
+        else:
+            x_access = f"int_floor(in_x, {filter_width})"
+            if X.veclen == filter_width * Y.veclen:
+                # if input vector size is a multiple of the output vector size
+                # we can output to each index of the input on the output
+                x_access = "in_x"
+
+        #    dynamic memlet (to access only when needed) from compute tasklet to out image
+            y_memlet = dace.Memlet(
+                f"Y[b,c, int_floor(in_y, {filter_height}), {x_access}]",
+                allow_oob=True,
+                dynamic=True)
+
         # Attention: use propagate=False otherwise it does not validate
-        new_state.add_memlet_path(compute_tasklet,
-                                  inner_mx,
-                                  vect_mx,
-                                  outer_mx,
-                                  write_Y,
-                                  src_conn="output",
-                                  memlet=y_memlet,
-                                  propagate=True)
+        if Y.veclen == 1:
+
+            # plain data type output for plain data types or unrolled writes on Intel
+            new_state.add_memlet_path(
+                compute_tasklet,
+                inner_mx,
+                vect_mx,
+                outer_mx,
+                write_Y,
+                src_conn="output",
+                memlet=y_memlet,
+                propagate=True,
+            )
+
+        else:
+
+            # vector buffer output for vectorized output buffer case
+            new_state.add_memlet_path(
+                compute_tasklet,
+                inner_mx,
+                vect_mx,
+                vec_out,
+                src_conn="output",
+                memlet=dace.Memlet(
+                    f"vec_data_out[int_floor(in_x * {vec_width} + w, {filter_width}) % {out_vec_width}]",
+                    dynamic=True))
+
+            if X.veclen == filter_width * Y.veclen:
+                # if the input vector size is a kernel size multiple of the output vector size
+                # we can write to the output on every iteration while reading the correct row
+                # on the input
+                code = f"if in_y % {filter_height} == {filter_height} - 1: to_mem = vec"
+            else:
+                code = f"if in_y % {filter_height} == {filter_height} - 1 and in_x % {filter_width} == {filter_width} - 1: to_mem = vec"
+            to_memory_task = new_state.add_tasklet(
+                "to_memory_task",
+                inputs={"vec": dace.vector(X.dtype.base_type, out_vec_width)},
+                outputs={"to_mem"},
+                code=code,
+            )
+
+            new_state.add_memlet_path(vec_out,
+                                      to_memory_task,
+                                      dst_conn="vec",
+                                      memlet=dace.Memlet(f"vec_data_out"))
+
+            new_state.add_memlet_path(
+                to_memory_task,
+                outer_mx,
+                write_Y,
+                src_conn="to_mem",
+                memlet=y_memlet,
+            )
 
         new_sdfg.fill_scope_connectors()
         return new_sdfg

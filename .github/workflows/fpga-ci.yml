@@ -40,7 +40,6 @@ jobs:
       - name: Upload coverage
         run: make codecov
 
-      
       - name: Run Xilinx FPGA tests
         env:
           PYTEST_ARGS: --cov=daceml --cov-report=term --cov-report xml --cov-config=.coveragerc -s -m "xilinx"
