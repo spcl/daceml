@@ -317,6 +317,8 @@ if __name__ == "__main__":
         sdfg = dace_module.sdfg
         sdfg.apply_transformations([FPGATransformSDFG, InlineSDFG])
 
+        sdfg.save('./tmp/test_out_fpga.sdfg')
+
         # Apply vectorization according to configuration
         if args["vectorize"]:
             print(f"-------------- Apply vectorization --------------")
@@ -335,7 +337,7 @@ if __name__ == "__main__":
                 # vectorize input
                 if block == 0:
                     print(f"Vectorize ONNX_inputDOT1 with {vec_width}")
-                    utils.vectorize_array_and_memlet(sdfg, "inputDOT1",
+                    utils.vectorize_array_and_memlet(sdfg, "fpga_inputDOT1",
                                                      vec_type)
 
                 # # vectorize outputs of layers
