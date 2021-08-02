@@ -10,6 +10,7 @@ from dace.sdfg import nodes as nd
 from dace.sdfg import utils as sdutil
 from dace.transformation import transformation
 from dace.transformation.transformation import PatternNode
+from dace.frontend.common import einsum
 from daceml.onnx import parse_variadic_param
 
 log = logging.getLogger(__name__)
@@ -42,13 +43,53 @@ class HorizontalEinsumFusion(transformation.Transformation):
         top: donnx.ONNXEinsum = self.top(sdfg)
         access: nodes.AccessNode = self.access(sdfg)
         bot: donnx.ONNXEinsum = self.bot(sdfg)
-        top_inputs, top_outputs = top.equation.split("->")
-        bot_inputs, bot_outputs = bot.equation.split("->")
+        top_inputs, top_output = top.equation.split("->")
+        top_inputs = top_inputs.split(",")
+        bot_inputs, bot_output = bot.equation.split("->")
+        bot_inputs = bot_inputs.split(",")
 
-        if len(top_inputs.split(",")) != 1 and len(bot_inputs.split(",")) != 1:
+        if len(top_inputs) != 1 and len(bot_inputs) != 1:
             return False
 
         if graph.in_degree(access) != 1:
+            return False
+
+        if len(top_inputs) == 1:
+            # Fuse top into bottom
+            connector_on_bot = graph.out_edges(access)[0].dst_conn
+            name, input_idx = parse_variadic_param(connector_on_bot)
+            if name != "Inputs":
+                return False
+
+            input_str_to_fuse = bot_inputs[input_idx]
+            if len(input_str_to_fuse) != len(top_output):
+                return False
+            top_idx_to_bottom_idx = dict(zip(top_output, input_str_to_fuse))
+
+            new_input_str = "".join(top_idx_to_bottom_idx[c]
+                                    for c in top_inputs[0])
+            bot_inputs[input_idx] = new_input_str
+            target_str = f'{",".join(bot_inputs)}->{bot_output}'
+
+        else:
+            # Fuse bottom into top
+            if len(bot_inputs) != 1:
+                return False
+
+            connector_on_bot = graph.out_edges(bot)[0].src_conn
+            if connector_on_bot != "Output":
+                return False
+
+            if len(bot_inputs[0]) != len(top_output):
+                return False
+            bottom_idx_to_top_idx = dict(zip(bot_inputs[0], top_output))
+
+            new_output_str = "".join(bottom_idx_to_top_idx[c]
+                                     for c in bot_output)
+            target_str = f'{",".join(top_inputs)}->{new_output_str}'
+
+        # Ensure that einsum is capable of being output as a BLAS operation
+        if not einsum.EinsumParser(target_str).is_bmm():
             return False
 
         return True
