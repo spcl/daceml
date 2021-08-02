@@ -5,7 +5,7 @@ import dace
 import daceml.onnx as donnx
 from dace import nodes
 from dace import registry
-from dace.properties import make_properties
+from dace.properties import Property, make_properties
 from dace.sdfg import nodes as nd
 from dace.sdfg import utils as sdutil
 from dace.transformation import transformation
@@ -25,6 +25,11 @@ class HorizontalEinsumFusion(transformation.Transformation):
     top = PatternNode(donnx.ONNXEinsum)
     access = PatternNode(nodes.AccessNode)
     bot = PatternNode(donnx.ONNXEinsum)
+
+    allow_nonblas = Property(
+        dtype=bool,
+        default=False,
+        desc='Allow einsums that do not generate BLAS calls to match')
 
     @staticmethod
     def expressions():
@@ -53,6 +58,9 @@ class HorizontalEinsumFusion(transformation.Transformation):
 
         if graph.in_degree(access) != 1:
             return False
+
+        if self.allow_nonblas:
+            return True
 
         if len(top_inputs) == 1:
             # Fuse top into bottom
