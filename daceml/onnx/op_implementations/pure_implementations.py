@@ -251,11 +251,15 @@ class PureEinsum(ONNXForward):
         nstate = nsdfg.add_state()
 
         for e in node.iter_inputs_in_onnx_order(state):
-            nsdfg.add_datadesc(
-                e.dst_conn, in_desc_with_name(node, state, sdfg, e.dst_conn))
+            desc = copy.deepcopy(
+                in_desc_with_name(node, state, sdfg, e.dst_conn))
+            desc.transient = False
+            nsdfg.add_datadesc(e.dst_conn, desc)
         for e in node.iter_outputs_in_onnx_order(state):
-            nsdfg.add_datadesc(
-                e.src_conn, out_desc_with_name(node, state, sdfg, e.src_conn))
+            desc = copy.deepcopy(
+                out_desc_with_name(node, state, sdfg, e.src_conn))
+            desc.transient = False
+            nsdfg.add_datadesc(e.src_conn, desc)
 
         create_einsum_sdfg(None,
                            nsdfg,
@@ -271,16 +275,16 @@ class PureEinsum(ONNXForward):
 def Identity(input, output):
     output[:] = input
 
+
 @op_implementation(op="Expand", name="pure")
 class PureExpand(ONNXForward):
     """ Handle no-op case for Expand """
-
     @staticmethod
     def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
                                sdfg: SDFG) -> bool:
-        return iterables_equal(in_desc_with_name(node, state, sdfg, "input").shape ,
-                        out_desc_with_name(node, state, sdfg, "output").shape)
-
+        return iterables_equal(
+            in_desc_with_name(node, state, sdfg, "input").shape,
+            out_desc_with_name(node, state, sdfg, "output").shape)
 
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
@@ -288,8 +292,7 @@ class PureExpand(ONNXForward):
 
         node.remove_in_connector("shape")
         shape_node = in_edge_with_name(node, state, "shape").src
-        constant_folding.remove_node_and_computation(
-            sdfg, state, shape_node)
+        constant_folding.remove_node_and_computation(sdfg, state, shape_node)
 
         def prog(input, output):
             output[:] = input
@@ -499,6 +502,21 @@ class PureRelu(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
+# @op_implementation(op="LeakyRelu", name="pure")
+# class PureLeakyRelu(ONNXForward):
+#     @staticmethod
+#     def forward(node: onnx_op.ONNXOp, state: SDFGState,
+#                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
+#         input_dtype = in_desc_with_name(node, state, sdfg, "X").dtype
+#         cast_lambda = "lambda x: (max(x, dace.{}(0)) + {} * min(x, dace.{}(0)))".format(
+#             input_dtype.to_string(), node.alpha, input_dtype.to_string())
+
+#         def prog(X, Y):
+#             Y[:] = dace.elementwise(cast_lambda, X)
+
+#         return program_for_node(prog, sdfg, state, node)
+
+
 @op_implementation(op="Reshape", name="pure")
 class PureReshape(ONNXForward):
     '''
@@ -659,6 +677,7 @@ class PureSigmoid(ONNXForward):
 
         return program_for_node(prog, sdfg, state, node)
 
+
 @op_implementation(op="Transpose", name="einsum")
 class EinsumTranspose(ONNXForward):
     @staticmethod
@@ -669,7 +688,8 @@ class EinsumTranspose(ONNXForward):
         output_desc = out_desc_with_name(node, state, sdfg, "transposed")
 
         letters = [chr(ord('z') - i) for i in range(26)]
-        input_letters = "".join(letters[i] for i, _ in enumerate(input_desc.shape))
+        input_letters = "".join(letters[i]
+                                for i, _ in enumerate(input_desc.shape))
         output_letters = "".join(letters[i] for i in perm)
         equation_str = f"{input_letters}->{output_letters}"
 
@@ -685,9 +705,9 @@ class EinsumTranspose(ONNXForward):
         nsdfg.arrays["data"].transient = False
         nsdfg.arrays["transposed"].transient = False
 
-        nstate.add_edge(nstate.add_read("data"), None, einsum_node, "Inputs__0",
-                        nsdfg.make_array_memlet("data"))
-        nstate.add_edge(einsum_node, "Output", nstate.add_write("transposed"), None,
-                        nsdfg.make_array_memlet("transposed"))
+        nstate.add_edge(nstate.add_read("data"), None, einsum_node,
+                        "Inputs__0", nsdfg.make_array_memlet("data"))
+        nstate.add_edge(einsum_node, "Output", nstate.add_write("transposed"),
+                        None, nsdfg.make_array_memlet("transposed"))
 
         return nsdfg
