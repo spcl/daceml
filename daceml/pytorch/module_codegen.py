@@ -176,7 +176,7 @@ def argument_codegen(
     ptr_init_code += '\n'.join(
         f"{arglist[name].dtype.ctype} *{name}_ptr = reinterpret_cast<{arglist[name].dtype.ctype}*>"
         f"({name}.data_ptr<{torch_ctype(arglist[name].dtype)}>());"
-        for name in output_names)
+        for name in sorted(output_names))
     ptr_init_code += "\n// setup constant arguments\n"
 
     # initialize all remaining parameters
