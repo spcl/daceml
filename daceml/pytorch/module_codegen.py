@@ -107,7 +107,7 @@ def initialize_outputs_code(module: 'daceml.pytorch.DaceModule',
     """
     arglist = module.sdfg.arglist()
     code = ""
-    for name in output_names:
+    for name in sorted(output_names):
         code += tensor_init_for_desc(name, arglist[name])
 
     return code
@@ -139,7 +139,7 @@ def argument_codegen(
 
     # initialize the inputs and outputs
     ptr_init_code = "\n// setup input and output pointers\n"
-    for name in input_names:
+    for name in sorted(input_names):
         tctype = torch_ctype(arglist[name].dtype)
         dctype = arglist[name].dtype
 
@@ -412,13 +412,10 @@ def code_for_module(module: 'daceml.pytorch.DaceModule',
     sdfg_name = compiled_sdfg.sdfg.name
 
     ret_str = return_type_str(outputs)
-    if module.backward:
-        raise NotImplemented("todo")
-    else:
-        ptr_init_code, sdfg_call_arguments, init_arguments = argument_codegen(
-            compiled_sdfg.sdfg, module.dace_model.clean_weights, inputs,
-            outputs)
-        return f"""
+    ptr_init_code, sdfg_call_arguments, init_arguments = argument_codegen(
+        compiled_sdfg.sdfg, module.dace_model.clean_weights, inputs,
+        outputs)
+    return f"""
 {get_header(compiled_sdfg.sdfg, None, inputs, outputs, module.use_cuda)}
 
 // function definition
@@ -492,10 +489,17 @@ def compile_and_get_function(module: 'daceml.pytorch.DaceModule',
 
         compiled_sdfgs = [compiled, compiled_bwd]
         ptrs = [handle_ptr, bwd_handle_ptr]
-        environments.add(get_env_for_sdfg(compiled_bwd).full_class_path())
-        code = code_for_backward_function(module, compiled.sdfg,
-                                          compiled_bwd.sdfg, module._ad_result,
-                                          module._ad_inp_arrs)
+        if compiled_bwd is not None:
+            environments.add(get_env_for_sdfg(compiled_bwd).full_class_path())
+            bwd_sdfg = compiled_bwd.sdfg
+            code = code_for_backward_function(module, compiled.sdfg, bwd_sdfg,
+                                              module._ad_result,
+                                              module._ad_inp_arrs)
+        else:
+            bwd_sdfg = module.backward_sdfg
+            compiled_sdfgs = [compiled]
+            ptrs = [handle_ptr]
+            code = code_for_module(module, compiled)
     else:
         compiled, handle_ptr = compile_and_init_sdfgs(module, dummy_inputs)
         ptrs = [handle_ptr]

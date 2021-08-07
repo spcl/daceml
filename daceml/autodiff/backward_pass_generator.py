@@ -1067,7 +1067,7 @@ class BackwardPassGenerator:
             return backward_node, backward_result
 
         raise AutoDiffException(
-            "Unable to differentiate node type {}. Either add a pure forward implementation"
+            "Unable to differentiate node type {}. Either add a pure forward implementation "
             "or a backward implementation to progress.".format(type(node)))
 
     def _reverse_NestedSDFG(
