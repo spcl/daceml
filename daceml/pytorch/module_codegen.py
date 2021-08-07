@@ -36,7 +36,11 @@ class CompiledTorchFunction:
     ptr: List[torch.Tensor]
 
 
-_REPLACED_CTYPES = {dace.int64: "int64_t", dace.uint64: "uint64_t", dace.float16: "at::Half"}
+_REPLACED_CTYPES = {
+    dace.int64: "int64_t",
+    dace.uint64: "uint64_t",
+    dace.float16: "at::Half"
+}
 
 
 def torch_ctype(dtype: dace.typeclass) -> str:
@@ -222,7 +226,7 @@ def constant_initializer_code(name: str, desc: data.Data, value) -> str:
     elif isinstance(desc, data.Array) or gpu_storage:
         numpyval = value.cpu().numpy()
         if len(numpyval.shape) == 0:
-            numpyval = numpyval.reshape((1,))
+            numpyval = numpyval.reshape((1, ))
         iterator = np.nditer(numpyval, order="C")
         gpu_copy_code = f"""
         Tensor {name} = torch::from_blob({name}_ptr_cpu, {{{', '.join(sym2cpp(s) for s in desc.shape)}}},
@@ -266,7 +270,8 @@ def recover_saved_inputs_outputs(saved_inputs_outputs: List[str],
 def setup_grad_values(backward_result: BackwardResult, sdfg: dace.SDFG,
                       outputs: List[str]) -> str:
     code = "// input grads"
-    for param_name, grad_name in backward_result.required_grad_names.items():
+    for param_name, grad_name in sorted(
+            backward_result.required_grad_names.items()):
         zero_init = backward_result.zero_init.get(param_name, True)
         code += "\n" + tensor_init_for_desc(
             grad_name, sdfg.arrays[grad_name], zeros=zero_init)
@@ -413,8 +418,7 @@ def code_for_module(module: 'daceml.pytorch.DaceModule',
 
     ret_str = return_type_str(outputs)
     ptr_init_code, sdfg_call_arguments, init_arguments = argument_codegen(
-        compiled_sdfg.sdfg, module.dace_model.clean_weights, inputs,
-        outputs)
+        compiled_sdfg.sdfg, module.dace_model.clean_weights, inputs, outputs)
     return f"""
 {get_header(compiled_sdfg.sdfg, None, inputs, outputs, module.use_cuda)}
 
