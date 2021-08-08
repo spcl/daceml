@@ -411,9 +411,14 @@ class CuDNNConvBackward(BackwardImplementation):
         #######################
         # setup conv descriptor
         # we know from can_be_applied that the pads are symmetric
-        pad_h, pad_w = forward_node.pads[0], forward_node.pads[1]
-        stride_h, stride_w = forward_node.strides
-        dilation_h, dilation_w = forward_node.dilations
+        if len(forward_node.strides) == 1:
+            pad_h, pad_w = forward_node.pads[0], 0
+            stride_h, stride_w = forward_node.strides[0], 1
+            dilation_h, dilation_w = forward_node.dilations[0], 1
+        else:
+            pad_h, pad_w = forward_node.pads[0], forward_node.pads[1]
+            stride_h, stride_w = forward_node.strides
+            dilation_h, dilation_w = forward_node.dilations
         init_code += f"""
         __state->{unique_id}_conv_desc = new cudnnConvolutionDescriptor_t; 
         daceml::cudnn::CheckCudnnError(cudnnCreateConvolutionDescriptor(__state->{unique_id}_conv_desc));
@@ -674,14 +679,15 @@ class CuDNNConvBackward(BackwardImplementation):
         return node, result
 
 
-@autoregister_params(op="Conv", name="PyTorch")
+@autoregister_params(op="Conv", name="PyTorch-dwise")
 class PyTorchConvBackward(BackwardImplementation):
     """ Conv backward using PyTorch.
     """
     @staticmethod
     def backward_can_be_applied(node: nd.Node, state: dace.SDFGState,
                                 sdfg: dace.SDFG) -> bool:
-        return True
+        X_desc = utils.in_desc_with_name(node, state, sdfg, "X")
+        return len(X_desc.shape) == 4
 
     @staticmethod
     def backward(
@@ -796,7 +802,6 @@ class PyTorchConvBackward(BackwardImplementation):
                                                       outputs)
 
         return node, result
-
 
 @autoregister_params(op="BatchNormalization", name="cuDNN")
 class CuDNNBatchNormBackward(BackwardImplementation):

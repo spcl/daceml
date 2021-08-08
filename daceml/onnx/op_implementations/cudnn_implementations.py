@@ -24,7 +24,7 @@ def _iterables_equal(a, b) -> bool:
 
 
 def _get_tensor_layout(desc: dt.Array) -> Optional[str]:
-    """ Detect the layout of a 4d tensor.
+    """ Detect the layout of a 3d/4d tensor.
 
         :param desc: the tensor.
         :return: "NCHW", "NHWC" or None.
@@ -34,22 +34,35 @@ def _get_tensor_layout(desc: dt.Array) -> Optional[str]:
         # just return anything
         return "NCHW"
 
-    if len(desc.shape) != 4:
-        raise ValueError("Tensor with dimension != 4 is not supported")
+    if len(desc.shape) != 3 and len(desc.shape) != 4:
+        raise ValueError("Tensor with dimension != {3,4} is not supported")
 
     # in ONNX, tensor the dimensions are ordered N C H W
     # strides that the contiguous tensor would have
-    cont_strides = [_prod(desc.shape[i + 1:]) for i in range(4)]
+    cont_strides = [_prod(desc.shape[i + 1:]) for i in range(len(desc.shape))]
 
-    nhwc_shape = [desc.shape[0], desc.shape[3], desc.shape[1], desc.shape[2]]
+    if len(desc.shape) == 4:
+        nhwc_shape = [
+            desc.shape[0], desc.shape[3], desc.shape[1], desc.shape[2]
+        ]
+    elif len(desc.shape) == 3:
+        nhwc_shape = [desc.shape[0], desc.shape[2], desc.shape[1]]
 
     # strides that a nhwc tensor would have if it was contiguous
-    nhwc_contiguous_strides = [_prod(nhwc_shape[i + 1:]) for i in range(4)]
-    # strides that the nhwc tensor would have if viewed as a nchw tensor
-    nhwc_reshaped_strides = [
-        nhwc_contiguous_strides[0], nhwc_contiguous_strides[3],
-        nhwc_contiguous_strides[1], nhwc_contiguous_strides[2]
+    nhwc_contiguous_strides = [
+        _prod(nhwc_shape[i + 1:]) for i in range(len(desc.shape))
     ]
+    # strides that the nhwc tensor would have if viewed as a nchw tensor
+    if len(desc.shape) == 4:
+        nhwc_reshaped_strides = [
+            nhwc_contiguous_strides[0], nhwc_contiguous_strides[3],
+            nhwc_contiguous_strides[1], nhwc_contiguous_strides[2]
+        ]
+    elif len(desc.shape) == 3:
+        nhwc_reshaped_strides = [
+            nhwc_contiguous_strides[0], nhwc_contiguous_strides[2],
+            nhwc_contiguous_strides[1]
+        ]
 
     if _iterables_equal(desc.strides, cont_strides):
         return "NCHW"
@@ -76,12 +89,11 @@ def _cudnn_tensor_descriptor_code(
     # detect layout
     layout = _get_tensor_layout(desc)
     if shape is None:
-        if len(desc.shape) == 4:
-            shape = desc.shape
-        elif len(desc.shape) < 4:
-            shape = list(desc.shape) + [1] * (4 - len(desc.shape))
-        else:
-            raise ValueError("Tensor with dimension > 4 is not supported")
+        shape = desc.shape
+    if len(shape) < 4:
+        shape = list(shape) + [1] * (4 - len(shape))
+    elif len(shape) > 4:
+        raise ValueError("Tensor with dimension > 4 is not supported")
 
     assert layout is not None, "layout changed after can_be_applied"
     f_or_t_str = 'Filter' if filter else 'Tensor'
@@ -157,8 +169,8 @@ class CudnnConvolution(ONNXForward):
                     dace.int32
             ]:
                 return False
-            # only 2d convs for now; ONNX supports N dimensional
-            if name != "B" and len(desc.shape) != 4:
+            # only 1d/2d convs for now; ONNX supports N dimensional
+            if name != "B" and len(desc.shape) not in {3, 4}:
                 return False
 
             if not isinstance(desc, dt.Array):
@@ -169,10 +181,10 @@ class CudnnConvolution(ONNXForward):
                 return False
 
         # padding must be symmetric
-        if node.pads[0] != node.pads[2]:
-            return False
-        if node.pads[1] != node.pads[3]:
-            return False
+        dims = len(descs[0][1].shape) - 2
+        for i in range(dims):
+            if node.pads[i] != node.pads[dims + i]:
+                return False
 
         return True
 
@@ -234,9 +246,14 @@ class CudnnConvolution(ONNXForward):
 
         # setup conv descriptor
         # we know padding is symmetric
-        pad_h, pad_w = node.pads[0], node.pads[1]
-        stride_h, stride_w = node.strides
-        dilation_h, dilation_w = node.dilations
+        if len(node.strides) == 1:
+            pad_h, pad_w = node.pads[0], 0
+            stride_h, stride_w = node.strides[0], 1
+            dilation_h, dilation_w = node.dilations[0], 1
+        else:
+            pad_h, pad_w = node.pads[0], node.pads[1]
+            stride_h, stride_w = node.strides
+            dilation_h, dilation_w = node.dilations
         init_code += f"""
         __state->{unique_id}_conv_desc = new cudnnConvolutionDescriptor_t; 
         daceml::cudnn::CheckCudnnError(cudnnCreateConvolutionDescriptor(__state->{unique_id}_conv_desc));
@@ -281,7 +298,6 @@ class CudnnConvolution(ONNXForward):
             # setup fake data
             free_fake_data_code, fake_data_init_code = setup_fake_data(
                 node, sdfg, state, False)
-
 
             init_code += f"""
             // setup fake data
