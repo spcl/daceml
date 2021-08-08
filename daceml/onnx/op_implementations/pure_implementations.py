@@ -5,7 +5,7 @@ import typing
 
 import dace
 import numpy as np
-from dace import SDFGState, SDFG, nodes
+from dace import SDFGState, SDFG, nodes, subsets
 from dace.frontend.common import create_einsum_sdfg
 from dace.sdfg.nodes import Node
 
@@ -92,6 +92,11 @@ def Mul(A, B, C):
 @python_pure_op_implementation
 def Div(A, B, C):
     C[:] = A / B
+
+
+@python_pure_op_implementation
+def Where(condition, X, Y, output):
+    output[:] = np.where(condition, X, Y)
 
 
 @op_implementation(op="ReduceMean", name="pure")
@@ -884,5 +889,54 @@ class EinsumTranspose(ONNXForward):
                         "Inputs__0", nsdfg.make_array_memlet("data"))
         nstate.add_edge(einsum_node, "Output", nstate.add_write("transposed"),
                         None, nsdfg.make_array_memlet("transposed"))
+
+        return nsdfg
+
+
+@op_implementation(op="Split", name="pure")
+class SplitPure(ONNXForward):
+    @staticmethod
+    def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
+        return True
+
+    @staticmethod
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+
+        nsdfg = dace.SDFG(node.label + "_expansion")
+        nstate = nsdfg.add_state()
+
+        split_dim = node.axis
+        sizes = node.split
+        idesc = in_desc_with_name(node, state, sdfg, "input")
+        nsdfg.add_datadesc("input", copy.deepcopy(idesc))
+        nsdfg.arrays["input"].transient = False
+
+        rnode = nstate.add_read("input")
+
+        offset = 0
+        for i, odim in enumerate(sizes):
+            # Set up new node shape and memlet
+            new_shape = list(idesc.shape)
+            new_shape[split_dim] = odim
+            rng = subsets.Range([(0, s - 1, 1) if j != split_dim else
+                                 (offset, offset + odim - 1, 1)
+                                 for j, s in enumerate(new_shape)])
+            offset += odim
+
+            # Set up data descriptor
+            oname = f"outputs__{i}"
+            odesc = copy.deepcopy(out_desc_with_name(node, state, sdfg, oname))
+            odesc.transient = False
+            nsdfg.add_datadesc(oname, odesc)
+            wnode = nstate.add_write(oname)
+
+            # Perform copy (view)
+            nstate.add_nedge(
+                rnode, wnode,
+                dace.Memlet(data="input",
+                            subset=rng,
+                            other_subset=subsets.Range.from_array(odesc)))
 
         return nsdfg

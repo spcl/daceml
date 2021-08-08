@@ -803,6 +803,7 @@ class PyTorchConvBackward(BackwardImplementation):
 
         return node, result
 
+
 @autoregister_params(op="BatchNormalization", name="cuDNN")
 class CuDNNBatchNormBackward(BackwardImplementation):
     @staticmethod
@@ -1152,3 +1153,40 @@ class DefaultTransposeBackward(BackwardImplementation):
         result.required_grad_names["data"] = "transposed"
 
         return node, result
+
+
+@autoregister_params(op="Where", name="default")
+class WhereBackward(BackwardImplementation):
+    @staticmethod
+    def backward(
+        forward_node: nd.Node, context: BackwardContext,
+        given_gradients: List[Optional[str]],
+        required_gradients: List[Optional[str]]
+    ) -> Tuple[nd.Node, BackwardResult]:
+        # condition, X, Y -> Output
+        cdesc = butils.forward_in_desc_with_name(forward_node, context,
+                                                 "condition")
+
+        # NOTE: We cannot use ONNX ops for further potential lowering
+        # transformations because ONNXMul does not support boolean inputs.
+        # notcondition = dace.define_local(condition_shape, condition_dtype)
+        # donnx.ONNXMul(A=condition, B=output_grad, C=X_grad)
+        # donnx.ONNXNot(X=condition, Y=notcondition)
+        # donnx.ONNXMul(A=notcondition, B=output_grad, C=Y_grad)
+
+        if 'X' in required_gradients and 'Y' not in required_gradients:
+            def where_backward(condition, output_grad, X_grad):
+                X_grad[:] = condition * output_grad
+        elif 'Y' in required_gradients and 'X' not in required_gradients:
+            def where_backward(condition, output_grad, Y_grad):
+                Y_grad[:] = ~condition * output_grad
+        elif 'X' in required_gradients and 'Y' in required_gradients:
+            def where_backward(condition, output_grad, X_grad, Y_grad):
+                X_grad[:] = condition * output_grad
+                Y_grad[:] = ~condition * output_grad
+
+
+        result_node, result = butils.backward_program_for_node(
+            where_backward, context, forward_node)
+
+        return result_node, result
