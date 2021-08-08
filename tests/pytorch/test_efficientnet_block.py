@@ -16,7 +16,7 @@ from daceml.transformation import PadConvFusion, ConstantDeviceCopyElimination
 @pytest.mark.pure
 @pytest.mark.gpu
 @pytest.mark.parametrize("bn_impl", ["cuDNN", "pure"])
-def test_mbconv(bn_impl):
+def test_mbconv(bn_impl, use_cpp_dispatcher):
     with change_default(donnx.ONNXConv, "cuDNN"),\
         change_default(donnx.ONNXBatchNormalization, bn_impl):
 
@@ -30,7 +30,9 @@ def test_mbconv(bn_impl):
         torch_model.set_swish(memory_efficient=False)
         dace_model = MBConvBlock(block_params[0], global_params).cuda()
         dace_model.set_swish(memory_efficient=False)
-        dace_model = DaceModule(dace_model, training=True)
+        dace_model = DaceModule(dace_model,
+                                training=True,
+                                compile_torch_extension=use_cpp_dispatcher)
         dace_model.model.load_state_dict(torch_model.state_dict())
 
         for (dace_name,
@@ -66,7 +68,7 @@ def test_mbconv(bn_impl):
 
 @pytest.mark.ort
 @pytest.mark.gpu
-def test_fast_mb():
+def test_fast_mb(use_cpp_dispatcher):
     with change_default(donnx.ONNXConv, "cuDNN"), \
          change_default(donnx.ONNXBatchNormalization, "cuDNN"):
         with torch.no_grad():
@@ -79,7 +81,9 @@ def test_fast_mb():
         torch_model.set_swish(memory_efficient=False)
         dace_model = MBConvBlock(block_params[0], global_params).cuda()
         dace_model.set_swish(memory_efficient=False)
-        dace_model = DaceModule(dace_model, training=True)
+        dace_model = DaceModule(dace_model,
+                                training=True,
+                                compile_torch_extension=use_cpp_dispatcher)
         dace_model.model.load_state_dict(torch_model.state_dict())
 
         for (dace_name,

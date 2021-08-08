@@ -18,23 +18,12 @@ from dace.codegen.prettycode import CodeIOStream
 from dace.codegen.targets.common import sym2cpp
 
 from daceml.autodiff import BackwardResult
-from daceml.onnx.converters import clean_onnx_name
-from daceml.onnx.onnx_importer import create_output_array
 from daceml.pytorch.environments import PyTorch
 from daceml.util import is_cuda, platform_library_name
 
+from daceml.pytorch.dispatchers.common import DaCeMLTorchFunction, compile_and_init_sdfgs, get_arglist
+
 log = logging.getLogger(__name__)
-
-
-@dataclasses.dataclass
-class CompiledTorchFunction:
-    """ A tuple holding the context for an executable function """
-    function: Callable  #: the torch callable function
-    compiled_sdfgs: List[
-        CompiledSDFG]  #: the compiled SDFGs holding their states
-    #: the pointers to the initialized SDFG state handles. Must be passed as the first arguments to function.
-    ptr: List[torch.Tensor]
-
 
 _REPLACED_CTYPES = {
     dace.int64: "int64_t",
@@ -52,18 +41,6 @@ def torch_ctype(dtype: dace.typeclass) -> str:
     else:
         ctype = dtype.ctype
     return ctype
-
-
-def get_arglist(
-        module: 'daceml.pytorch.DaceModule') -> Tuple[List[str], List[str]]:
-    """ Get the list of forward-pass argument names for a module
-
-        :param module: the module
-        :return: the list of strings that are the argnames to the module, and the list of names of the outputs
-    """
-    arglist = [clean_onnx_name(i) for i in module.dace_model.inputs]
-    outputs = [clean_onnx_name(o) for o in module.dace_model.outputs]
-    return arglist, outputs
 
 
 _TYPECLASS_TO_TORCH_DTYPE_STR = {
@@ -470,8 +447,8 @@ TORCH_LIBRARY(daceml_{fwd_sdfg.name}, m) {{
 """
 
 
-def compile_and_get_function(module: 'daceml.pytorch.DaceModule',
-                             dummy_inputs) -> CompiledTorchFunction:
+def register_and_compile_torch_extension(module: 'daceml.pytorch.DaceModule',
+                                         dummy_inputs) -> DaCeMLTorchFunction:
     """ Get a torch callable for the module. This will compile the sdfg, compile a PyTorch C++ operator, register it
         with PyTorch and return the function that calls it.
 
@@ -496,6 +473,8 @@ def compile_and_get_function(module: 'daceml.pytorch.DaceModule',
 
         compiled_sdfgs = [compiled, compiled_bwd]
         ptrs = [handle_ptr, bwd_handle_ptr]
+        # TODO what is this if? the else branch should probably be removed
+        # (check with CI)
         if compiled_bwd is not None:
             environments.add(get_env_for_sdfg(compiled_bwd).full_class_path())
             bwd_sdfg = compiled_bwd.sdfg
@@ -536,76 +515,10 @@ def compile_and_get_function(module: 'daceml.pytorch.DaceModule',
     torch_function = operator.attrgetter(
         f"daceml_{compiled.sdfg.name}.{compiled.sdfg.name}")(torch.ops)
 
-    result = CompiledTorchFunction(function=torch_function,
-                                   compiled_sdfgs=compiled_sdfgs,
-                                   ptr=ptrs)
+    result = DaCeMLTorchFunction(function=torch_function,
+                                 compiled_sdfgs=compiled_sdfgs,
+                                 ptr=ptrs)
     return result
-
-
-def compile_and_init_sdfgs(
-    module: 'daceml.pytorch.DaceModule', dummy_inputs
-) -> (Union[Tuple[CompiledSDFG, int], Tuple[CompiledSDFG, int, CompiledSDFG,
-                                            int]]):
-
-    compiled: CompiledSDFG = module.dace_model.compile_and_init()
-    # construct the arguments and initialize the SDFG
-    args = tuple(dummy_inputs) + module._call_params()
-    inputs, symbols, outputs = module.dace_model._call_args(args=args,
-                                                            kwargs={})
-
-    if module.backward:
-        forwarded_transients = {
-            name: create_output_array(symbols,
-                                      desc,
-                                      use_torch=True,
-                                      zeros=True)
-            for name, desc in module._ad_inp_arrs.items()
-        }
-    else:
-        forwarded_transients = {}
-
-    _, initargtuple = compiled._construct_args({
-        **inputs,
-        **outputs,
-        **symbols,
-        **forwarded_transients,
-        **module.dace_model.initialized_parameters
-    })
-    compiled.initialize(*initargtuple)
-    for _, hook in module.post_compile_hooks.items():
-        hook(compiled)
-    handle_ptr = torch.tensor([compiled._libhandle.value]).squeeze(0)
-
-    if module.backward:
-        # compile and initialize the backward_sdfg
-        compiled_bwd: CompiledSDFG = module.backward_sdfg.compile()
-
-        required_grads = {
-            bwd_name: create_output_array(symbols,
-                                          compiled_bwd.sdfg.arrays[bwd_name],
-                                          use_torch=True,
-                                          zeros=True)
-            for _, bwd_name in module._ad_result.required_grad_names.items()
-        }
-        given_grads = {
-            bwd_name: create_output_array(symbols,
-                                          compiled_bwd.sdfg.arrays[bwd_name],
-                                          use_torch=True,
-                                          zeros=True)
-            for _, bwd_name in module._ad_result.given_grad_names.items()
-        }
-
-        _, initargtuple = compiled_bwd._construct_args({
-            **required_grads,
-            **given_grads,
-            **forwarded_transients
-        })
-        compiled_bwd.initialize(*initargtuple)
-        bwd_handle_ptr = torch.tensor([compiled_bwd._libhandle.value
-                                       ]).squeeze(0)
-        return compiled, handle_ptr, compiled_bwd, bwd_handle_ptr
-    else:
-        return compiled, handle_ptr
 
 
 def get_env_for_sdfg(compiled: CompiledSDFG):

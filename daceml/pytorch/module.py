@@ -5,7 +5,7 @@ import itertools
 import os
 import tempfile
 from functools import wraps
-from typing import Optional, Tuple, Callable, OrderedDict, Type, Dict, Union
+from typing import Optional, Tuple, Callable, OrderedDict, Type, Union
 
 import dace
 from dace import nodes, data
@@ -17,7 +17,7 @@ from torch import Tensor
 from torch.onnx import TrainingMode
 
 from daceml.onnx.converters import clean_onnx_name
-from daceml.pytorch.module_codegen import compile_and_get_function
+from daceml.pytorch import dispatchers
 from daceml.autodiff.pytorch import make_backward_function
 from daceml.onnx import ONNXModel
 from daceml.onnx.shape_inference import infer_shapes
@@ -36,7 +36,7 @@ def enlarge_reduction_accumulators(fwd_sdfg, bwd_sdfg):
                     dst_array = s.parent.arrays[n.data]
                     if dst_array.dtype == dace.dtypes.float16:
                         dst_array.dtype = dace.dtypes.float32
-                        
+
         # propagate datatype to outer sdfgs
 
         for state, sdfg in target_sdfg.all_nodes_recursive():
@@ -71,6 +71,8 @@ class DaceModule(nn.Module):
                              but can be slow).
         :param sdfg_name: the name to give to the sdfg (defaults to ``dace_model``).
         :param auto_optimize: whether to apply automatic optimizations.
+        :param compile_torch_extension: if True, a torch C++ extension will be compiled and used for this module.
+                                        Otherwise, a python ctypes implementation will be used.
         :param debug_transients: if True, the module will have all transients as outputs.
 
         :Example:
@@ -97,6 +99,7 @@ class DaceModule(nn.Module):
                  apply_strict: bool = True,
                  auto_optimize: bool = True,
                  debug_transients: bool = False,
+                 compile_torch_extension: bool = True,
                  sdfg_name: Optional[str] = None):
         super(DaceModule, self).__init__()
 
@@ -110,6 +113,7 @@ class DaceModule(nn.Module):
         self.auto_optimize = auto_optimize
         self.apply_strict = apply_strict
         self.debug_transients = debug_transients
+        self.compile_torch_extension = compile_torch_extension
 
         self.function = None
 
@@ -178,7 +182,8 @@ class DaceModule(nn.Module):
                     "apply_strict", lambda dace_module: dace_module.sdfg.
                     apply_strict_transformations())
 
-        self.append_post_autodiff_hook("enlarge_reduction_accumulators", enlarge_reduction_accumulators)
+        self.append_post_autodiff_hook("enlarge_reduction_accumulators",
+                                       enlarge_reduction_accumulators)
 
     def reset_sdfg(self):
         """ Clear the sdfg so that optimizations are reapplied. """
@@ -307,6 +312,13 @@ class DaceModule(nn.Module):
             for _, hook in self.post_onnx_hooks.items():
                 hook(self)
 
+            # choose the backend that will generate the function to call during
+            # forward
+            if self.compile_torch_extension:
+                function_generator = dispatchers.register_and_compile_torch_extension
+            else:
+                function_generator = dispatchers.get_ctypes_dispatcher
+
             if self.backward:
 
                 # Determine what grads we need
@@ -330,11 +342,9 @@ class DaceModule(nn.Module):
                 for _, hook in self.post_autodiff_hooks.items():
                     hook(self.forward_sdfg, self.backward_sdfg)
 
-                self.compiled_function = compile_and_get_function(
-                    self, dummy_inputs)
+                self.compiled_function = function_generator(self, dummy_inputs)
             else:
-                self.compiled_function = compile_and_get_function(
-                    self, dummy_inputs)
+                self.compiled_function = function_generator(self, dummy_inputs)
 
             # order the parameters
             parameters_to_pass = self._call_params()
@@ -380,6 +390,7 @@ def dace_module(moduleclass,
                 apply_strict: bool = True,
                 auto_optimize: bool = True,
                 sdfg_name: Optional[str] = None,
+                compile_torch_extension: bool = True,
                 debug_transients: bool = False) -> Type[DaceModule]:
     """ Decorator to apply on a definition of a ``torch.nn.Module`` to
         convert it to a data-centric module upon construction.
@@ -407,6 +418,8 @@ def dace_module(moduleclass,
                              but can be slow).
         :param auto_optimize: whether to apply automatic optimizations.
         :param sdfg_name: the name to give to the sdfg (defaults to ``dace_model``).
+        :param compile_torch_extension: if True, a torch C++ extension will be compiled and used for this module.
+                                        Otherwise, a python ctypes implementation will be used.
         :param debug_transients: if True, the module will have all transients as outputs.
     """
     @wraps(moduleclass)
@@ -419,6 +432,7 @@ def dace_module(moduleclass,
                           apply_strict=apply_strict,
                           auto_optimize=auto_optimize,
                           sdfg_name=sdfg_name,
+                          compile_torch_extension=compile_torch_extension,
                           debug_transients=debug_transients)
 
     return _create

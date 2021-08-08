@@ -11,7 +11,7 @@ from daceml.pytorch import DaceModule, dace_module
 from daceml.testing import torch_tensors_close
 
 
-def test_conv2d(default_implementation, sdfg_name):
+def test_conv2d(default_implementation, sdfg_name, use_cpp_dispatcher):
     class Model(nn.Module):
         def __init__(self):
             super(Model, self).__init__()
@@ -29,7 +29,9 @@ def test_conv2d(default_implementation, sdfg_name):
     class TestDecorator(Model):
         pass
 
-    dace_model = DaceModule(ptmodel, sdfg_name=sdfg_name + "_wrapped")
+    dace_model = DaceModule(ptmodel,
+                            sdfg_name=sdfg_name + "_wrapped",
+                            compile_torch_extension=use_cpp_dispatcher)
     dace_output = dace_model(x)
 
     dace_model_decorated = TestDecorator()
@@ -41,7 +43,7 @@ def test_conv2d(default_implementation, sdfg_name):
 
 
 @pytest.mark.gpu
-def test_conv2d_cudnn(sdfg_name):
+def test_conv2d_cudnn(sdfg_name, use_cpp_dispatcher):
 
     with change_default(donnx.ONNXConv, "cuDNN"):
 
@@ -67,6 +69,7 @@ def test_conv2d_cudnn(sdfg_name):
 
         dace_model = DaceModule(ptmodel,
                                 sdfg_name=sdfg_name + "_wrapped",
+                                compile_torch_extension=use_cpp_dispatcher,
                                 backward=True)
         dace_output = dace_model(dace_inputs)
         dace_output.backward(dy)
