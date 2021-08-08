@@ -137,6 +137,47 @@ class DefaultEinsumBackward(BackwardImplementation):
         return result_node, result
 
 
+@autoregister_params(op="Clip", name="default")
+class DefaultClipBackward(BackwardImplementation):
+    @staticmethod
+    def backward(
+        forward_node: nd.Node, context: BackwardContext,
+        given_gradients: List[Optional[str]],
+        required_gradients: List[Optional[str]]
+    ) -> Tuple[Union[nd.Node, dace.SDFG], BackwardResult]:
+
+        result_node, result = butils.add_empty_sdfg_for_node(
+            forward_node, ["input_grad", "output_grad", "min", "max", "input"],
+            context)
+
+        nstate = result_node.sdfg.add_state()
+
+        shape = butils.forward_in_desc_with_name(forward_node, context,
+                                                 "input").shape
+        map_ranges = {f"i{i}": f"0:{s}" for i, s in enumerate(shape)}
+        index_str = f"{', '.join(map_ranges.keys())}"
+        code = f"""
+if __input < __min or __input > __max:
+    __input_grad = 0
+else:
+    __input_grad = __output_grad
+                """
+        nstate.add_mapped_tasklet(
+            forward_node.label + "_backward",
+            map_ranges=map_ranges,
+            inputs={
+                f"__output_grad": dace.Memlet(f"output_grad[{index_str}]"),
+                f"__input": dace.Memlet(f"input[{index_str}]"),
+                "__min": dace.Memlet("min[0]"),
+                "__max": dace.Memlet("max[0]")
+            },
+            code=code,
+            outputs={f"__input_grad": dace.Memlet(f"input_grad[{index_str}]")},
+            external_edges=True)
+
+        return result_node, result
+
+
 @autoregister_params(op="Dropout", name="default")
 class DefaultDropoutBackward(BackwardImplementation):
     @staticmethod
