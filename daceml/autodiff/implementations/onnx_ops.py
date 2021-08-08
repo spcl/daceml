@@ -8,7 +8,7 @@ import numpy as np
 import dace
 from dace.frontend.common import einsum
 from dace.registry import autoregister_params
-from dace import nodes as nd, dtypes
+from dace import nodes as nd, dtypes, subsets
 import dace.transformation.transformation as xf
 
 import daceml.onnx as donnx
@@ -1175,18 +1175,82 @@ class WhereBackward(BackwardImplementation):
         # donnx.ONNXMul(A=notcondition, B=output_grad, C=Y_grad)
 
         if 'X' in required_gradients and 'Y' not in required_gradients:
+
             def where_backward(condition, output_grad, X_grad):
                 X_grad[:] = condition * output_grad
         elif 'Y' in required_gradients and 'X' not in required_gradients:
+
             def where_backward(condition, output_grad, Y_grad):
                 Y_grad[:] = ~condition * output_grad
         elif 'X' in required_gradients and 'Y' in required_gradients:
+
             def where_backward(condition, output_grad, X_grad, Y_grad):
                 X_grad[:] = condition * output_grad
                 Y_grad[:] = ~condition * output_grad
-
 
         result_node, result = butils.backward_program_for_node(
             where_backward, context, forward_node)
 
         return result_node, result
+
+
+@autoregister_params(op="Split", name="default")
+class SplitBackward(BackwardImplementation):
+    @staticmethod
+    def backward(
+        forward_node: nd.Node, context: BackwardContext,
+        given_gradients: List[Optional[str]],
+        required_gradients: List[Optional[str]]
+    ) -> Tuple[nd.Node, BackwardResult]:
+        # given_gradients -> 'input'
+        split_dim = forward_node.axis
+        sizes = forward_node.split
+        idesc = butils.forward_in_desc_with_name(forward_node, context,
+                                                 "input")
+        nsdfg = dace.SDFG(forward_node.label + "_grad")
+        nstate = nsdfg.add_state()
+
+        result = BackwardResult.empty()
+        result.required_grad_names["input"] = butils.add_backward_desc(
+            nsdfg, context.forward_sdfg, idesc, "input")
+        for grad in given_gradients:
+            result.given_grad_names[
+                grad] = butils.add_backward_desc_for_connector(nsdfg,
+                                                               forward_node,
+                                                               context,
+                                                               grad,
+                                                               input=False)
+
+        wnode = nstate.add_write(result.required_grad_names["input"])
+
+        offset = 0
+        for i, odim in enumerate(sizes):
+            oname = f"outputs__{i}"
+            if oname not in given_gradients:
+                continue
+            odesc = butils.forward_out_desc_with_name(forward_node, context,
+                                                      oname)
+            oname = result.given_grad_names[grad]
+            # Set up new node shape and memlet
+            new_shape = list(idesc.shape)
+            new_shape[split_dim] = odim
+            rng = subsets.Range([(0, s - 1, 1) if j != split_dim else
+                                 (offset, offset + odim - 1, 1)
+                                 for j, s in enumerate(new_shape)])
+            offset += odim
+
+            # Perform copy (view)
+            rnode = nstate.add_read(oname)
+            nstate.add_nedge(
+                rnode, wnode,
+                dace.Memlet(data=wnode.data,
+                            subset=rng,
+                            other_subset=subsets.Range.from_array(odesc)))
+
+        node = context.backward_state.add_nested_sdfg(
+            nsdfg, None, set(result.given_grad_names.values()),
+            {result.required_grad_names["input"]})
+
+        node.no_inline = True
+
+        return node, result
