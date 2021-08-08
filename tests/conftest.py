@@ -33,11 +33,14 @@ def pytest_generate_tests(metafunc):
     # else: if the gpu fixture is used, parameterize the test
     elif "gpu" in metafunc.fixturenames:
         if metafunc.config.getoption("--gpu"):
-            metafunc.parametrize("gpu", [True, False])
+            metafunc.parametrize("gpu", [
+                pytest.param(True, id="use_gpu"),
+                pytest.param(False, id="use_cpu")
+            ])
         elif metafunc.config.getoption("--gpu-only"):
-            metafunc.parametrize("gpu", [True])
+            metafunc.parametrize("gpu", [pytest.param(True, id="use_gpu")])
         else:
-            metafunc.parametrize("gpu", [False])
+            metafunc.parametrize("gpu", [pytest.param(False, id="use_cpu")])
     # otherwise: this test is not marked with @pytest.mark.gpu, and doesn't have the gpu fixture:
     # skip it if --gpu-only is passed
     elif metafunc.config.getoption("--gpu-only"):
@@ -47,6 +50,12 @@ def pytest_generate_tests(metafunc):
         metafunc.parametrize("default_implementation", [
             pytest.param("pure", marks=pytest.mark.pure),
             pytest.param("onnxruntime", marks=pytest.mark.ort)
+        ])
+
+    if "use_cpp_dispatcher" in metafunc.fixturenames:
+        metafunc.parametrize("use_cpp_dispatcher", [
+            pytest.param(True, id="use_cpp_dispatcher"),
+            pytest.param(False, id="no_use_cpp_dispatcher"),
         ])
 
 
