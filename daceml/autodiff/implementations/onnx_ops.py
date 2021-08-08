@@ -137,6 +137,49 @@ class DefaultEinsumBackward(BackwardImplementation):
         return result_node, result
 
 
+@autoregister_params(op="Dropout", name="default")
+class DefaultDropoutBackward(BackwardImplementation):
+    @staticmethod
+    def backward(
+        forward_node: nd.Node, context: BackwardContext,
+        given_gradients: List[Optional[str]],
+        required_gradients: List[Optional[str]]
+    ) -> Tuple[Union[nd.Node, dace.SDFG], BackwardResult]:
+
+        # one day maybe:
+        # def dropout_backward(data_grad, output_grad, mask, ratio):
+        #     scale = dace.float64(ratio) / (1 - dace.float64(ratio))
+        #     data_grad[:] = scale * output_grad * mask
+
+        result_node, result = butils.add_empty_sdfg_for_node(
+            forward_node, ["data_grad", "output_grad", "mask", "ratio"],
+            context)
+
+        nstate = result_node.sdfg.add_state()
+
+        shape = butils.forward_in_desc_with_name(forward_node, context,
+                                                 "data").shape
+        map_ranges = {f"i{i}": f"0:{s}" for i, s in enumerate(shape)}
+        index_str = f"{', '.join(map_ranges.keys())}"
+        code = f"""
+scale = dace.float32(1.0) / (1 - __ratio)
+__data_grad = __output_grad * __mask * scale
+                """
+        nstate.add_mapped_tasklet(
+            forward_node.label + "_backward",
+            map_ranges=map_ranges,
+            inputs={
+                "__output_grad": dace.Memlet(f"output_grad[{index_str}]"),
+                "__mask": dace.Memlet(f"mask[{index_str}]"),
+                "__ratio": dace.Memlet("ratio[0]")
+            },
+            code=code,
+            outputs={f"__data_grad": dace.Memlet(f"data_grad[{index_str}]")},
+            external_edges=True)
+
+        return result_node, result
+
+
 @autoregister_params(op="Softmax", name="default")
 class DefaultSoftmaxBackward(BackwardImplementation):
     @staticmethod
@@ -594,7 +637,6 @@ class CuDNNConvBackward(BackwardImplementation):
 class PyTorchConvBackward(BackwardImplementation):
     """ Conv backward using PyTorch.
     """
-
     @staticmethod
     def backward_can_be_applied(node: nd.Node, state: dace.SDFGState,
                                 sdfg: dace.SDFG) -> bool:
@@ -602,9 +644,9 @@ class PyTorchConvBackward(BackwardImplementation):
 
     @staticmethod
     def backward(
-            forward_node: nd.Node, context: BackwardContext,
-            given_gradients: List[Optional[str]],
-            required_gradients: List[Optional[str]]
+        forward_node: nd.Node, context: BackwardContext,
+        given_gradients: List[Optional[str]],
+        required_gradients: List[Optional[str]]
     ) -> Tuple[nd.Node, BackwardResult]:
 
         nsdfg = dace.SDFG(forward_node.label + "_backward")
@@ -617,7 +659,9 @@ class PyTorchConvBackward(BackwardImplementation):
         elif str(T) == 'double':
             pytorch_dtype = 'kDouble'
         else:
-            raise NotImplementedError(f"Pytorch backward conv expansion supports only float and double tensors, got {str(T)}")
+            raise NotImplementedError(
+                f"Pytorch backward conv expansion supports only float and double tensors, got {str(T)}"
+            )
 
         # setup gradient arrays
         result = BackwardResult.empty()
@@ -681,16 +725,17 @@ class PyTorchConvBackward(BackwardImplementation):
             at::thnn_conv_depthwise2d_backward_out(dx, dw, dy, x, w, kernel_shape, conv_strides, padding, dilation);
         """
 
-        tasklet = nstate.add_tasklet(
-            name=unique_id,
-            inputs=tasklet_inputs,
-            outputs=tasklet_outputs,
-            code=tasklet_code,
-            language=dace.dtypes.Language.CPP,
-            code_global=code_global,
-            code_init=init_code,
-            code_exit=finalize_code)
-        tasklet.environments = {daceml.pytorch.environments.PyTorch.full_class_path()}
+        tasklet = nstate.add_tasklet(name=unique_id,
+                                     inputs=tasklet_inputs,
+                                     outputs=tasklet_outputs,
+                                     code=tasklet_code,
+                                     language=dace.dtypes.Language.CPP,
+                                     code_global=code_global,
+                                     code_init=init_code,
+                                     code_exit=finalize_code)
+        tasklet.environments = {
+            daceml.pytorch.environments.PyTorch.full_class_path()
+        }
 
         nstate.add_edge(
             nstate.add_read(result.given_grad_names["Y"]), None, tasklet,
@@ -1046,13 +1091,14 @@ class PureGlobalAveragePoolingBackward(BackwardImplementation):
 class DefaultTransposeBackward(BackwardImplementation):
     @staticmethod
     def backward(
-            forward_node: nd.Node, context: BackwardContext,
-            given_gradients: List[Optional[str]],
-            required_gradients: List[Optional[str]]
+        forward_node: nd.Node, context: BackwardContext,
+        given_gradients: List[Optional[str]],
+        required_gradients: List[Optional[str]]
     ) -> Tuple[nd.Node, BackwardResult]:
         inv_perm = tuple(np.argsort(forward_node.perm))
 
-        node = donnx.ONNXTranspose(forward_node.name + "_backward", perm=inv_perm)
+        node = donnx.ONNXTranspose(forward_node.name + "_backward",
+                                   perm=inv_perm)
         context.backward_state.add_node(node)
 
         result = BackwardResult.empty()
@@ -1060,4 +1106,3 @@ class DefaultTransposeBackward(BackwardImplementation):
         result.required_grad_names["data"] = "transposed"
 
         return node, result
-

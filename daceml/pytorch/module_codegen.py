@@ -67,6 +67,7 @@ def get_arglist(
 
 
 _TYPECLASS_TO_TORCH_DTYPE_STR = {
+    dt.bool: "kBool",
     dt.int8: "kInt8",
     dt.uint8: "kUInt8",
     dt.int16: "kInt16",
@@ -207,6 +208,8 @@ def item_to_cpp_literal(item) -> str:
     dtype = str(item.dtype)
     if dtype == "float32":
         return f"{item}f"
+    elif dtype == "bool":
+        return f"{str(item).lower()}"
     elif dtype == "int64":
         return f"{item}l"
     elif dtype == "float16":
