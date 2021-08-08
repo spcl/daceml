@@ -594,22 +594,23 @@ class PureGemm(ONNXForward):
         nsdfg.arrays["Y"].transient = False
 
         # Decide on array names based on alpha and beta
+        uid = state.node_id(node)
         mm_result = "Y"
         if node.alpha != 1 or node.beta != 0:
-            mm_result = "Ytmp"
+            mm_result = f"Ytmp_{uid}"
         scal_result = mm_result
         if node.alpha != 1:
-            scal_result = "scaled"
+            scal_result = f"scaled_{uid}"
 
         # Create arrays according to alpha and beta
         if node.alpha != 1 or node.beta != 0:
             Ytmp_desc = out_desc_with_name(node, state, sdfg, "Y")
-            nsdfg.add_datadesc("Ytmp", copy.deepcopy(Ytmp_desc))
-            nsdfg.arrays["Ytmp"].transient = True
+            nsdfg.add_datadesc(f"Ytmp_{uid}", copy.deepcopy(Ytmp_desc))
+            nsdfg.arrays[f"Ytmp_{uid}"].transient = True
         if node.beta != 0:
             beta_desc = out_desc_with_name(node, state, sdfg, "Y")
-            nsdfg.add_datadesc("scaled", copy.deepcopy(beta_desc))
-            nsdfg.arrays["scaled"].transient = True
+            nsdfg.add_datadesc(f"scaled_{uid}", copy.deepcopy(beta_desc))
+            nsdfg.arrays[f"scaled_{uid}"].transient = True
 
         nstate.add_edge(nstate.add_read("A"), None, einsum_node, "Inputs__0",
                         nsdfg.make_array_memlet("A"))
