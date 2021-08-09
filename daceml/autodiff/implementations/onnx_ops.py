@@ -17,6 +17,7 @@ from daceml.onnx.op_implementations import pure_implementations, \
     cudnn_implementations, CudnnBatchNormalizationTraining, setup_fake_data
 import daceml.autodiff.utils as butils
 from daceml.autodiff.base_abc import BackwardImplementation, BackwardContext, BackwardResult
+from daceml.transformation.replacement import onnx_constant_or_none
 from daceml.util import utils
 import daceml
 
@@ -147,17 +148,31 @@ class DefaultClipBackward(BackwardImplementation):
     ) -> Tuple[Union[nd.Node, dace.SDFG], BackwardResult]:
 
         result_node, result = butils.add_empty_sdfg_for_node(
-            forward_node, ["input_grad", "output_grad", "min", "max", "input"],
-            context)
+            forward_node, ["input_grad", "output_grad", "input"], context)
 
         nstate = result_node.sdfg.add_state()
 
-        shape = butils.forward_in_desc_with_name(forward_node, context,
-                                                 "input").shape
+        min_node = next(
+            context.forward_state.in_edges_by_connector(forward_node,
+                                                        'min')).src
+        max_node = next(
+            context.forward_state.in_edges_by_connector(forward_node,
+                                                        'max')).src
+        minval = onnx_constant_or_none(context.forward_sdfg, min_node)
+        maxval = onnx_constant_or_none(context.forward_sdfg, max_node)
+
+        idesc = butils.forward_in_desc_with_name(forward_node, context,
+                                                 "input")
+        shape = idesc.shape
         map_ranges = {f"i{i}": f"0:{s}" for i, s in enumerate(shape)}
+
+        input_dtype = idesc.dtype
+        minstr = f"dace.{input_dtype.to_string()}({minval})"
+        maxstr = f"dace.{input_dtype.to_string()}({maxval})"
+
         index_str = f"{', '.join(map_ranges.keys())}"
         code = f"""
-if __input < __min or __input > __max:
+if __input < {minstr} or __input > {maxstr}:
     __input_grad = 0
 else:
     __input_grad = __output_grad
@@ -168,8 +183,6 @@ else:
             inputs={
                 f"__output_grad": dace.Memlet(f"output_grad[{index_str}]"),
                 f"__input": dace.Memlet(f"input[{index_str}]"),
-                "__min": dace.Memlet("min[0]"),
-                "__max": dace.Memlet("max[0]")
             },
             code=code,
             outputs={f"__input_grad": dace.Memlet(f"input_grad[{index_str}]")},
