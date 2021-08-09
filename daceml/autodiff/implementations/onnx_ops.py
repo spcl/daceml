@@ -90,7 +90,7 @@ class DefaultEinsumBackward(BackwardImplementation):
         # maps the connector name to the accessnode
         required_forward_inputs: Dict[str, nd.AccessNode] = {}
 
-        for input_name in required_gradients:
+        for input_name in sorted(required_gradients):
             # we add an einsum for each required gradient
             forward_inputs, einsum_str = reverse_einsum_wrt_input(
                 forward_node, input_name)
@@ -106,7 +106,7 @@ class DefaultEinsumBackward(BackwardImplementation):
                 nsdfg.make_array_memlet(result.given_grad_names["Output"]))
 
             # add the other inputs from forward that we need
-            for i, forward_input in enumerate(forward_inputs):
+            for i, forward_input in enumerate(sorted(forward_inputs)):
                 connector = f"Inputs__{i + 1}"
                 einsum_node.add_in_connector(connector)
                 if forward_input not in required_forward_inputs:
@@ -359,7 +359,7 @@ class CuDNNConvBackward(BackwardImplementation):
         # setup gradient arrays
         result = BackwardResult.empty()
         required_grads = set(required_gradients)
-        for r in required_grads:
+        for r in sorted(required_grads):
             result.required_grad_names[
                 r] = butils.add_backward_desc_for_connector(nsdfg,
                                                             forward_node,
@@ -371,7 +371,7 @@ class CuDNNConvBackward(BackwardImplementation):
 
         # setup non-gradient arrays
         required_forward_inputs = ["W", "X"]
-        for i in required_forward_inputs:
+        for i in sorted(required_forward_inputs):
             new_desc = copy.deepcopy(
                 butils.forward_in_desc_with_name(forward_node, context, i))
             new_desc.transient = False
@@ -389,7 +389,7 @@ class CuDNNConvBackward(BackwardImplementation):
 
         #######################
         # add descriptor init code for gradients
-        for r in required_grads:
+        for r in sorted(required_grads):
             is_filter = r == "W"
 
             if r == "B":
@@ -407,7 +407,7 @@ class CuDNNConvBackward(BackwardImplementation):
             init_code += init
             finalize_code += exit
 
-        for r in required_forward_inputs:
+        for r in sorted(required_forward_inputs):
             desc = butils.forward_in_desc_with_name(forward_node, context, r)
             is_filter = r == "W"
             init, exit = cudnn_implementations._cudnn_tensor_descriptor_code(
@@ -648,10 +648,11 @@ class CuDNNConvBackward(BackwardImplementation):
         tasklet = nstate.add_tasklet(
             unique_id, {
                 f"_{i}": dace.pointer(T)
-                for i in itertools.chain(["dY"], required_forward_inputs)
+                for i in itertools.chain(["dY"], sorted(
+                    required_forward_inputs))
             }, {
                 f"_d{i}": dace.pointer(T)
-                for i in itertools.chain(required_gradients)
+                for i in itertools.chain(sorted(required_gradients))
             },
             tasklet_code,
             dace.dtypes.Language.CPP,
@@ -675,17 +676,20 @@ class CuDNNConvBackward(BackwardImplementation):
         nstate.add_edge(
             nstate.add_read(result.given_grad_names["Y"]), None, tasklet,
             f"_dY", nsdfg.make_array_memlet((result.given_grad_names["Y"])))
-        for name in required_forward_inputs:
+        for name in sorted(required_forward_inputs):
             nstate.add_edge(nstate.add_read(name), None, tasklet, f"_{name}",
                             nsdfg.make_array_memlet(name))
 
-        for name in required_gradients:
+        for name in sorted(required_gradients):
             arr_name = result.required_grad_names[name]
             nstate.add_edge(tasklet, f"_d{name}", nstate.add_write(arr_name),
                             None, nsdfg.make_array_memlet(arr_name))
 
         inputs = {result.given_grad_names["Y"]}.union(required_forward_inputs)
-        outputs = {result.required_grad_names[n] for n in required_gradients}
+        outputs = {
+            result.required_grad_names[n]
+            for n in sorted(required_gradients)
+        }
         node = context.backward_state.add_nested_sdfg(nsdfg, None, inputs,
                                                       outputs)
 
@@ -726,7 +730,7 @@ class PyTorchConvBackward(BackwardImplementation):
         # setup gradient arrays
         result = BackwardResult.empty()
         required_grads = set(required_gradients)
-        for r in required_grads:
+        for r in sorted(required_grads):
             result.required_grad_names[
                 r] = butils.add_backward_desc_for_connector(nsdfg,
                                                             forward_node,
@@ -738,7 +742,7 @@ class PyTorchConvBackward(BackwardImplementation):
 
         # setup non-gradient arrays
         required_forward_inputs = ["W", "X"]
-        for i in required_forward_inputs:
+        for i in sorted(required_forward_inputs):
             new_desc = copy.deepcopy(
                 butils.forward_in_desc_with_name(forward_node, context, i))
             new_desc.transient = False
@@ -759,11 +763,11 @@ class PyTorchConvBackward(BackwardImplementation):
         """
         tasklet_inputs = {
             f"_{i}": dace.pointer(T)
-            for i in itertools.chain(["dY"], required_forward_inputs)
+            for i in itertools.chain(["dY"], sorted(required_forward_inputs))
         }
         tasklet_outputs = {
             f"_d{i}": dace.pointer(T)
-            for i in itertools.chain(required_gradients)
+            for i in itertools.chain(sorted(required_gradients))
         }
 
         tasklet_code = f"""
@@ -800,17 +804,20 @@ class PyTorchConvBackward(BackwardImplementation):
         nstate.add_edge(
             nstate.add_read(result.given_grad_names["Y"]), None, tasklet,
             f"_dY", nsdfg.make_array_memlet((result.given_grad_names["Y"])))
-        for name in required_forward_inputs:
+        for name in sorted(required_forward_inputs):
             nstate.add_edge(nstate.add_read(name), None, tasklet, f"_{name}",
                             nsdfg.make_array_memlet(name))
 
-        for name in required_gradients:
+        for name in sorted(required_gradients):
             arr_name = result.required_grad_names[name]
             nstate.add_edge(tasklet, f"_d{name}", nstate.add_write(arr_name),
                             None, nsdfg.make_array_memlet(arr_name))
 
         inputs = {result.given_grad_names["Y"]}.union(required_forward_inputs)
-        outputs = {result.required_grad_names[n] for n in required_gradients}
+        outputs = {
+            result.required_grad_names[n]
+            for n in sorted(required_gradients)
+        }
         node = context.backward_state.add_nested_sdfg(nsdfg, None, inputs,
                                                       outputs)
 
@@ -1205,4 +1212,3 @@ class WhereBackward(BackwardImplementation):
             where_backward, context, forward_node)
 
         return result_node, result
-

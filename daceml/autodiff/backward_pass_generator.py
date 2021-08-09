@@ -55,7 +55,7 @@ def generate_grad_connector_names(
     existing_connectors = set(existing_connectors)
 
     names = {}
-    for n in forward_connector_names:
+    for n in sorted(forward_connector_names):
         result = find_str_not_in_set(existing_connectors, n + "_gradient")
         names[n] = result
         existing_connectors.add(result)
@@ -427,7 +427,7 @@ class BackwardPassGenerator:
                     implementations = node.implementations
 
                     pure_candidates = [
-                        name for name, impl in implementations.items()
+                        name for name, impl in sorted(implementations.items())
                         if "pure" in name
                     ]
                     if len(pure_candidates) > 0:
@@ -530,7 +530,7 @@ class BackwardPassGenerator:
         # in some cases (accessnode -> accessnode), the descriptors for the gradients of the function outputs are not
         # added yet. Add them now
 
-        for given_grad in self.given_gradients:
+        for given_grad in sorted(self.given_gradients, key=lambda k: k.data):
             if self.array_grad_name(
                     given_grad.data) not in self.backward_sdfg.arrays:
                 self._add_gradient_data_descriptor(given_grad.data)
@@ -1109,9 +1109,9 @@ class BackwardPassGenerator:
         deferred_edges = []
 
         inputs = set(backward_result.given_grad_names[name]
-                     for name in given_gradients)
+                     for name in sorted(given_gradients))
         # loop through the arrays that we need from the forward pass
-        for name, desc in backward_input_arrays.items():
+        for name, desc in sorted(backward_input_arrays.items()):
             # if the name is not already passed to the reverse SDFG node ...
             if name not in required_gradients and name not in node.in_connectors:
                 # ... this array needs to be forwarded out of the forward SDFG (i.e. it is an intermediate value)
@@ -1214,10 +1214,10 @@ class BackwardPassGenerator:
                                 given_grad_names=given_grad_names)
         rev = nd.MapExit(self.reverse_map[node.map])
 
-        for conn in given_grad_names.values():
+        for _, conn in sorted(given_grad_names.items()):
             assert rev.add_in_connector(conn)
 
-        for conn in required_grad_names.values():
+        for _, conn in sorted(required_grad_names.items()):
             assert rev.add_out_connector(conn)
 
         self.backward_state.add_node(rev)
@@ -1232,10 +1232,10 @@ class BackwardPassGenerator:
         self.reverse_map[node.map] = copy.deepcopy(node.map)
 
         rev = nd.MapEntry(self.reverse_map[node.map])
-        for conn in node.in_connectors:
+        for conn in sorted(node.in_connectors):
             assert rev.add_in_connector(conn)
 
-        for conn in node.out_connectors:
+        for conn in sorted(node.out_connectors):
             assert rev.add_out_connector(conn)
 
         self.backward_state.add_node(rev)
@@ -1302,10 +1302,10 @@ class BackwardPassGenerator:
 
         code = ""
 
-        for output_conn in given_gradients:
+        for output_conn in sorted(given_gradients):
 
             # for each output_conn...
-            for inp in required_gradients:
+            for inp in sorted(required_gradients):
                 # ...add the code to generate {inp}_grad
 
                 if inp not in result.required_grad_names:
@@ -1382,7 +1382,7 @@ class BackwardPassGenerator:
                 code += converted_sub_expressions + "\n"
                 rev_code[rev_output_grad_name].append(converted_code)
 
-        for output, exprs in rev_code.items():
+        for output, exprs in sorted(rev_code.items()):
             code += "\n" + output + " = " + " + ".join(exprs)
         rev = nd.Tasklet("_" + tasklet.label + "_reverse_",
                          inputs=rev_inputs,
