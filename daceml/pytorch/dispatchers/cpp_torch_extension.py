@@ -157,6 +157,10 @@ def argument_codegen(
         for name in sorted(output_names))
     ptr_init_code += "\n// setup constant arguments\n"
 
+    all_access_nodes = set()
+    for state in sdfg.nodes():
+        all_access_nodes |= set(n.data for n in state.data_nodes())
+
     # initialize all remaining parameters
     remaining = set(arglist).difference(
         itertools.chain(input_names, output_names))
@@ -170,6 +174,12 @@ def argument_codegen(
             raise ValueError(
                 f"Cannot generate PyTorch module C++ code: SDFG argument {name} is not an input or output"
                 f" of the PyTorch Module, and is too large.")
+
+        # Skip parameter if it is not used
+        if name not in all_access_nodes:
+            desc = sdfg.arrays[name]
+            ptr_init_code += f"{desc.dtype.ctype} *{name}_ptr = nullptr;\n"
+            continue
 
         value = clean_weights[name]
         ptr_init_code += f"{constant_initializer_code(name, arglist[name], value)}\n"
