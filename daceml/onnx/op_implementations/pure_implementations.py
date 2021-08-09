@@ -15,6 +15,7 @@ from daceml.onnx.nodes import onnx_op
 from daceml.onnx.op_implementations.utils import op_implementation, program_for_node, empty_sdfg_for_node, \
     python_pure_op_implementation
 from daceml.transformation import constant_folding
+from daceml.transformation.replacement import onnx_constant_or_none
 from daceml.util.utils import in_desc_with_name, out_desc_with_name, in_edge_with_name, iterables_equal
 
 log = logging.getLogger(__name__)
@@ -70,6 +71,38 @@ class PurePow(ONNXForward):
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
         def prog(X, Y, Z):
             Z[:] = X**Y
+
+        return program_for_node(prog, sdfg, state, node)
+
+
+@op_implementation(op="Clip", name="pure")
+class PureClip(ONNXForward):
+    @staticmethod
+    def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
+        min_node = next(state.in_edges_by_connector(node, 'min')).src
+        max_node = next(state.in_edges_by_connector(node, 'max')).src
+        # TODO other cases
+        return (onnx_constant_or_none(sdfg, min_node) is not None
+                and onnx_constant_or_none(sdfg, max_node) is not None)
+
+    @staticmethod
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+
+        min_node = next(state.in_edges_by_connector(node, 'min')).src
+        max_node = next(state.in_edges_by_connector(node, 'max')).src
+        minval = onnx_constant_or_none(sdfg, min_node)
+        maxval = onnx_constant_or_none(sdfg, max_node)
+
+        input_dtype = in_desc_with_name(node, state, sdfg, "input").dtype
+        minstr = f"dace.{input_dtype.to_string()}({minval})"
+        maxstr = f"dace.{input_dtype.to_string()}({maxval})"
+
+        lfunc = f"lambda x: max(min(x, {minstr}), {maxstr})"
+
+        def prog(input, output):
+            output[:] = dace.elementwise(lfunc, input)
 
         return program_for_node(prog, sdfg, state, node)
 
