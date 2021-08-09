@@ -31,6 +31,7 @@ from dace.sdfg import nodes as nd
 
 from dace.transformation.optimizer import Optimizer
 from dace.transformation.dataflow import streaming_memory as sm
+from dace.transformation.auto import fpga as fpga_aopt
 
 import argparse
 
@@ -44,6 +45,11 @@ np.random.seed(0)
 # ----------------------------------------
 # Node Mappings
 # ----------------------------------------
+# These assign each memory container and
+# convolution operator of the NN-SDFG
+# to a convolutional block of the VGG architecture
+# to assign the correct configuration of each block
+
 access_node_block_mapping = {
     0: [27, 28, 29, 30],
     1: [31, 32, 33, 34, 35],
@@ -86,68 +92,6 @@ net_config = {
         "vec": 2
     }]
 }
-
-
-# ----------------------------------------
-# Memory bank RR-interleaving
-# ----------------------------------------
-def fpga_rr_interleave_containers_to_banks(sdfg: SDFG, num_banks: int = 4):
-    '''
-    Allocates the (global) arrays to FPGA off-chip memory banks, interleaving them in a
-    Round-Robin (RR) fashion. This applies to all the arrays in the SDFG hierarchy.
-    :param sdfg: The SDFG to operate on.
-    :param: num_banks: number of off-chip memory banks to consider
-    :returns: a list containing  the number of (transient) arrays allocated to each bank
-    :note: Operates in-place on the SDFG.
-    '''
-
-    # keep track of memory allocated to each bank
-    num_allocated = [0 for i in range(num_banks)]
-
-    i = 0
-    for sd, aname, desc in sdfg.arrays_recursive():
-        if not isinstance(
-                desc, dt.Stream
-        ) and desc.storage == dtypes.StorageType.FPGA_Global and desc.transient:
-            desc.location["bank"] = i % num_banks
-            num_allocated[i % num_banks] = num_allocated[i % num_banks] + 1
-            i = i + 1
-
-    return num_allocated
-
-
-# def expand_library_nodes_kwargs(sdfg, recursive=True, **kwargs):
-#     """
-#     Recursively expand all unexpanded library nodes in the SDFG,
-#     resulting in a "pure" SDFG that the code generator can handle.
-#     :param recursive: If True, expands all library nodes recursively,
-#                         including library nodes that expand to library nodes.
-#     """
-
-#     states = list(sdfg.states())
-#     while len(states) > 0:
-#         state = states.pop()
-#         expanded_something = False
-#         for node in list(state.nodes()):  # Make sure we have a copy
-#             if isinstance(node, nd.NestedSDFG):
-#                 expand_library_nodes_kwargs(node.sdfg, **kwargs)  # Call recursively
-#             elif isinstance(node, nd.LibraryNode):
-#                 # if str(node) == "ONNX_Conv_3":
-#                 #     donnx.ONNXConv.default_implementation = "fpga"
-#                 #     impl_name = node.expand(sdfg, state)
-#                 if isinstance(node, donnx.ONNXConv):
-#                     impl_name = node.expand(sdfg, state, **kwargs)
-#                 else:
-#                     impl_name = node.expand(sdfg, state)
-#                 print(
-#                     "Automatically expanded library node \"{}\" with implementation \"{}\"."
-#                     .format(str(node), impl_name))
-#                 # We made a copy of the original list of nodes, so we keep
-#                 # iterating even though this list has now changed
-#                 if recursive:
-#                     expanded_something = True
-#         if expanded_something:
-#             states.append(state)  # Nodes have changed. Check state again
 
 
 # ----------------------------------------
@@ -388,7 +332,7 @@ if __name__ == "__main__":
 
         if args["mem_banking"]:
             print(f"-------------- RR memory banking --------------")
-            alloc = fpga_rr_interleave_containers_to_banks(sdfg, 4)
+            alloc = fpga_aopt.fpga_rr_interleave_containers_to_banks(sdfg, 4)
             print("Allocations:", alloc)
 
         # cleanup SDFG
