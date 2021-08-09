@@ -99,7 +99,7 @@ class PureClip(ONNXForward):
         minstr = f"dace.{input_dtype.to_string()}({minval})"
         maxstr = f"dace.{input_dtype.to_string()}({maxval})"
 
-        lfunc = f"lambda x: max(min(x, {minstr}), {maxstr})"
+        lfunc = f"lambda x: min(max(x, {minstr}), {maxstr})"
 
         def prog(input, output):
             output[:] = dace.elementwise(lfunc, input)
