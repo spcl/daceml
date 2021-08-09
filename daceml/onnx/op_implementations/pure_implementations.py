@@ -56,7 +56,7 @@ class PureSqrt(ONNXForward):
 
         return program_for_node(prog, sdfg, state, node)
 
-
+    
 @op_implementation(op="Pow", name="pure")
 class PurePow(ONNXForward):
     @staticmethod
@@ -73,7 +73,7 @@ class PurePow(ONNXForward):
             Z[:] = X**Y
 
         return program_for_node(prog, sdfg, state, node)
-
+    
 
 @op_implementation(op="Clip", name="pure")
 class PureClip(ONNXForward):
@@ -716,19 +716,19 @@ class PureRelu(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-# @op_implementation(op="LeakyRelu", name="pure")
-# class PureLeakyRelu(ONNXForward):
-#     @staticmethod
-#     def forward(node: onnx_op.ONNXOp, state: SDFGState,
-#                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-#         input_dtype = in_desc_with_name(node, state, sdfg, "X").dtype
-#         cast_lambda = "lambda x: (max(x, dace.{}(0)) + {} * min(x, dace.{}(0)))".format(
-#             input_dtype.to_string(), node.alpha, input_dtype.to_string())
+@op_implementation(op="LeakyRelu", name="pure")
+class PureLeakyRelu(ONNXForward):
+    @staticmethod
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+        input_dtype = in_desc_with_name(node, state, sdfg, "X").dtype
+        cast_lambda = "lambda x: (max(x, dace.{}(0)) + {} * min(x, dace.{}(0)))".format(
+            input_dtype.to_string(), node.alpha, input_dtype.to_string())
 
-#         def prog(X, Y):
-#             Y[:] = dace.elementwise(cast_lambda, X)
+        def prog(X, Y):
+            Y[:] = dace.elementwise(cast_lambda, X)
 
-#         return program_for_node(prog, sdfg, state, node)
+        return program_for_node(prog, sdfg, state, node)
 
 
 @op_implementation(op="Reshape", name="pure")
