@@ -56,7 +56,7 @@ class PureSqrt(ONNXForward):
 
         return program_for_node(prog, sdfg, state, node)
 
-    
+
 @op_implementation(op="Pow", name="pure")
 class PurePow(ONNXForward):
     @staticmethod
@@ -73,7 +73,7 @@ class PurePow(ONNXForward):
             Z[:] = X**Y
 
         return program_for_node(prog, sdfg, state, node)
-    
+
 
 @op_implementation(op="Clip", name="pure")
 class PureClip(ONNXForward):
@@ -972,5 +972,65 @@ class SplitPure(ONNXForward):
                 dace.Memlet(data="input",
                             subset=rng,
                             other_subset=subsets.Range.from_array(odesc)))
+
+        return nsdfg
+
+
+@op_implementation(op="Slice", name="pure")
+class PureSliceAllConstant(ONNXForward):
+    @staticmethod
+    def _get_constant(conn: str, node: onnx_op.ONNXOp, state: SDFGState,
+                      sdfg: SDFG):
+        srcnode = next(state.in_edges_by_connector(node, conn)).src
+        # Scalar copied to GPU
+        if 'gpu_' in srcnode.data:
+            srcnode = state.predecessors(srcnode)[0]
+        return onnx_constant_or_none(sdfg, srcnode)
+
+    @staticmethod
+    def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
+        for inconn in ("axes", "ends", "starts", "steps"):
+            if PureSliceAllConstant._get_constant(inconn, node, state,
+                                                  sdfg) is None:
+                return False
+        return True
+
+    @staticmethod
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+        axes = PureSliceAllConstant._get_constant('axes', node, state, sdfg)
+        ends = PureSliceAllConstant._get_constant('ends', node, state, sdfg)
+        starts = PureSliceAllConstant._get_constant('starts', node, state,
+                                                    sdfg)
+        steps = PureSliceAllConstant._get_constant('steps', node, state, sdfg)
+
+        nsdfg = dace.SDFG(node.label + "_expansion")
+        nstate = nsdfg.add_state()
+
+        idesc = in_desc_with_name(node, state, sdfg, "data")
+        nsdfg.add_datadesc("data", copy.deepcopy(idesc))
+        nsdfg.add_datadesc("output", copy.deepcopy(idesc))
+        nsdfg.arrays["data"].transient = False
+        nsdfg.arrays["output"].transient = False
+
+        if not isinstance(axes, (tuple, list)):
+            axes = [axes]
+            ends = [ends]
+            starts = [starts]
+            steps = [steps]
+
+        # Set up slicing memlet
+        rng = [(0, s - 1, 1) for s in idesc.shape]
+        for axis, start, end, step in zip(axes, starts, ends, steps):
+            rng[axis] = (start, end - 1, step)
+
+        sbs = subsets.Range(rng)
+
+        # Make copy / view
+        rnode = nstate.add_read("data")
+        wnode = nstate.add_write("output")
+
+        nstate.add_nedge(rnode, wnode, dace.Memlet(data="data", subset=sbs))
 
         return nsdfg
