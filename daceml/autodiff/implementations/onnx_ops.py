@@ -1243,7 +1243,7 @@ class SplitBackward(BackwardImplementation):
                 continue
             odesc = butils.forward_out_desc_with_name(forward_node, context,
                                                       oname)
-            oname = result.given_grad_names[grad]
+            oname = result.given_grad_names[oname]
             # Set up new node shape and memlet
             new_shape = list(idesc.shape)
             new_shape[split_dim] = odim
@@ -1263,7 +1263,5 @@ class SplitBackward(BackwardImplementation):
         node = context.backward_state.add_nested_sdfg(
             nsdfg, None, set(result.given_grad_names.values()),
             {result.required_grad_names["input"]})
-
-        node.no_inline = True
 
         return node, result
