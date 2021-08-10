@@ -275,6 +275,56 @@ class DefaultSoftmaxBackward(BackwardImplementation):
         return result_node, result
 
 
+@autoregister_params(op="MaxPool", name="default")
+class DefaultMaxPoolBackward(BackwardImplementation):
+    @staticmethod
+    def backward(
+        forward_node: nd.Node, context: BackwardContext,
+        given_gradients: List[Optional[str]],
+        required_gradients: List[Optional[str]]
+    ) -> Tuple[Union[nd.Node, dace.SDFG], BackwardResult]:
+
+        output_shape = butils.forward_out_desc_with_name(
+            forward_node, context, "Y").shape
+
+        N, C, H, W = output_shape
+        sty, stx = forward_node.strides
+        sy, sx = forward_node.kernel_shape
+
+        def maxpool_backward(X, Y_grad, X_grad):
+            for b, c, ti, tj in dace.map[0:N, 0:C, 0:H, 0:W]:
+                maxv = np.empty([1], dtype=dace.float32)
+                maxi = np.empty([1], dtype=dace.int32)
+                maxj = np.empty([1], dtype=dace.int32)
+                with dace.tasklet:
+                    v >> maxv
+                    v = -9999999
+
+                # Deterministic argmax (assuming sequential map)
+                for i, j in dace.map[0:sy, 0:sx]:
+                    with dace.tasklet:
+                        o << X[b, c, sty * ti + i, stx * tj + j]
+                        vin << maxv
+                        v >> maxv(-1)
+                        ind_i >> maxi(-1)
+                        ind_j >> maxj(-1)
+                        if o > vin:
+                            v = o
+                            ind_i = i
+                            ind_j = j
+                with dace.tasklet:
+                    igrad << Y_grad[b, c, ti, tj]
+                    ind_i << maxi
+                    ind_j << maxj
+                    ograd >> X_grad(1)[b, c, :, :]
+                    ograd[ind_i, ind_j] = igrad
+
+        result_node, result = butils.backward_program_for_node(
+            maxpool_backward, context, forward_node)
+
+        return result_node, result
+
+
 @autoregister_params(op="LogSoftmax", name="default")
 class DefaultLogSoftmaxBackward(BackwardImplementation):
     @staticmethod
@@ -664,6 +714,388 @@ class CuDNNConvBackward(BackwardImplementation):
                 f"cudnnTensorDescriptor_t *{unique_id}_dB_desc;",
                 f"cudnnFilterDescriptor_t *{unique_id}_dW_desc;"
                 f"cudnnConvolutionBwdDataAlgo_t *{unique_id}_data_algo;"
+                f"cudnnConvolutionBwdFilterAlgo_t *{unique_id}_filter_algo;"
+                f"cudnnConvolutionDescriptor_t *{unique_id}_conv_desc;",
+                f"float *{unique_id}_workspace;",
+                f"size_t *{unique_id}_workspace_size;"
+            ],
+            code_init=init_code,
+            code_exit=finalize_code)
+        tasklet.environments = {donnx.environments.cuDNN.full_class_path()}
+
+        nstate.add_edge(
+            nstate.add_read(result.given_grad_names["Y"]), None, tasklet,
+            f"_dY", nsdfg.make_array_memlet((result.given_grad_names["Y"])))
+        for name in sorted(required_forward_inputs):
+            nstate.add_edge(nstate.add_read(name), None, tasklet, f"_{name}",
+                            nsdfg.make_array_memlet(name))
+
+        for name in sorted(required_gradients):
+            arr_name = result.required_grad_names[name]
+            nstate.add_edge(tasklet, f"_d{name}", nstate.add_write(arr_name),
+                            None, nsdfg.make_array_memlet(arr_name))
+
+        inputs = {result.given_grad_names["Y"]}.union(required_forward_inputs)
+        outputs = {
+            result.required_grad_names[n]
+            for n in sorted(required_gradients)
+        }
+        node = context.backward_state.add_nested_sdfg(nsdfg, None, inputs,
+                                                      outputs)
+
+        return node, result
+
+
+@autoregister_params(op="ConvTranspose", name="cuDNN")
+class CuDNNConvTransposeBackward(BackwardImplementation):
+    """ ConvTranspose backward using CUDNN.
+        The algorithm implementations can be set using node._data_algorithm and node._filter_algorithm
+        Available choices for data algorithm (same as Conv forward):
+            "auto"
+            "0"
+            "1"
+            "fft"
+            "fft_tiling"
+            "winograd"
+            "winograd_nonfused"
+        Available choices for filter algorithm:
+            "auto"
+            "0"
+            "1"
+            "fft"
+            "fft_tiling"
+            "3"
+            "winograd_nonfused"
+    """
+    default_data_algorithm = "auto"
+    default_filter_algorithm = "auto"
+
+    @staticmethod
+    def backward_can_be_applied(node: nd.Node, state: dace.SDFGState,
+                                sdfg: dace.SDFG) -> bool:
+        return cudnn_implementations.CudnnConvolution.forward_can_be_applied(
+            node, state, sdfg)
+
+    @staticmethod
+    def backward(
+        forward_node: nd.Node, context: BackwardContext,
+        given_gradients: List[Optional[str]],
+        required_gradients: List[Optional[str]]
+    ) -> Tuple[nd.Node, BackwardResult]:
+
+        nsdfg = dace.SDFG(forward_node.label + "_backward")
+        X_desc = butils.forward_in_desc_with_name(forward_node, context, "X")
+
+        T = X_desc.dtype
+
+        # setup gradient arrays
+        result = BackwardResult.empty()
+        required_grads = set(required_gradients)
+        for r in sorted(required_grads):
+            result.required_grad_names[
+                r] = butils.add_backward_desc_for_connector(nsdfg,
+                                                            forward_node,
+                                                            context,
+                                                            r,
+                                                            input=True)
+        result.given_grad_names["Y"] = butils.add_backward_desc_for_connector(
+            nsdfg, forward_node, context, "Y", input=False)
+
+        # setup non-gradient arrays
+        required_forward_inputs = ["W", "X"]
+        for i in sorted(required_forward_inputs):
+            new_desc = copy.deepcopy(
+                butils.forward_in_desc_with_name(forward_node, context, i))
+            new_desc.transient = False
+            nsdfg.add_datadesc(i, new_desc)
+
+        # setup state
+        nstate = nsdfg.add_state()
+        unique_id = "{}_{}_{}_{}_bwd".format(
+            clean_onnx_name(forward_node.name), context.forward_sdfg.sdfg_id,
+            context.forward_sdfg.node_id(context.forward_state),
+            context.forward_state.node_id(forward_node))
+
+        init_code = ""
+        finalize_code = ""
+
+        #######################
+        # add descriptor init code for gradients
+        for r in sorted(required_grads):
+            is_filter = r == "W"
+
+            if r == "B":
+                bias_desc = butils.forward_in_desc_with_name(
+                    forward_node, context, "B")
+                shape = [1, bias_desc.shape[0], 1, 1]
+            else:
+                shape = None
+
+            init, exit = cudnn_implementations._cudnn_tensor_descriptor_code(
+                nsdfg.arrays[result.required_grad_names[r]],
+                f"{unique_id}_d{r}_desc",
+                is_filter,
+                shape=shape)
+            init_code += init
+            finalize_code += exit
+
+        for r in sorted(required_forward_inputs):
+            desc = butils.forward_in_desc_with_name(forward_node, context, r)
+            is_filter = r == "W"
+            init, exit = cudnn_implementations._cudnn_tensor_descriptor_code(
+                desc, f"{unique_id}_{r}_desc", is_filter)
+            init_code += init
+            finalize_code += exit
+
+        init, exit = cudnn_implementations._cudnn_tensor_descriptor_code(
+            nsdfg.arrays[result.given_grad_names["Y"]], f"{unique_id}_dY_desc",
+            False)
+        init_code += init
+        finalize_code += exit
+
+        #######################
+        # setup conv descriptor
+        # we know from can_be_applied that the pads are symmetric
+        if len(forward_node.strides) == 1:
+            pad_h, pad_w = forward_node.pads[0], 0
+            stride_h, stride_w = forward_node.strides[0], 1
+            dilation_h, dilation_w = forward_node.dilations[0], 1
+        else:
+            pad_h, pad_w = forward_node.pads[0], forward_node.pads[1]
+            stride_h, stride_w = forward_node.strides
+            dilation_h, dilation_w = forward_node.dilations
+        init_code += f"""
+        __state->{unique_id}_conv_desc = new cudnnConvolutionDescriptor_t; 
+        daceml::cudnn::CheckCudnnError(cudnnCreateConvolutionDescriptor(__state->{unique_id}_conv_desc));
+        daceml::cudnn::CheckCudnnError(cudnnSetConvolution2dDescriptor(
+            *__state->{unique_id}_conv_desc,
+            {pad_h},
+            {pad_w},
+            {stride_h},
+            {stride_w},
+            {dilation_h},
+            {dilation_w},
+            CUDNN_CROSS_CORRELATION,
+            {cudnn_implementations._DACE_DTYPE_TO_CUDNN_DTYPE[T]}));
+        """
+        if forward_node.group != 1:
+            init_code += f"""
+            daceml::cudnn::CheckCudnnError(cudnnSetConvolutionGroupCount(
+                *__state->{unique_id}_conv_desc,
+                {forward_node.group}
+                ));
+            """
+        finalize_code += f"""
+        daceml::cudnn::CheckCudnnError(cudnnDestroyConvolutionDescriptor(*__state->{unique_id}_conv_desc));
+        delete __state->{unique_id}_conv_desc;
+        """
+
+        #######################
+        # setup algorithms
+
+        if hasattr(forward_node, "_data_algorithm"):
+            data_algo = forward_node._data_algorithm
+        else:
+            data_algo = CuDNNConvTransposeBackward.default_data_algorithm
+
+        if hasattr(forward_node, "_filter_algorithm"):
+            filter_algo = forward_node._filter_algorithm
+        else:
+            filter_algo = CuDNNConvTransposeBackward.default_filter_algorithm
+
+        init_code += f"{donnx.environments.cuDNN.handle_setup_code(forward_node, init_stream=False)}"
+        if data_algo == "auto" or filter_algo == "auto":
+            # setup fake data
+            free_fake_data_code, fake_data_init_code = setup_fake_data(
+                forward_node, context.forward_sdfg, context.forward_state,
+                True)
+
+            # setup algo
+            init_code += f"""
+            // setup fake data
+            {fake_data_init_code}
+
+            // setup workspace
+            void *search_ws; 
+            cudaMalloc(&search_ws, {cudnn_implementations.CudnnConvolution.search_ws_size});
+            """
+
+        if filter_algo == "auto":
+            init_code += f"""
+            // run search
+            cudnnConvolutionBwdFilterAlgoPerf_t filter_results;
+            int filter_algo_count = 1;
+            daceml::cudnn::CheckCudnnError(cudnnFindConvolutionBackwardFilterAlgorithmEx(
+                __dace_cudnn_handle,
+                *__state->{unique_id}_X_desc,
+                fake_X,
+                *__state->{unique_id}_dY_desc,
+                fake_dY,
+                *__state->{unique_id}_conv_desc,
+                *__state->{unique_id}_dW_desc,
+                fake_dW,
+                1,
+                &filter_algo_count,
+                &filter_results,
+                search_ws,
+                {cudnn_implementations.CudnnConvolution.search_ws_size}
+            ));
+            __state->{unique_id}_filter_algo = new cudnnConvolutionBwdFilterAlgo_t;
+            *__state->{unique_id}_filter_algo = filter_results.algo;
+            printf("{unique_id} using filter algo %d\\n", *__state->{unique_id}_filter_algo);
+            """
+        else:
+            init_code += f"""
+            __state->{unique_id}_filter_algo = new cudnnConvolutionBwdFilterAlgo_t;
+            *__state->{unique_id}_filter_algo = CUDNN_CONVOLUTION_BWD_FILTER_ALGO_{filter_algo.upper()};
+            """
+
+        if data_algo == "auto":
+            init_code += f"""
+            // run search
+            cudnnConvolutionFwdAlgoPerf_t data_results;
+            int data_algo_count = 1;
+            daceml::cudnn::CheckCudnnError(cudnnFindConvolutionForwardAlgorithmEx(
+                __dace_cudnn_handle,
+                *__state->{unique_id}_dY_desc,
+                fake_dY,
+                *__state->{unique_id}_W_desc,
+                fake_dY,
+                *__state->{unique_id}_conv_desc,
+                *__state->{unique_id}_dX_desc,
+                fake_dX,
+                1,
+                &data_algo_count,
+                &data_results,
+                search_ws,
+                {cudnn_implementations.CudnnConvolution.search_ws_size}
+            ));
+            __state->{unique_id}_data_algo = new cudnnConvolutionFwdAlgo_t;
+            *__state->{unique_id}_data_algo = data_results.algo;
+            printf("{unique_id} using data algo %d\\n", *__state->{unique_id}_data_algo);
+            """
+        else:
+            init_code += f"""
+            __state->{unique_id}_data_algo = new cudnnConvolutionFwdAlgo_t;
+            *__state->{unique_id}_data_algo = CUDNN_CONVOLUTION_FWD_ALGO_{data_algo.upper()};
+            """
+
+        if data_algo == "auto" or filter_algo == "auto":
+            init_code += f"""
+            cudaFree(search_ws);
+            {free_fake_data_code}
+            """
+
+        finalize_code += f"""
+             delete __state->{unique_id}_data_algo;
+             delete __state->{unique_id}_filter_algo;
+        """
+
+        #######################
+        # setup workspace
+        init_code += \
+            f"""
+        // Setup workspace for {unique_id}
+        
+        size_t data_ws_size;
+        daceml::cudnn::CheckCudnnError(cudnnGetConvolutionForwardWorkspaceSize(
+            __dace_cudnn_handle,
+            *__state->{unique_id}_dY_desc,
+            *__state->{unique_id}_W_desc,
+            *__state->{unique_id}_conv_desc,
+            *__state->{unique_id}_dX_desc,
+            *__state->{unique_id}_data_algo,
+            &data_ws_size));
+        size_t filter_ws_size;
+        daceml::cudnn::CheckCudnnError(cudnnGetConvolutionBackwardFilterWorkspaceSize(
+            __dace_cudnn_handle,
+            *__state->{unique_id}_X_desc,
+            *__state->{unique_id}_dY_desc,
+            *__state->{unique_id}_conv_desc,
+            *__state->{unique_id}_dW_desc,
+            *__state->{unique_id}_filter_algo,
+            &filter_ws_size));
+        
+        size_t ws_size = max(filter_ws_size, data_ws_size);
+        __state->{unique_id}_workspace_size = new size_t;
+        *__state->{unique_id}_workspace_size = ws_size;
+        cudaMalloc(&__state->{unique_id}_workspace, ws_size);
+        """
+        finalize_code += f"""
+        cudaFree(__state->{unique_id}_workspace);
+        delete __state->{unique_id}_workspace_size;
+        """
+
+        #######################
+        # tasklet code
+
+        tasklet_code = f"""
+        {donnx.environments.cuDNN.handle_setup_code(forward_node)}
+        float alpha = 1.f;
+        float beta = 0.f;
+        daceml::cudnn::CheckCudnnError(cudnnConvolutionForward(
+            __dace_cudnn_handle,
+            &alpha,
+            *__state->{unique_id}_dY_desc,
+            _dY,
+            *__state->{unique_id}_W_desc,
+            _W,
+            *__state->{unique_id}_conv_desc,
+            *__state->{unique_id}_data_algo,
+            __state->{unique_id}_workspace,
+            *__state->{unique_id}_workspace_size,
+            &beta,
+            *__state->{unique_id}_dX_desc,
+            _dX));
+        daceml::cudnn::CheckCudnnError(cudnnConvolutionBackwardFilter(
+            __dace_cudnn_handle,
+            &alpha,
+            *__state->{unique_id}_X_desc,
+            _X,
+            *__state->{unique_id}_dY_desc,
+            _dY,
+            *__state->{unique_id}_conv_desc,
+            *__state->{unique_id}_filter_algo,
+            __state->{unique_id}_workspace,
+            *__state->{unique_id}_workspace_size,
+            &beta,
+            *__state->{unique_id}_dW_desc,
+            _dW));
+        """
+
+        if "B" in required_gradients:
+            tasklet_code += f"""
+            daceml::cudnn::CheckCudnnError(cudnnConvolutionBackwardBias(
+                __dace_cudnn_handle,
+                &alpha,
+                *__state->{unique_id}_dY_desc,
+                _dY,
+                &beta,
+                *__state->{unique_id}_dB_desc,
+                _dB));
+            """
+
+        init_code = "{\n" + init_code + "\n}"
+        finalize_code = "{\n" + finalize_code + "\n}"
+        tasklet = nstate.add_tasklet(
+            unique_id, {
+                f"_{i}": dace.pointer(T)
+                for i in itertools.chain(["dY"], sorted(
+                    required_forward_inputs))
+            }, {
+                f"_d{i}": dace.pointer(T)
+                for i in itertools.chain(sorted(required_gradients))
+            },
+            tasklet_code,
+            dace.dtypes.Language.CPP,
+            state_fields=[
+                f"cudnnTensorDescriptor_t *{unique_id}_X_desc;",
+                f"cudnnFilterDescriptor_t *{unique_id}_W_desc;",
+                f"cudnnTensorDescriptor_t *{unique_id}_dX_desc;",
+                f"cudnnTensorDescriptor_t *{unique_id}_dY_desc;",
+                f"cudnnTensorDescriptor_t *{unique_id}_dB_desc;",
+                f"cudnnFilterDescriptor_t *{unique_id}_dW_desc;"
+                f"cudnnConvolutionFwdAlgo_t *{unique_id}_data_algo;"
                 f"cudnnConvolutionBwdFilterAlgo_t *{unique_id}_filter_algo;"
                 f"cudnnConvolutionDescriptor_t *{unique_id}_conv_desc;",
                 f"float *{unique_id}_workspace;",
