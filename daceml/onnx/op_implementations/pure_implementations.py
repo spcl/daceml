@@ -981,7 +981,10 @@ class PureSliceAllConstant(ONNXForward):
     @staticmethod
     def _get_constant(conn: str, node: onnx_op.ONNXOp, state: SDFGState,
                       sdfg: SDFG):
-        srcnode = next(state.in_edges_by_connector(node, conn)).src
+        try:
+            srcnode = next(state.in_edges_by_connector(node, conn)).src
+        except StopIteration:
+            return None
         # Scalar copied to GPU
         if 'gpu_' in srcnode.data:
             srcnode = state.predecessors(srcnode)[0]
@@ -1009,8 +1012,9 @@ class PureSliceAllConstant(ONNXForward):
         nstate = nsdfg.add_state()
 
         idesc = in_desc_with_name(node, state, sdfg, "data")
+        odesc = out_desc_with_name(node, state, sdfg, "output")
         nsdfg.add_datadesc("data", copy.deepcopy(idesc))
-        nsdfg.add_datadesc("output", copy.deepcopy(idesc))
+        nsdfg.add_datadesc("output", copy.deepcopy(odesc))
         nsdfg.arrays["data"].transient = False
         nsdfg.arrays["output"].transient = False
 
@@ -1023,14 +1027,20 @@ class PureSliceAllConstant(ONNXForward):
         # Set up slicing memlet
         rng = [(0, s - 1, 1) for s in idesc.shape]
         for axis, start, end, step in zip(axes, starts, ends, steps):
+            s = idesc.shape[axis]
+            if end > s:
+                end = s
             rng[axis] = (start, end - 1, step)
 
         sbs = subsets.Range(rng)
+        osbs = subsets.Range.from_array(odesc)
 
         # Make copy / view
         rnode = nstate.add_read("data")
         wnode = nstate.add_write("output")
 
-        nstate.add_nedge(rnode, wnode, dace.Memlet(data="data", subset=sbs))
+        nstate.add_nedge(
+            rnode, wnode,
+            dace.Memlet(data="data", subset=sbs, other_subset=osbs))
 
         return nsdfg
