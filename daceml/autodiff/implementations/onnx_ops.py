@@ -275,6 +275,12 @@ class DefaultSoftmaxBackward(BackwardImplementation):
         return result_node, result
 
 
+def _find_map_by_param(sdfg: dace.SDFG, pname: str) -> dace.nodes.MapEntry:
+    """ Finds the first map entry node by the given parameter name. """
+    return next(n for n, _ in sdfg.all_nodes_recursive()
+                if isinstance(n, dace.nodes.MapEntry) and pname in n.params)
+
+
 @autoregister_params(op="MaxPool", name="default")
 class DefaultMaxPoolBackward(BackwardImplementation):
     @staticmethod
@@ -321,6 +327,9 @@ class DefaultMaxPoolBackward(BackwardImplementation):
 
         result_node, result = butils.backward_program_for_node(
             maxpool_backward, context, forward_node)
+
+        _find_map_by_param(result_node.sdfg, 'i').schedule = \
+            dace.ScheduleType.Sequential
 
         return result_node, result
 
