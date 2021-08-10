@@ -927,10 +927,10 @@ class CuDNNConvTransposeBackward(BackwardImplementation):
             int filter_algo_count = 1;
             daceml::cudnn::CheckCudnnError(cudnnFindConvolutionBackwardFilterAlgorithmEx(
                 __dace_cudnn_handle,
-                *__state->{unique_id}_X_desc,
-                fake_X,
                 *__state->{unique_id}_dY_desc,
                 fake_dY,
+                *__state->{unique_id}_X_desc,
+                fake_X,
                 *__state->{unique_id}_conv_desc,
                 *__state->{unique_id}_dW_desc,
                 fake_dW,
@@ -960,7 +960,7 @@ class CuDNNConvTransposeBackward(BackwardImplementation):
                 *__state->{unique_id}_dY_desc,
                 fake_dY,
                 *__state->{unique_id}_W_desc,
-                fake_dY,
+                fake_W,
                 *__state->{unique_id}_conv_desc,
                 *__state->{unique_id}_dX_desc,
                 fake_dX,
@@ -1009,8 +1009,8 @@ class CuDNNConvTransposeBackward(BackwardImplementation):
         size_t filter_ws_size;
         daceml::cudnn::CheckCudnnError(cudnnGetConvolutionBackwardFilterWorkspaceSize(
             __dace_cudnn_handle,
-            *__state->{unique_id}_X_desc,
             *__state->{unique_id}_dY_desc,
+            *__state->{unique_id}_X_desc,
             *__state->{unique_id}_conv_desc,
             *__state->{unique_id}_dW_desc,
             *__state->{unique_id}_filter_algo,
@@ -1050,10 +1050,10 @@ class CuDNNConvTransposeBackward(BackwardImplementation):
         daceml::cudnn::CheckCudnnError(cudnnConvolutionBackwardFilter(
             __dace_cudnn_handle,
             &alpha,
-            *__state->{unique_id}_X_desc,
-            _X,
             *__state->{unique_id}_dY_desc,
             _dY,
+            *__state->{unique_id}_X_desc,
+            _X,
             *__state->{unique_id}_conv_desc,
             *__state->{unique_id}_filter_algo,
             __state->{unique_id}_workspace,
