@@ -290,7 +290,10 @@ class BackwardPassGenerator:
                 node for node in state.nodes()
                 if isinstance(node, nd.AccessNode) and node.data == data
             ]
-            if len(matches) != 1:
+            # Unused in model
+            if len(matches) == 0:
+                return None
+            if len(matches) > 1:
                 raise AutoDiffException(
                     "Expected to find exactly one node with data"
                     " '{}' in {}, but found {}".format(data, source,
@@ -305,6 +308,7 @@ class BackwardPassGenerator:
             n if isinstance(n, nd.AccessNode) else str_to_access(n, "inputs")
             for n in required_gradients
         ]
+        required_gradients = [n for n in required_gradients if n is not None]
 
         self.given_gradients = given_gradients
         self.required_gradients = required_gradients
