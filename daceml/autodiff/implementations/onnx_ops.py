@@ -471,6 +471,7 @@ class CuDNNConvBackward(BackwardImplementation):
         else:
             filter_algo = CuDNNConvBackward.default_filter_algorithm
 
+        init_code += f"{donnx.environments.cuDNN.handle_setup_code(forward_node, init_stream=False)}"
         if data_algo == "auto" or filter_algo == "auto":
             # setup fake data
             free_fake_data_code, fake_data_init_code = setup_fake_data(
@@ -479,7 +480,6 @@ class CuDNNConvBackward(BackwardImplementation):
 
             # setup algo
             init_code += f"""
-            {donnx.environments.cuDNN.handle_setup_code(forward_node, init_stream=False)}
             // setup fake data
             {fake_data_init_code}
 
