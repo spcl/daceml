@@ -294,3 +294,19 @@ def get_library_node_by_name(sdfg, name):
                 return node, state
 
     raise Exception(f"LibraryNode {name} not found")
+
+
+def get_access_node_by_name(sdfg, name):
+    '''
+    Searches for an access node with @param name
+    in the SDFG @param sdfg and returns the library
+    node and the associated state
+    '''
+
+    for node, state in sdfg.all_nodes_recursive():
+        if isinstance(node, dace.sdfg.nodes.AccessNode):
+            # print(node.label)
+            if node.label == name:
+                return node, state
+
+    raise Exception("DataNode {} not found".format(name))
