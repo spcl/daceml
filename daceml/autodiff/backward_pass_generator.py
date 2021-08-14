@@ -396,9 +396,13 @@ class BackwardPassGenerator:
 
             # only check others if we didn't break out of the above loop
             if isinstance(node, ONNXOp):
-                for impl in ONNXForward.registered_implementations(
-                        node.schema.name):
+                impls = ONNXForward.registered_implementations(
+                    node.schema.name)
 
+                # order the implementations so that implementations containing "pure" are tried first
+                impls = [i for name, i in impls if "pure" in name
+                         ] + [i for name, i in impls if "pure" not in name]
+                for impl in impls:
                     if impl.forward_can_be_applied(node, state, self.sdfg):
                         # try to apply the expansion
                         class Expansion(xf.ExpandTransformation):

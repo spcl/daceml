@@ -303,7 +303,8 @@ class DaceModule(nn.Module):
                                    onnx_model,
                                    infer_shapes=False,
                                    cuda=self.use_cuda,
-                                   parent_pytorch_module=self.model)
+                                   parent_pytorch_module=self.model,
+                                   auto_optimize=self.auto_optimize)
             self.sdfg = dace_model.sdfg
             self.dace_model = dace_model
 

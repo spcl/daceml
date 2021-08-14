@@ -59,9 +59,10 @@ class MemoryInfo:
 
 
 class SessionOptions:
-    def __init__(self, api):
+    def __init__(self, api, cuda=False):
         self.api = api
         self.env = Env(api)
+        self.cuda = cuda
 
     def __enter__(self):
         self.env.__enter__()
@@ -72,8 +73,8 @@ class SessionOptions:
         self.api.dll.OrtSessionOptionsAppendExecutionProvider_CPU(
             self.ptr, ctypes.c_int(0))
 
-        if hasattr(self.api.dll,
-                   "OrtSessionOptionsAppendExecutionProvider_CUDA"):
+        if self.cuda and hasattr(
+                self.api.dll, "OrtSessionOptionsAppendExecutionProvider_CUDA"):
             cuda_opts = OrtCUDAProviderOptions(
                 device_id=0,
                 cudnn_conv_algo_search=self.api.get_enum_value("DEFAULT"),
@@ -93,9 +94,9 @@ class SessionOptions:
 
 
 class KernelSession:
-    def __init__(self, api):
+    def __init__(self, api, cuda=False):
         self.api = api
-        self.session_options = SessionOptions(api)
+        self.session_options = SessionOptions(api, cuda=cuda)
 
     def __enter__(self):
         so_ptr = self.session_options.__enter__()
