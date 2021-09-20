@@ -13,25 +13,24 @@ def pytest_addoption(parser):
                      help="Run tests using gpu, and skip CPU tests")
 
 
-@pytest.fixture
-def skip_non_gpu_test():
-    pytest.skip('Skipping test since --gpu-only was passed')
-
-
-@pytest.fixture
-def skip_gpu_test_on_cpu():
-    pytest.skip('Skipping test since --gpu or --gpu-only were not passed')
+def pytest_runtest_setup(item):
+    # if @pytest.mark.gpu is applied skip the test on CPU
+    if "gpu" in (m.name for m in item.iter_markers()):
+        if not (item.config.getoption("--gpu")
+                or item.config.getoption("--gpu-only")):
+            pytest.skip(
+                'Skipping test since --gpu or --gpu-only were not passed')
+    # else: if the gpu fixture is used, the test is parameterized: don't skip on CPU
+    elif "gpu" in item.fixturenames:
+        pass
+    # otherwise: this test is not marked with @pytest.mark.gpu, and doesn't have the gpu fixture:
+    # skip it if --gpu-only is passed
+    elif item.config.getoption("--gpu-only"):
+        pytest.skip('Skipping test since --gpu-only was passed')
 
 
 def pytest_generate_tests(metafunc):
-
-    # if @pytest.mark.gpu is applied skip the test on CPU
-    if "gpu" in (m.name for m in metafunc.definition.iter_markers()):
-        if not (metafunc.config.getoption("--gpu")
-                or metafunc.config.getoption("--gpu-only")):
-            metafunc.fixturenames.insert(0, "skip_gpu_test_on_cpu")
-    # else: if the gpu fixture is used, parameterize the test
-    elif "gpu" in metafunc.fixturenames:
+    if "gpu" in metafunc.fixturenames:
         if metafunc.config.getoption("--gpu"):
             metafunc.parametrize("gpu", [
                 pytest.param(True, id="use_gpu"),
@@ -41,10 +40,6 @@ def pytest_generate_tests(metafunc):
             metafunc.parametrize("gpu", [pytest.param(True, id="use_gpu")])
         else:
             metafunc.parametrize("gpu", [pytest.param(False, id="use_cpu")])
-    # otherwise: this test is not marked with @pytest.mark.gpu, and doesn't have the gpu fixture:
-    # skip it if --gpu-only is passed
-    elif metafunc.config.getoption("--gpu-only"):
-        metafunc.fixturenames.insert(0, "skip_non_gpu_test")
 
     if "default_implementation" in metafunc.fixturenames:
         metafunc.parametrize("default_implementation", [
