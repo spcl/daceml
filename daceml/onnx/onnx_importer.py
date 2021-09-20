@@ -12,7 +12,7 @@ from onnx import numpy_helper
 
 import dace
 from dace import data as dt, dtypes, nodes, SDFG, SDFGState
-from dace.frontend.python.parser import infer_symbols_from_shapes
+from dace.frontend.python import parser
 from dace.symbolic import pystr_to_symbolic
 from dace.transformation import dataflow
 
@@ -538,10 +538,11 @@ class ONNXModel:
             else:
                 clean_inputs[clean_onnx_name(input)] = arr
 
-        inferred_symbols = infer_symbols_from_shapes(self.sdfg, {
-            **clean_inputs,
-            **self.initialized_parameters
-        })
+        inferred_symbols = parser.infer_symbols_from_datadescriptor(
+            self.sdfg, {
+                **clean_inputs,
+                **self.initialized_parameters
+            })
         inferred_symbols = {k: int(v) for k, v in inferred_symbols.items()}
 
         if torch_outputs is None:
@@ -592,7 +593,7 @@ def create_output_array(
     """ Create the array for an output. This is either a numpy array or a torch tensor depending on `use_torch`
 
         When `self.force_torch_outputs` is True, the outputs will be tensors. Otherwise, the outputs will be tensors
-        :param inferred_symbols: the symbols inferred from `infer_symbols_from_shapes`.
+        :param inferred_symbols: the symbols inferred from `infer_symbols_from_datadescriptor`.
         :param desc: the data descriptor for the array
         :param use_torch: whether to return a numpy array or a torch tensor.
         :param zeros: if true init with zeros else empty.
