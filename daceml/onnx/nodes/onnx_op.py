@@ -159,7 +159,8 @@ class ONNXOp(nd.LibraryNode):
             This method assumes that this node has been validated.
 
             :param state: the state containing this node.
-            :param ignore_unknown: ignore unknown edges.
+            :param ignore_unknown: whether to ignore any edges that don't exist in the ONNX schema. Otherwise, an 
+                                   error will be thrown.
         """
         in_edges: List[MultiConnectorEdge] = state.in_edges(self)
         out_edges: List[MultiConnectorEdge] = state.out_edges(self)
