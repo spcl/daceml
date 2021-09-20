@@ -24,9 +24,7 @@ def run(module, input_shape, output_shape):
         assert dace_name == torch_name
         torch_tensors_close(dace_name, value, dace_value)
 
-
     dace_output = dace_model(dace_inputs)
-    dace_model.sdfg.view()
     torch_output = torch_model(torch_inputs)
     torch_tensors_close("output",
                         torch_output,
@@ -54,10 +52,9 @@ def run(module, input_shape, output_shape):
 
     torch_tensors_close("input_grad", torch_inputs.grad, dace_inputs.grad)
 
-    for (name,
-         dace_param), (pt_name,
-                       pt_param) in zip(torch_model.named_parameters(),
-                                        dace_model.named_parameters()):
+    for (name, dace_param), (pt_name,
+                             pt_param) in zip(torch_model.named_parameters(),
+                                              dace_model.named_parameters()):
         assert 'model.' + name == pt_name
         torch_tensors_close(name, pt_param.grad, dace_param.grad)
 
@@ -84,14 +81,22 @@ class PreNorm(nn.Module):
     def forward(self, x):
         return self.fn(self.norm(x)) + x
 
+
 def test_linformer_ff(sdfg_name, default_implementation):
     run(FeedForward, input_shape=(8, 512, 1024), output_shape=(8, 512, 1024))
+
 
 def test_linformer_pn(sdfg_name, default_implementation):
     run(PreNorm, input_shape=(8, 512, 1024), output_shape=(8, 512, 1024))
 
+
 class FeedForward(nn.Module):
-    def __init__(self, dim=1024, mult = 4, dropout = 0., activation = None, glu = False):
+    def __init__(self,
+                 dim=1024,
+                 mult=4,
+                 dropout=0.,
+                 activation=None,
+                 glu=False):
         super().__init__()
         activation = nn.ReLU
 

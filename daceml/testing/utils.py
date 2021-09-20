@@ -3,7 +3,13 @@ import torch
 import typing
 
 
-def torch_tensors_close(name, torch_v, dace_v, rtol=1e-5, atol=1e-4, summary=False, raise_on_fail=True):
+def torch_tensors_close(name,
+                        torch_v,
+                        dace_v,
+                        rtol=1e-5,
+                        atol=1e-4,
+                        summary=False,
+                        raise_on_fail=True):
     """ Assert that the two torch tensors are close. Prints a nice error string if not.
     """
     if not torch.allclose(
@@ -15,10 +21,12 @@ def torch_tensors_close(name, torch_v, dace_v, rtol=1e-5, atol=1e-4, summary=Fal
             dace_v = dace_v.detach().cpu().numpy()
             max_error_idx = np.argmax(torch_v - dace_v)
             max_error = np.max(torch_v - dace_v)
-            failed_mask = np.abs(torch_v - dace_v) > atol + rtol * np.abs(dace_v)
+            failed_mask = np.abs(torch_v -
+                                 dace_v) > atol + rtol * np.abs(dace_v)
             print(f"Num wrong: {failed_mask.sum()}")
-            print(f"Maximum error: {max_error}, Torch value: {torch_v.flatten()[max_error_idx]},"
-                  f" Dace value: {dace_v.flatten()[max_error_idx]}")
+            print(
+                f"Maximum error: {max_error}, Torch value: {torch_v.flatten()[max_error_idx]},"
+                f" Dace value: {dace_v.flatten()[max_error_idx]}")
         else:
             print("torch value: ", torch_v)
             print("dace value: ", dace_v)
@@ -26,7 +34,8 @@ def torch_tensors_close(name, torch_v, dace_v, rtol=1e-5, atol=1e-4, summary=Fal
 
             torch_v = torch_v.detach().cpu().numpy()
             dace_v = dace_v.detach().cpu().numpy()
-            failed_mask = np.abs(torch_v - dace_v) > atol + rtol * np.abs(dace_v)
+            failed_mask = np.abs(torch_v -
+                                 dace_v) > atol + rtol * np.abs(dace_v)
             print(f"wrong elements torch: {torch_v[failed_mask]}")
             print(f"wrong elements dace: {dace_v[failed_mask]}")
 

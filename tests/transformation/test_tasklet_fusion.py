@@ -36,11 +36,8 @@ def test_same_name():
 
     sdfg: dace.SDFG = test_same_name.to_sdfg()
 
-    sdfg.view()
-
     assert sdfg.apply_transformations_repeated(MapFusion) == 2
     assert sdfg.apply_transformations_repeated(TaskletFusion) == 2
-    sdfg.view()
 
     result = np.empty((5, 5), dtype=np.float32)
     A = np.ones_like(result)
@@ -90,7 +87,6 @@ def test_tasklet_fission():
 
     assert sdfg.apply_transformations(TaskletFission) == 1
 
-    sdfg.view()
     result = np.empty((1, ), dtype=np.float32)
     sdfg(A=1, __return=result, D=2)
     assert result[0] == 6
@@ -117,7 +113,6 @@ def test_tasklet_fusion_multiline():
 
     assert sdfg.apply_transformations(TaskletFusion) == 1
 
-    sdfg.view()
     result = np.empty((1, ), dtype=np.float32)
     sdfg(A=1, __return=result)
     assert result[0] == 11
@@ -137,7 +132,6 @@ def test_silu():
         assert sdfg.apply_transformations(MapFusion) == 1
         assert sdfg.apply_transformations(TaskletFusion) == 1
         assert sdfg.apply_transformations(MergeTaskletReads) == 1
-        sdfg.view()
 
     m.append_post_onnx_hook("fuse", fuse)
     m(torch.rand(3, 3))
