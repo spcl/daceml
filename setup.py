@@ -37,8 +37,8 @@ setup(
         exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
     package_data={'': (['*.cpp'] + runtime_files)},
     install_requires=[
-        'dace@git+https://github.com/spcl/dace.git@dml-misc-fixes3',
-        'onnx == 1.7.0', 'torch', 'dataclasses; python_version < "3.7"'
+        'dace@git+https://github.com/spcl/dace.git@3acb9b8', 'onnx == 1.7.0',
+        'torch', 'dataclasses; python_version < "3.7"'
     ],
     # install with pip and --find-links (see Makefile)
     # See https://github.com/pypa/pip/issues/5898

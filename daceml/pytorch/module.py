@@ -5,7 +5,7 @@ import itertools
 import os
 import tempfile
 from functools import wraps
-from typing import Optional, Tuple, Callable, OrderedDict, Type, Union
+from typing import Optional, Tuple, Callable, OrderedDict, Type, Dict, Union, List
 
 import dace
 from dace import nodes, data
@@ -67,6 +67,8 @@ class DaceModule(nn.Module):
                      ``module``.
         :param training: whether to use train mode when tracing ``model``.
         :param backward: whether to enable the backward pass.
+        :param inputs_to_skip: if provided, a list of inputs to skip computing gradients for. 
+                               (only relevant when the backward pass is enabled)
         :param apply_strict: whether to apply strict transforms after conversion (this generally improves performance,
                              but can be slow).
         :param sdfg_name: the name to give to the sdfg (defaults to ``dace_model``).
@@ -96,11 +98,13 @@ class DaceModule(nn.Module):
                  cuda: Optional[bool] = None,
                  training: bool = False,
                  backward=False,
+                 inputs_to_skip: Optional[List[str]] = None,
                  apply_strict: bool = True,
                  auto_optimize: bool = True,
                  debug_transients: bool = False,
                  compile_torch_extension: bool = True,
                  sdfg_name: Optional[str] = None):
+
         super(DaceModule, self).__init__()
 
         self.backward = backward
@@ -114,6 +118,7 @@ class DaceModule(nn.Module):
         self.apply_strict = apply_strict
         self.debug_transients = debug_transients
         self.compile_torch_extension = compile_torch_extension
+        self.inputs_to_skip = inputs_to_skip
 
         self.function = None
 
@@ -329,6 +334,7 @@ class DaceModule(nn.Module):
                 required_gradients = [
                     clean_onnx_name(name) for name in self.dace_model.inputs
                     if name not in named_buffers
+                    and name not in self.inputs_to_skip
                 ]
                 named_parameters = dict(self.model.named_parameters())
                 required_gradients.extend(
@@ -388,6 +394,7 @@ def dace_module(moduleclass,
                 cuda: Optional[bool] = None,
                 training: bool = False,
                 backward=False,
+                inputs_to_skip: Optional[List[str]] = None,
                 apply_strict: bool = True,
                 auto_optimize: bool = True,
                 sdfg_name: Optional[str] = None,
@@ -415,6 +422,8 @@ def dace_module(moduleclass,
                      ``module``.
         :param training: whether to use train mode when tracing ``model``.
         :param backward: whether to enable the backward pass.
+        :param inputs_to_skip: if provided, a list of inputs to skip computing gradients for. 
+                               (only relevant when the backward pass is enabled)
         :param apply_strict: whether to apply strict transforms after conversion (this generally improves performance,
                              but can be slow).
         :param auto_optimize: whether to apply automatic optimizations.
@@ -430,6 +439,7 @@ def dace_module(moduleclass,
                           cuda=cuda,
                           training=training,
                           backward=backward,
+                          inputs_to_skip=inputs_to_skip,
                           apply_strict=apply_strict,
                           auto_optimize=auto_optimize,
                           sdfg_name=sdfg_name,
