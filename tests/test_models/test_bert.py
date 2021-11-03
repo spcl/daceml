@@ -3,23 +3,31 @@ Test a full model including indexing and input preparation. The model also inclu
 """
 
 import os
-import urllib.request
 
 import onnx
 import torch
-from transformers import AutoTokenizer, AutoModel
+from transformers import BertTokenizer, BertModel
 
 import daceml.onnx as donnx
-from daceml.testing import copy_to_gpu, torch_tensors_close
+from daceml.testing import copy_to_gpu, torch_tensors_close, get_data_file
 
 
 def test_bert_full(gpu, default_implementation, sdfg_name):
     # SDFG add doesn't work with scalars currently
     donnx.ONNXAdd.default_implementation = "onnxruntime"
 
-    tokenizer = AutoTokenizer.from_pretrained("prajjwal1/bert-tiny")
-    pt_model = copy_to_gpu(gpu,
-                           AutoModel.from_pretrained("prajjwal1/bert-tiny"))
+    bert_tiny_root = 'http://spclstorage.inf.ethz.ch/~rauscho/bert-tiny'
+    get_data_file(bert_tiny_root + "/config.json", directory_name='bert-tiny')
+    vocab = get_data_file(bert_tiny_root + "/vocab.txt",
+                          directory_name='bert-tiny')
+    bert_path = get_data_file(bert_tiny_root + "/bert-tiny.onnx",
+                              directory_name='bert-tiny')
+    get_data_file(bert_tiny_root + "/pytorch_model.bin",
+                  directory_name='bert-tiny')
+    model_dir = os.path.dirname(vocab)
+
+    tokenizer = BertTokenizer.from_pretrained(vocab)
+    pt_model = copy_to_gpu(gpu, BertModel.from_pretrained(model_dir))
 
     text = "[CLS] how are you today [SEP] dude [SEP]"
     tokenized_text = tokenizer.tokenize(text)
@@ -30,14 +38,6 @@ def test_bert_full(gpu, default_implementation, sdfg_name):
     segments_tensors = copy_to_gpu(gpu, torch.tensor([segment_ids]))
     attention_mask = copy_to_gpu(gpu, torch.ones(1, 8, dtype=torch.int64))
 
-    data_directory = os.path.join(os.path.dirname(__file__), "data")
-    os.makedirs(data_directory, exist_ok=True)
-
-    bert_path = os.path.join(data_directory, "bert-tiny.onnx")
-    if not os.path.exists(bert_path):
-        urllib.request.urlretrieve(
-            'http://spclstorage.inf.ethz.ch/~rauscho/bert-tiny.onnx',
-            bert_path)
     model = onnx.load(bert_path)
 
     dace_model = donnx.ONNXModel(
