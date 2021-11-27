@@ -82,7 +82,7 @@ class SDFGBackwardRunner:
         for k, v in inputs.items():
             print(k, "-" * 10)
             print("\t{}".format(v.dtype))
-            print("\t{}".format("is_contiguous:", v.flags['C_CONTIGUOUS']))
+            print("\t{}".format("is_contiguous:", v.flags["C_CONTIGUOUS"]))
             print("\t{}".format(v))
 
         self.sdfg(**inputs)
@@ -91,7 +91,7 @@ class SDFGBackwardRunner:
         for k, v in inputs.items():
             print(k, "-" * 10)
             print("\t{}".format(v.dtype))
-            print("\t{}".format("is_contiguous:", v.flags['C_CONTIGUOUS']))
+            print("\t{}".format("is_contiguous:", v.flags["C_CONTIGUOUS"]))
             print("\t{}".format(v))
 
         results = {name: arr for name, arr in inputs.items()}
@@ -524,9 +524,9 @@ def test_add_mmul_transpose_log():
         S: dace.float32[1],
     ):
 
-        Xt[:] = np.transpose(X)
-        YW[:] = W * Y
-        Z[:] = Xt @ YW
+        Xt = np.transpose(X)
+        YW = W * Y
+        Z = Xt @ YW
 
         @dace.map(_[0:5, 0:3])
         def summap(i, j):
@@ -565,9 +565,9 @@ def test_reduce_node_1_axis_and_none_axis():
                                          Y: dace.float32[4, 3],
                                          W: dace.float32[7, 4, 3]):
 
-        Xt[:] = np.transpose(X)
-        YW[:] = np.sum(W, axis=0) * Y
-        Z[:] = Xt @ YW
+        Xt = np.transpose(X)
+        YW = np.sum(W, axis=0) * Y
+        Z = Xt @ YW
 
         Zl = dace.elementwise(lambda x: log(x + 1), Z)
         S = np.sum(Zl)
@@ -677,9 +677,14 @@ def test_reshape():
         S.backward()
         return dict(inp_gradient=inp.grad, bias_gradient=bias.grad)
 
-    return (SDFGBackwardRunner(sdfg, "__return", strict=False), torch_func,
-            dict(inp=np.random.rand(9).astype(np.float64),
-                 bias=np.random.rand(3).astype(np.float64)))
+    return (
+        SDFGBackwardRunner(sdfg, "__return", strict=False),
+        torch_func,
+        dict(
+            inp=np.random.rand(9).astype(np.float64),
+            bias=np.random.rand(3).astype(np.float64),
+        ),
+    )
 
 
 @run_correctness
@@ -715,9 +720,14 @@ def test_reshape_on_memlet_path():
         S.backward()
         return dict(inp_gradient=inp.grad, bias_gradient=bias.grad)
 
-    return (SDFGBackwardRunner(sdfg, "__return", strict=False), torch_func,
-            dict(inp=np.random.rand(9).astype(np.float64),
-                 bias=np.random.rand(3).astype(np.float64)))
+    return (
+        SDFGBackwardRunner(sdfg, "__return", strict=False),
+        torch_func,
+        dict(
+            inp=np.random.rand(9).astype(np.float64),
+            bias=np.random.rand(3).astype(np.float64),
+        ),
+    )
 
 
 @run_correctness
@@ -751,5 +761,8 @@ def test_reshape_reuse_in_same_state():
         S.backward()
         return dict(inp_gradient=inp.grad)
 
-    return (SDFGBackwardRunner(sdfg, "__return", strict=False), torch_func,
-            dict(inp=np.random.rand(9).astype(np.float64), ))
+    return (
+        SDFGBackwardRunner(sdfg, "__return", strict=False),
+        torch_func,
+        dict(inp=np.random.rand(9).astype(np.float64), ),
+    )

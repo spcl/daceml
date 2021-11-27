@@ -12,15 +12,17 @@ from daceml.testing import torch_tensors_close, copy_to_gpu
 from daceml.util import utils
 
 
-def run_pytorch_module(module,
-                       sdfg_name,
-                       gpu,
-                       shape=None,
-                       use_max=False,
-                       auto_optimize=True,
-                       rtol=1e-4,
-                       atol=1e-3,
-                       post_onnx_hooks=None):
+def run_pytorch_module(
+    module,
+    sdfg_name,
+    gpu,
+    shape=None,
+    use_max=False,
+    auto_optimize=True,
+    rtol=1e-4,
+    atol=1e-3,
+    post_onnx_hooks=None,
+):
     donnx.default_implementation = "pure"
     shape = shape or (3, 5)
 
@@ -50,10 +52,13 @@ def run_pytorch_module(module,
         pytorch_s = module(pytorch_input).sum()
     pytorch_s.backward()
 
-    dace_module = DaceModule(module,
-                             backward=True,
-                             sdfg_name=sdfg_name,
-                             auto_optimize=auto_optimize, compile_torch_extension=True)
+    dace_module = DaceModule(
+        module,
+        backward=True,
+        sdfg_name=sdfg_name,
+        auto_optimize=auto_optimize,
+        compile_torch_extension=True,
+    )
     if post_onnx_hooks is not None:
         for i, h in enumerate(post_onnx_hooks):
             dace_module.append_post_onnx_hook(str(i), h)
@@ -96,10 +101,7 @@ def test_softmax(sdfg_name, gpu):
             x = F.softmax(x, dim=1)
             return x
 
-    run_pytorch_module(Module(),
-                       sdfg_name,
-                       gpu,
-                       use_max=True)
+    run_pytorch_module(Module(), sdfg_name, gpu, use_max=True)
 
 
 def test_reshape_on_memlet_path(sdfg_name, gpu):
@@ -111,10 +113,7 @@ def test_reshape_on_memlet_path(sdfg_name, gpu):
             return torch.log(reshaped) + torch.reshape(
                 torch.tensor([[3, 2, 1]], device=reshaped.device), [3])
 
-    run_pytorch_module(Module(),
-                       sdfg_name,
-                       gpu,
-                       shape=(9, ))
+    run_pytorch_module(Module(), sdfg_name, gpu, shape=(9, ))
 
 
 def test_weights_ln(sdfg_name, gpu):
@@ -133,11 +132,7 @@ def test_weights_ln(sdfg_name, gpu):
             x = self.fc3(x)
             return x
 
-    run_pytorch_module(Module(),
-                       sdfg_name,
-                       gpu,
-                       shape=(4, 784),
-                       use_max=False)
+    run_pytorch_module(Module(), sdfg_name, gpu, shape=(4, 784), use_max=False)
 
 
 def test_layernorm(sdfg_name, gpu):
@@ -171,11 +166,7 @@ def test_weights(sdfg_name, gpu):
             x = self.fc3(x)
             return x
 
-    run_pytorch_module(Module(),
-                       sdfg_name,
-                       gpu,
-                       shape=(4, 784),
-                       use_max=False)
+    run_pytorch_module(Module(), sdfg_name, gpu, shape=(4, 784), use_max=False)
 
 
 def test_nested_gradient_summation(sdfg_name, gpu):
@@ -189,11 +180,7 @@ def test_nested_gradient_summation(sdfg_name, gpu):
             z = x * 2
             return z + y
 
-    run_pytorch_module(Module(),
-                       sdfg_name,
-                       gpu,
-                       shape=(4, 10),
-                       use_max=False)
+    run_pytorch_module(Module(), sdfg_name, gpu, shape=(4, 10), use_max=False)
 
 
 def test_trans_add(sdfg_name, gpu):
@@ -223,10 +210,7 @@ def test_batched_matmul(sdfg_name, gpu):
         def forward(self, x):
             return self.fc1 @ x
 
-    run_pytorch_module(Module(),
-                       sdfg_name,
-                       gpu,
-                       use_max=False)
+    run_pytorch_module(Module(), sdfg_name, gpu, use_max=False)
 
 
 def test_scalar_forwarding(sdfg_name, gpu):
@@ -238,10 +222,7 @@ def test_scalar_forwarding(sdfg_name, gpu):
         def forward(self, x):
             return self.factor * x
 
-    run_pytorch_module(Module(),
-                       sdfg_name,
-                       gpu,
-                       use_max=False)
+    run_pytorch_module(Module(), sdfg_name, gpu, use_max=False)
 
 
 def test_scalar_buffer(sdfg_name, gpu):
@@ -253,10 +234,7 @@ def test_scalar_buffer(sdfg_name, gpu):
         def forward(self, x):
             return self.factor * x
 
-    run_pytorch_module(Module(),
-                       sdfg_name,
-                       gpu,
-                       use_max=False)
+    run_pytorch_module(Module(), sdfg_name, gpu, use_max=False)
 
 
 @pytest.mark.pure
@@ -272,10 +250,7 @@ def test_simple_fused(sdfg_name, gpu):
         module.sdfg.apply_strict_transformations()
         assert module.sdfg.apply_transformations(MapFusion) == 1
 
-    run_pytorch_module(Module(),
-                       sdfg_name,
-                       gpu,
-                       post_onnx_hooks=[fuse_maps])
+    run_pytorch_module(Module(), sdfg_name, gpu, post_onnx_hooks=[fuse_maps])
 
 
 @pytest.mark.pure
@@ -286,59 +261,3 @@ def test_simple_broadcasted_mul(sdfg_name, gpu):
             return x * y
 
     run_pytorch_module(Module(), sdfg_name, gpu)
-
-
-#def test_linformer_case(sdfg_name, gpu,
-#                        default_implementation):
-#    class Module(torch.nn.Module):
-#        def __init__(self):
-#            super(Module, self).__init__()
-#            self.linear = nn.Linear(1024, 4096)
-#
-#        def forward(self, x):
-#            return self.linear(x)
-#
-#    run_pytorch_module(Module(),
-#                       sdfg_name,
-#                       gpu,
-#                       shape=(8, 512, 1024),
-#                       rtol=1e-5,
-#                       atol=1e-5)
-
-
-def test_linformer_case(sdfg_name, gpu,
-                        default_implementation):
-    class FeedForward(nn.Module):
-        def __init__(self,
-                     dim,
-                     mult=4,
-                     dropout=0.,
-                     activation=None,
-                     glu=False):
-            super().__init__()
-            activation = nn.ReLU
-
-            self.glu = glu
-            self.w1 = nn.Linear(dim, dim * mult * (2 if glu else 1))
-            self.act = activation()
-            self.dropout = nn.Dropout(dropout)
-            self.w2 = nn.Linear(dim * mult, dim)
-
-        def forward(self, x, **kwargs):
-            if not self.glu:
-                x = self.w1(x)
-                x = self.act(x)
-            else:
-                x, v = self.w1(x).chunk(2, dim=-1)
-                x = self.act(x) * v
-
-            x = self.dropout(x)
-            x = self.w2(x)
-            return x
-
-    run_pytorch_module(FeedForward(1024),
-                       sdfg_name,
-                       gpu,
-                       shape=(8, 512, 1024),
-                       rtol=1e-5,
-                       atol=1e-5)
