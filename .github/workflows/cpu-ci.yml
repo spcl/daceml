@@ -51,6 +51,9 @@ jobs:
         tar -xzf onnxruntime-daceml-patched.tgz
         make install
 
+    - name: Check OpenBLAS.is_installed()
+      run: venv/bin/pytest tests/test_openblas.py
+
     - name: Test with pytest
       env:
         ORT_RELEASE: ${{ github.workspace }}/onnxruntime-daceml-patched
