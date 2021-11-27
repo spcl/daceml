@@ -483,8 +483,6 @@ def register_and_compile_torch_extension(module: 'daceml.pytorch.DaceModule',
 
         compiled_sdfgs = [compiled, compiled_bwd]
         ptrs = [handle_ptr, bwd_handle_ptr]
-        # TODO what is this if? the else branch should probably be removed
-        # (check with CI)
         if compiled_bwd is not None:
             environments.add(get_env_for_sdfg(compiled_bwd).full_class_path())
             bwd_sdfg = compiled_bwd.sdfg

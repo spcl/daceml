@@ -496,35 +496,6 @@ class PureCast(ONNXForward):
             return nsdfg
 
 
-# @op_implementation(op="Gemm", name="pure")
-# class PureGemm(ONNXForward):
-#     @staticmethod
-#     def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
-#                                sdfg: SDFG) -> bool:
-#         if node.alpha == 1.0 and node.beta == 1.0 and node.transA == 0 and node.transB == 1:
-#             return True
-#         return False
-
-#     @staticmethod
-#     def forward(node: onnx_op.ONNXOp, state: SDFGState,
-#                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
-#         assert node.alpha == 1.0 and node.beta == 1.0 and node.transA == 0 and node.transB == 1
-
-#         # the gemm libnode is broken for now, so we just do it manually
-#         if "C" in node.in_connectors:
-
-#             def prog(A, B, C, Y):
-#                 Y[:] = A @ np.transpose(B) + C
-#         else:
-
-#             def prog(A, B, Y):
-#                 Y[:] = A @ np.transpose(B)
-
-#         sdfg = program_for_node(prog, sdfg, state, node)
-#         sdfg.apply_strict_transformations()
-#         return sdfg
-
-
 @op_implementation(op="Gemm", name="pure")
 class PureGemm(ONNXForward):
     @staticmethod

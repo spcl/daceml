@@ -8,4 +8,4 @@ from .constant_gpu_copy_elimination import ConstantDeviceCopyElimination
 from .init_state_fusion import InitStateFusion
 from .reshape_elimination import ReshapeElimination, expand_library_nodes_except_reshape
 from .einsum_fusion import HorizontalEinsumFusion
-from .mixed_precision import to_mixed_precision
+from .mixed_precision import enlarge_reduction_accumulators
