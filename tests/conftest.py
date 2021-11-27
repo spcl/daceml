@@ -5,41 +5,72 @@ import sys
 # the bert encoder is very nested, and exceeds the recursion limit while serializing
 sys.setrecursionlimit(2000)
 
+getname = lambda x: x.name
+
 
 def pytest_addoption(parser):
-    parser.addoption("--gpu", action="store_true", help="Run tests using gpu")
+    parser.addoption("--skip-cpu-blas",
+                     action="store_true",
+                     help="Skip tests that are slow wthout cpu blas.")
+    parser.addoption("--gpu", action="store_true", help="Run tests using gpu.")
     parser.addoption("--gpu-only",
                      action="store_true",
-                     help="Run tests using gpu, and skip CPU tests")
+                     help="Run tests using gpu, and skip CPU tests.")
 
 
 def pytest_runtest_setup(item):
+    """
+    This method handles skipping tests depending on command line flags
+    """
     # if @pytest.mark.gpu is applied skip the test on CPU
-    if "gpu" in (m.name for m in item.iter_markers()):
+    if "gpu" in map(getname, item.iter_markers()):
         if not (item.config.getoption("--gpu")
                 or item.config.getoption("--gpu-only")):
             pytest.skip(
                 'Skipping test since --gpu or --gpu-only were not passed')
-    # else: if the gpu fixture is used, the test is parameterized: don't skip on CPU
+    # else: if the gpu fixture is used, the test is parameterized. Skipping
+    #       will be handled in pytest_generate_tests
     elif "gpu" in item.fixturenames:
         pass
-    # otherwise: this test is not marked with @pytest.mark.gpu, and doesn't have the gpu fixture:
-    # skip it if --gpu-only is passed
-    elif item.config.getoption("--gpu-only"):
-        pytest.skip('Skipping test since --gpu-only was passed')
+    else:
+        # this test is not marked with @pytest.mark.gpu, and doesn't have the gpu fixture
+        # skip it if --gpu-only is passed
+        if item.config.getoption("--gpu-only"):
+            pytest.skip('Skipping test since --gpu-only was passed')
+        # skip it if --skip-cpu-blas is passed an it has the cpublas marker
+        if "cpublas" in (m.name for m in item.iter_markers()):
+            pytest.skip('Skipping test since --skip-cpu-blas was passed')
 
 
 def pytest_generate_tests(metafunc):
+    """
+    This method sets up the parametrizations for the custom fixtures
+    """
     if "gpu" in metafunc.fixturenames:
         if metafunc.config.getoption("--gpu"):
-            metafunc.parametrize("gpu", [
+            runs = [
                 pytest.param(True, id="use_gpu"),
-                pytest.param(False, id="use_cpu")
-            ])
+            ]
+
+            if metafunc.config.getoption(
+                    "--skip-cpu-blas") and 'cpublas' in map(
+                        getname, metafunc.definition.iter_markers()):
+                # don't run the test on cpu
+                pass
+            else:
+                runs.append(pytest.param(False, id="use_cpu"))
+            metafunc.parametrize("gpu", runs)
         elif metafunc.config.getoption("--gpu-only"):
             metafunc.parametrize("gpu", [pytest.param(True, id="use_gpu")])
         else:
-            metafunc.parametrize("gpu", [pytest.param(False, id="use_cpu")])
+            if metafunc.config.getoption(
+                    "--skip-cpu-blas") and 'cpublas' in map(
+                        getname, metafunc.definition.iter_markers()):
+                # skip cpublas tests
+                runs = []
+            else:
+                runs = [pytest.param(False, id="use_cpu")]
+            metafunc.parametrize("gpu", runs)
 
     if "default_implementation" in metafunc.fixturenames:
         metafunc.parametrize("default_implementation", [

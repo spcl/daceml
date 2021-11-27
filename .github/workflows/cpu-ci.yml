@@ -46,18 +46,20 @@ jobs:
 
     - name: Install dependencies
       run: |
-        sudo apt install -y libopenblas-dev
+        sudo apt install -y libopenblas-dev liblapacke
         wget https://github.com/orausch/onnxruntime/releases/download/v2/onnxruntime-daceml-patched.tgz
         tar -xzf onnxruntime-daceml-patched.tgz
         make install
 
     - name: Check OpenBLAS.is_installed()
-      run: venv/bin/pytest tests/test_openblas.py
+      env:
+        ORT_RELEASE: ${{ github.workspace }}/onnxruntime-daceml-patched
+      run: pytest tests/test_openblas.py
 
     - name: Test with pytest
       env:
         ORT_RELEASE: ${{ github.workspace }}/onnxruntime-daceml-patched
-        PYTEST_ARGS: --cov=daceml --cov-report=term --cov-report xml --cov-config=.coveragerc -m "not slow and not fpga and not xilinx and not gpu"
+        PYTEST_ARGS: --cov=daceml --cov-report=term --cov-report xml --cov-config=.coveragerc -m "not fpga and not xilinx and not gpu"
       run: make test
 
     - name: Test with doctest

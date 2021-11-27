@@ -8,6 +8,7 @@ from daceml.testing import copy_to_gpu, torch_tensors_close
 
 
 @pytest.mark.pure
+@pytest.mark.cpublas
 def test_bert_encoder_backward(gpu, sdfg_name):
     batch_size = 2
     seq_len = 512
