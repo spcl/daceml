@@ -37,7 +37,7 @@ setup(
         exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
     package_data={'': (['*.cpp'] + runtime_files)},
     install_requires=[
-        'dace == 0.11.1', 'onnx == 1.7.0', 'torch',
+        'dace == 0.11.3', 'onnx == 1.7.0', 'torch',
         'dataclasses; python_version < "3.7"'
     ],
     # install with pip and --find-links (see Makefile)
