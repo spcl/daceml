@@ -118,7 +118,7 @@ class DaceModule(nn.Module):
         self.apply_strict = apply_strict
         self.debug_transients = debug_transients
         self.compile_torch_extension = compile_torch_extension
-        self.inputs_to_skip = inputs_to_skip
+        self.inputs_to_skip = inputs_to_skip or []
 
         self.function = None
 

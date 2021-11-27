@@ -422,8 +422,8 @@ class PureSoftmax(ONNXForward):
         reduced_shape[axis] = 1
 
         def prog(input, output):
-            max = np.max(input, axis=axis)
-            max_keepdims = np.reshape(max, reduced_shape)
+            maximum = np.max(input, axis=axis)
+            max_keepdims = np.reshape(maximum, reduced_shape)
             exp_arr = np.exp(input - max_keepdims)
             sum = np.sum(exp_arr, axis=axis)
             sum_keepdims = np.reshape(sum, reduced_shape)

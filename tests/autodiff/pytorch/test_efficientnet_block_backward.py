@@ -34,6 +34,18 @@ def test_bn_cudnn(sdfg_name):
         torch_tensors_close("output", torch_output, dace_output)
 
 
+def faster_groupconv(mod):
+    # Choose depthwise convolution implementation
+    def _choose_impl(module):
+        for state in module.sdfg.nodes():
+            for node in state.nodes():
+                if isinstance(node, donnx.ONNXConv):
+                    if node.group > 1:
+                        print('using pytorch dwise gconv:', node.label)
+                        node.backward_implementation = 'PyTorch-dwise'
+    mod.append_post_onnx_hook("faster_groupconv", _choose_impl)
+
+
 @pytest.mark.gpu
 def test_mbconv(sdfg_name):
     with change_default(donnx.ONNXConv, "cuDNN"), \
@@ -74,16 +86,16 @@ def test_mbconv(sdfg_name):
             #                 n.implementation = "pure"
 
         dace_model.prepend_post_onnx_hook("high_level", set_impls_fuse_conv)
-        CudnnConvolution.default_algorithm = "gemm"
+        #CudnnConvolution.default_algorithm = "gemm"
 
+
+        faster_groupconv(dace_model)
         dace_output = dace_model(dace_inputs)
 
         torch_output = torch_model(torch_inputs)
         torch_tensors_close("output",
                             torch_output,
-                            dace_output,
-                            rtol=1e-3,
-                            atol=1e-3)
+                            dace_output)
 
         # check that the batch norm running means and so on are written out correctly
         for (dace_name,
@@ -104,11 +116,11 @@ def test_mbconv(sdfg_name):
         torch_output.backward(dy)
         dace_output.backward(dy)
 
-        torch_tensors_close("input_grad", torch_inputs.grad, dace_inputs.grad)
+        torch_tensors_close("input_grad", torch_inputs.grad, dace_inputs.grad, atol=1e-3, rtol=1e-3)
 
         for (name,
              dace_param), (pt_name,
                            pt_param) in zip(torch_model.named_parameters(),
                                             dace_model.named_parameters()):
             assert 'model.' + name == pt_name
-            torch_tensors_close(name, pt_param.grad, dace_param.grad)
+            torch_tensors_close(name, pt_param.grad, dace_param.grad, atol=1e-3, rtol=1e-3)
