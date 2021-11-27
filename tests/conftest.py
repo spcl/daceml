@@ -2,6 +2,8 @@ import pytest
 import daceml.onnx as donnx
 import sys
 
+pytest_plugins = "pytester"
+
 # the bert encoder is very nested, and exceeds the recursion limit while serializing
 sys.setrecursionlimit(2000)
 
@@ -38,7 +40,8 @@ def pytest_runtest_setup(item):
         if item.config.getoption("--gpu-only"):
             pytest.skip('Skipping test since --gpu-only was passed')
         # skip it if --skip-cpu-blas is passed an it has the cpublas marker
-        if "cpublas" in (m.name for m in item.iter_markers()):
+        if (item.config.getoption("--skip-cpu-blas")
+                and "cpublas" in (m.name for m in item.iter_markers())):
             pytest.skip('Skipping test since --skip-cpu-blas was passed')
 
 
