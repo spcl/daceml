@@ -98,6 +98,7 @@ def test_mnist(sdfg_name, gpu):
     training_step(dace_model, model, (images, labels), sdfg_name, gpu)
 
 
+@pytest.mark.cpublas
 @pytest.mark.pure
 def test_bert(sdfg_name, gpu):
     batch_size = 2
