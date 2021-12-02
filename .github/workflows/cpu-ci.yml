@@ -46,7 +46,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        sudo apt install -y libopenblas-dev liblapacke
+        sudo apt install -y libopenblas-dev liblapacke-dev
         wget https://github.com/orausch/onnxruntime/releases/download/v2/onnxruntime-daceml-patched.tgz
         tar -xzf onnxruntime-daceml-patched.tgz
         make install
