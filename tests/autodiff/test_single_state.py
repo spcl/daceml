@@ -56,6 +56,7 @@ class SDFGBackwardRunner:
         self.sdfg: dace.SDFG = sdfg
         self.target = target
 
+        assert len(sdfg.nodes()) == 1
         state = sdfg.nodes()[0]
         required_grads = list(
             node for node in state.nodes()
@@ -693,11 +694,11 @@ def test_reshape_on_memlet_path():
     donnx.default_implementation = "pure"
 
     @dace.program
-    def single_state_reshape_memlet_path(inp: dace.float64[9],
+    def single_state_reshape_memlet_path(inp1: dace.float64[9],
                                          bias: dace.float64[3],
                                          target_shape: dace.int64[2]):
         reshaped = dace.define_local([3, 3], dace.float64)
-        donnx.ONNXReshape(data=inp, shape=target_shape, reshaped=reshaped)
+        donnx.ONNXReshape(data=inp1, shape=target_shape, reshaped=reshaped)
         Z = reshaped + bias
         Zl = dace.elementwise(lambda x: log(x + 1), Z)
         S = np.sum(Zl)
@@ -706,25 +707,25 @@ def test_reshape_on_memlet_path():
     sdfg = single_state_reshape_memlet_path.to_sdfg(strict=False)
 
     sdfg.expand_library_nodes()
-    sdfg.apply_strict_transformations()
+    sdfg.apply_transformations_repeated([StateFusion], strict=True)
 
     donnx.default_implementation = old_default
 
-    def torch_func(*, inp, bias):
-        reshaped = torch.reshape(inp, [3, 3])
+    def torch_func(*, inp1, bias):
+        reshaped = torch.reshape(inp1, [3, 3])
 
         Z = reshaped + bias
         Zl = torch.log(Z + 1)
         S = Zl.sum()
 
         S.backward()
-        return dict(inp_gradient=inp.grad, bias_gradient=bias.grad)
+        return dict(inp1_gradient=inp1.grad, bias_gradient=bias.grad)
 
     return (
         SDFGBackwardRunner(sdfg, "__return", strict=False),
         torch_func,
         dict(
-            inp=np.random.rand(9).astype(np.float64),
+            inp1=np.random.rand(9).astype(np.float64),
             bias=np.random.rand(3).astype(np.float64),
         ),
     )
@@ -747,7 +748,7 @@ def test_reshape_reuse_in_same_state():
     sdfg = single_state_reshape_same_state.to_sdfg(strict=False)
 
     sdfg.expand_library_nodes()
-    sdfg.apply_strict_transformations()
+    sdfg.apply_transformations_repeated([StateFusion], strict=True)
 
     donnx.default_implementation = old_default
 
