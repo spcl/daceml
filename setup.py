@@ -44,7 +44,7 @@ setup(
     # See https://github.com/pypa/pip/issues/5898
     extras_require={
         'testing': [
-            'coverage', 'pytest', 'yapf', 'pytest-cov', 'transformers',
+            'coverage', 'pytest', 'yapf==0.31', 'pytest-cov', 'transformers',
             'pytest-xdist', 'torchvision', 'tabulate', 'efficientnet_pytorch',
             'pytest-timeout'
         ],
