@@ -40,9 +40,7 @@ def _gen_attr_init_code(kernel_context: str, attr: ONNXAttribute,
                 "Expected value of attribute '{}' to have type {}, got {} (type {})"
                 .format(attr.name, expected_type, val, type(val)))
 
-    init_code = """{{
-    // Setup attribute {name}
-    """.format(name=attr.name)
+    init_code = "{\n"
 
     def value_to_str(value):
         return '"{}"'.format(
@@ -382,7 +380,6 @@ def expand_node(node, state, sdfg):
         memlet = edge.data
         desc = sdfg.arrays[memlet.data]
         env_init_code += """
-        // Add parameter {parameter_name}
         __ort_check_status(__state->ort_api, __state->ort_api->ExecutableKernelContext_Add{input_output_string}(__state->ort_context_{id}, ONNX_TENSOR_ELEMENT_DATA_TYPE_{type_string}));
         """.format(id=unique_id,
                    type_string=typeclass_to_onnx_str(desc.dtype).upper(),
@@ -425,7 +422,7 @@ def expand_node(node, state, sdfg):
             input_output_string=input_output_string,
             parameter_name=parameter_name)
 
-    env_init_code += "// Setup attributes\n"
+    env_init_code += "\n"
 
     for name, attr in node.schema.attributes.items():
         if hasattr(node, name):
