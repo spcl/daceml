@@ -294,13 +294,20 @@ class PureConv2D(ONNXForward):
 
         nsdfg = program_for_node(conv, sdfg, state, node)
 
-        compute_state = nsdfg.node(1)
-        nsdfg.apply_transformations(MapExpansion, states=[compute_state])
+        # identify the compute_state
+        s1, s2 = nsdfg.states()
 
-        read_X = [
-            n for n in compute_state.nodes()
+        accessnodes_X = lambda s: [
+            n for n in s.nodes()
             if isinstance(n, nodes.AccessNode) and n.data == "X"
         ]
+
+        compute_state = s1 if len(accessnodes_X(s1)) > len(
+            accessnodes_X(s2)) else s2
+
+        nsdfg.apply_transformations(MapExpansion, states=[compute_state])
+
+        read_X = accessnodes_X(compute_state)
         assert len(read_X) == 1
         read_X = read_X[0]
         path = compute_state.memlet_path(compute_state.out_edges(read_X)[0])
