@@ -65,7 +65,7 @@ class TaskletFusion(Transformation):
 
     def can_be_applied(self, graph: SDFGState, candidate: Dict[PatternNode,
                                                                int],
-                       expr_index: int, sdfg: SDFG, strict: bool) -> bool:
+                       expr_index: int, sdfg: SDFG, permissive: bool) -> bool:
         tsk1: nd.Tasklet = self.tsk1(sdfg)
         data: nd.AccessNode = self.data(sdfg) if self.expr_index == 0 else None
         tsk2: nd.Tasklet = self.tsk2(sdfg)
@@ -77,8 +77,8 @@ class TaskletFusion(Transformation):
             return False
 
         # tsk1 is not used anywhere else
-        if graph.out_degree(tsk1) != 1 or (data is not None
-                                           and graph.out_degree(data) != 1):
+        if graph.out_degree(tsk1) != 1 or (data is not None and set(
+                e.dst for e in graph.out_edges(data)) != {tsk2}):
             return False
 
         # try to parse the tasklet
@@ -97,13 +97,13 @@ class TaskletFusion(Transformation):
         data: nd.AccessNode = self.data(sdfg) if self.expr_index == 0 else None
         tsk2: nd.Tasklet = self.tsk2(sdfg)
 
-        tsk2_in_edge = state.out_edges(data if data is not None else tsk1)[0]
+        tsk2_in_edges = state.out_edges(data if data is not None else tsk1)
+        conns = {e.dst_conn for e in tsk2_in_edges}
 
         # remove the connector from tsk2
         inputs = {
             k: v
-            for k, v in tsk2.in_connectors.items()
-            if k != tsk2_in_edge.dst_conn
+            for k, v in tsk2.in_connectors.items() if k not in conns
         }
 
         # copy tsk1's in connectors
@@ -131,10 +131,11 @@ class TaskletFusion(Transformation):
         if repldict:
             assigned_value = Renamer(repldict).visit(assigned_value)
 
-        new_code = [
-            Inliner(tsk2_in_edge.dst_conn, assigned_value).visit(line)
-            for line in tsk2.code.code
-        ]
+        new_code = []
+        for line in tsk2.code.code:
+            for tsk2_in_edge in tsk2_in_edges:
+                Inliner(tsk2_in_edge.dst_conn, assigned_value).visit(line)
+            new_code.append(line)
         new_code_str = "\n".join(astunparse.unparse(line) for line in new_code)
 
         new_tasklet = state.add_tasklet(tsk1.label + "_fused_" + tsk2.label,
