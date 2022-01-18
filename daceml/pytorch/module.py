@@ -5,7 +5,7 @@ import itertools
 import os
 import tempfile
 from functools import wraps
-from typing import Optional, Tuple, Callable, OrderedDict, Type, Union
+from typing import List, Optional, Tuple, Callable, OrderedDict, Type, Union
 
 import dace
 from dace import nodes, data
@@ -250,7 +250,7 @@ class DaceModule(nn.Module):
         name = find_str_not_in_set(set(self.post_compile_hooks), name)
         self.post_compile_hooks[name] = func
 
-    def _initialize_sdfg(self, dummy_inputs):
+    def _initialize_sdfg(self, dummy_inputs, compile=True):
 
         # determine whether we are using CUDA
         if self.use_cuda is None:
@@ -320,21 +320,8 @@ class DaceModule(nn.Module):
                 function_generator = dispatchers.get_ctypes_dispatcher
 
             if self.backward:
-
                 # Determine what grads we need
-                # For now: we want gradients for all inputs that are not pytorch buffers
-                # TODO mark the others as non differentiable in the PT fwd.
-                named_buffers = {n for n, _ in self.model.named_buffers()}
-                required_gradients = [
-                    clean_onnx_name(name) for name in self.dace_model.inputs
-                    if name not in named_buffers
-                ]
-                named_parameters = dict(self.model.named_parameters())
-                required_gradients.extend(
-                    clean_onnx_name(name)
-                    for name, param in named_parameters.items()
-                    if param.requires_grad)
-                required_gradients = list(set(required_gradients))
+                required_gradients = self.required_gradients()
 
                 self.forward_sdfg, self.backward_sdfg, self._ad_result, self._ad_inp_arrs = make_backward_function(
                     dace_model, required_gradients)
@@ -342,9 +329,14 @@ class DaceModule(nn.Module):
                 for _, hook in self.post_autodiff_hooks.items():
                     hook(self.forward_sdfg, self.backward_sdfg)
 
-                self.compiled_function = function_generator(self, dummy_inputs)
+                if compile:
+                    self.compiled_function = function_generator(self, dummy_inputs)
             else:
-                self.compiled_function = function_generator(self, dummy_inputs)
+                if compile:
+                    self.compiled_function = function_generator(self, dummy_inputs)
+
+            if not compile:
+                self.compiled_function = None
 
             # order the parameters
             parameters_to_pass = self._call_params()
@@ -354,6 +346,21 @@ class DaceModule(nn.Module):
                     *self.compiled_function.ptr, *args, *parameters_to_pass)
 
             return forward
+
+    def required_gradients(self) -> List[str]:
+        """ Returns a list of the required gradients of this model. """
+        # For now: we want gradients for all inputs that are not pytorch buffers
+        # TODO mark the others as non differentiable in the PT fwd.
+        named_buffers = {n for n, _ in self.model.named_buffers()}
+        required_gradients = [
+            clean_onnx_name(name) for name in self.dace_model.inputs
+            if name not in named_buffers
+        ]
+        named_parameters = dict(self.model.named_parameters())
+        required_gradients.extend(
+            clean_onnx_name(name) for name, param in named_parameters.items()
+            if param.requires_grad)
+        return list(sorted(set(required_gradients)))
 
     def _call_params(self) -> Tuple[Union[Tensor, nn.Parameter]]:
         """ Get the parameters that we need to pass to the model, in the correct order. """

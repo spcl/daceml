@@ -12,7 +12,6 @@ from onnx import numpy_helper
 
 import dace
 from dace import data as dt, dtypes, nodes, SDFG, SDFGState
-from dace.frontend.python.parser import infer_symbols_from_shapes
 from dace.symbolic import pystr_to_symbolic
 from dace.transformation import dataflow
 
@@ -22,6 +21,13 @@ from daceml.onnx.converters import convert_attribute_proto, onnx_tensor_type_to_
 from daceml.onnx.schema import ONNXParameterType
 from daceml.onnx.nodes.onnx_op import get_onnx_node, has_onnx_node, ONNXOp
 from daceml.util import utils, is_cuda
+
+# Forward compatibility for dace
+try:
+    from dace.frontend.python.parser import infer_symbols_from_shapes
+except ImportError:
+    from dace.frontend.python.parser import infer_symbols_from_datadescriptor
+    infer_symbols_from_shapes = infer_symbols_from_datadescriptor
 
 log = logging.getLogger(__name__)
 
