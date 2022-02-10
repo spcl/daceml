@@ -688,11 +688,14 @@ class BackwardPassGenerator:
                 # ... and any required input values from the forward pass
 
                 ####################################
-                # Determine which inputs we need to connect.
-                # these are the in_connectors on the reverse node, minus the gradients.
-                # (these are connected in _connect_given_gradients)
-                required_inputs = set(reversed_node.in_connectors).difference(
-                    backward_result.given_grad_names.values())
+                # Determine which forward inputs we need to connect.
+                # these are the in_connectors on the reverse node, minus what has already been connected.
+                already_connected = {
+                    e.dst_conn
+                    for e in self.backward_state.in_edges(reversed_node)
+                }
+                required_inputs = set(
+                    reversed_node.in_connectors).difference(already_connected)
                 required_inputs = {c: c for c in required_inputs}
                 self._connect_forward_inputs(node, reversed_node,
                                              required_inputs)
@@ -882,16 +885,13 @@ class BackwardPassGenerator:
                                     should connect to.
         """
 
-        # DEADLINE MODE: this assert should be true for sanity's sake but it
-        # isn't a the moment
-
-        # if set(required_inputs).difference(forward_node.in_connectors):
-        #     missing_connectors = \
-        #         set(required_inputs).difference(forward_node.in_connectors)
-        #     raise ValueError(f"Can't connect connectors"
-        #                      f" {missing_connectors} to {backward_node} "
-        #                      f"because they don't exist on the corresponding "
-        #                      f"forward node {forward_node}")
+        if set(required_inputs).difference(forward_node.in_connectors):
+            missing_connectors = \
+                set(required_inputs).difference(forward_node.in_connectors)
+            raise ValueError(f"Can't connect connectors"
+                             f" {missing_connectors} to {backward_node} "
+                             f"because they don't exist on the corresponding "
+                             f"forward node {forward_node}")
 
         # note we use forward state here: we might need to connect inputs that are not in the
         # forward pass

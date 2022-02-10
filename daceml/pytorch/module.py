@@ -156,6 +156,7 @@ class DaceModule(nn.Module):
                     apply_strict_transformations())
 
         from daceml.transformation import enlarge_reduction_accumulators
+
         # TODO only do this conditionally
         def enlarge_reduction_accumulators(fwd_sdfg, bwd_sdfg):
             for target_sdfg in (fwd_sdfg, bwd_sdfg):
