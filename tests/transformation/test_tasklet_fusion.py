@@ -65,6 +65,58 @@ def test_same_name_diff_memlet():
     assert np.allclose(result, A + 1 + B * 3)
 
 
+def test_tasklet_fission_dependent_statements():
+    @dace.program
+    def test_basic_tf(A: dace.float32, D: dace.float32):
+
+        B = dace.define_local_scalar(dace.float32)
+        C = dace.define_local([1], dace.float32)
+        with dace.tasklet:
+            a << A[0]
+            d << D[0]
+            b >> B[0]
+            c >> C[0]
+
+            b = d + 1
+            c = a * 3 + b
+
+        C += B
+        return C
+
+    sdfg: dace.SDFG = test_basic_tf.to_sdfg()
+
+    assert sdfg.apply_transformations(TaskletFission) == 0
+
+
+def test_tasklet_fission_useless_statement():
+    @dace.program
+    def test_basic_tf(A: dace.float32, D: dace.float32):
+
+        B = dace.define_local_scalar(dace.float32)
+        C = dace.define_local([1], dace.float32)
+        with dace.tasklet:
+            a << A[0]
+            d << D[0]
+            b >> B[0]
+            c >> C[0]
+
+            x = 42
+            b = d + 1
+            c = a * 3
+
+        C += B
+        return C
+
+    sdfg: dace.SDFG = test_basic_tf.to_sdfg()
+
+    assert sdfg.apply_transformations(TaskletFission) == 1
+
+    result = np.empty((1, ), dtype=np.float32)
+    sdfg(A=1, __return=result, D=2)
+    sdfg.view()
+    assert result[0] == 6
+
+
 def test_tasklet_fission():
     @dace.program
     def test_basic_tf(A: dace.float32, D: dace.float32):

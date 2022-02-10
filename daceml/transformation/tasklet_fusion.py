@@ -11,6 +11,7 @@ from dace import registry, nodes as nd, SDFGState, SDFG, dtypes
 from dace.properties import CodeBlock
 from dace.sdfg.utils import node_path_graph
 from dace.transformation.transformation import Transformation, PatternNode
+from dace.frontend.python import astutils
 
 from daceml.util import find_str_not_in_set
 
@@ -22,16 +23,6 @@ class Renamer(ast.NodeTransformer):
     def visit_Name(self, node):
         if node.id in self.repldict:
             node.id = self.repldict[node.id]
-        return self.generic_visit(node)
-
-
-class VarsGrabber(ast.NodeTransformer):
-    # TODO could be improved to only grab free vars
-    def __init__(self):
-        self.vars = set()
-
-    def visit_Name(self, node):
-        self.vars.add(node.id)
         return self.generic_visit(node)
 
 
@@ -121,7 +112,7 @@ class TaskletFusion(Transformation):
                         set(inputs), in_edge.dst_conn)
                     repldict[old_value] = in_edge.dst_conn
                 else:
-                    # if the memlets are the same rename rename the connector
+                    # if the memlets are the same rename connector
                     # on the first tasklet so that we only have one read
                     pass
 
@@ -183,8 +174,6 @@ class TaskletFission(Transformation):
         if tsk.language is not dtypes.Language.Python:
             return False
 
-        # TODO we currently don't check that the expressions are independent!
-
         # try to parse the tasklet
         try:
             if len(tsk.code.code) <= 1:
@@ -192,6 +181,11 @@ class TaskletFission(Transformation):
 
             for line in tsk.code.code:
                 if len(line.targets) != 1:
+                    return False
+
+                v = astutils.TaskletFreeSymbolVisitor(defined_syms=[])
+                v.visit(line.value)
+                if any(var not in tsk.in_connectors for var in v.free_symbols):
                     return False
 
                 if not isinstance(line.targets[0], ast.Name):
@@ -206,12 +200,17 @@ class TaskletFission(Transformation):
         tsk: nd.Tasklet = self.tsk(sdfg)
 
         for i, line in enumerate(tsk.code.code):
-            # todo need to check here that the output is actually an out connector
             id_to_assign = line.targets[0].id
+            if id_to_assign not in tsk.out_connectors:
+                # skip tasklets that aren't out connectors
+                continue
 
-            v = VarsGrabber()
+            v = astutils.TaskletFreeSymbolVisitor(defined_syms=[])
             v.visit(line.value)
-            in_connectors = {var: tsk.in_connectors[var] for var in v.vars}
+            in_connectors = {
+                var: tsk.in_connectors[var]
+                for var in v.free_symbols
+            }
             out_connectors = {id_to_assign: tsk.out_connectors[id_to_assign]}
             new_tsk = state.add_tasklet(f"{tsk.label}_{i}",
                                         in_connectors, out_connectors,
