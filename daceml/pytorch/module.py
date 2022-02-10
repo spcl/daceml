@@ -155,16 +155,6 @@ class DaceModule(nn.Module):
                     "apply_strict", lambda dace_module: dace_module.sdfg.
                     apply_strict_transformations())
 
-        from daceml.transformation import enlarge_reduction_accumulators
-
-        # TODO only do this conditionally
-        def enlarge_reduction_accumulators(fwd_sdfg, bwd_sdfg):
-            for target_sdfg in (fwd_sdfg, bwd_sdfg):
-                enlarge_reduction_accumulators(target_sdfg)
-
-        self.append_post_autodiff_hook("enlarge_reduction_accumulators",
-                                       enlarge_reduction_accumulators)
-
     def reset_sdfg(self):
         """ Clear the sdfg so that optimizations are reapplied. """
         self.function = None
