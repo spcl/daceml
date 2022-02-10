@@ -20,7 +20,7 @@ with open("README.md", "r") as fp:
 PKG_DIR = os.path.dirname(os.path.abspath(__file__))
 setup(
     name='daceml',
-    version='0.1.0a',
+    version='0.2.0a',
     url='https://github.com/spcl/daceml',
     author='SPCL @ ETH Zurich',
     author_email='rauscho@ethz.ch',
