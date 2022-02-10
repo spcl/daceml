@@ -329,7 +329,6 @@ class DaceModule(nn.Module):
 
                 # Determine what grads we need
                 # For now: we want gradients for all inputs that are not pytorch buffers
-                # TODO mark the others as non differentiable in the PT fwd.
                 named_buffers = {n for n, _ in self.model.named_buffers()}
                 required_gradients = [
                     clean_onnx_name(name) for name in self.dace_model.inputs
