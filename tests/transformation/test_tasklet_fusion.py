@@ -113,7 +113,6 @@ def test_tasklet_fission_useless_statement():
 
     result = np.empty((1, ), dtype=np.float32)
     sdfg(A=1, __return=result, D=2)
-    sdfg.view()
     assert result[0] == 6
 
 
