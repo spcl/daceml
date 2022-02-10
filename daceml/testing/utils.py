@@ -43,7 +43,6 @@ def torch_tensors_close(name,
     """
     if not torch.allclose(
             torch_v, dace_v, rtol=rtol, atol=atol, equal_nan=True):
-        print()
         print(name + " was not close")
         if summary:
             torch_v = torch_v.detach().cpu().numpy()
