@@ -526,5 +526,4 @@ class PureGlobalAveragePool(ONNXForward):
                                                      dynamic=True,
                                                      volume=0))
 
-
         return new_sdfg
