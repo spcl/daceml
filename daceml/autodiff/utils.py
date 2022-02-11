@@ -88,6 +88,75 @@ def add_backward_desc(backward_sdfg: dace.SDFG, forward_sdfg: dace.SDFG,
     return backward_sdfg.add_datadesc(backward_name, new_desc)
 
 
+def add_empty_sdfg_for_node(
+        forward_node: nd.Node, required_descriptors: typing.List[str],
+        context: BackwardContext
+) -> typing.Tuple[nd.NestedSDFG, BackwardResult]:
+    """ Given a node, return an SDFG that can be used as a nested SDFG expansion for that node.
+
+        ``required_descriptors`` may contain:
+        * Inputs/outputs of the forward node (these will be hooked up as required)
+        * Inputs/outputs of the forward node with the ``_grad`` suffix. These will be hooked up
+          as the gradients of the corresponding inputs/outputs.
+
+        The descriptors will be initialized using the descriptors connected to edges of the
+        forward node.
+
+        :param forward_node: the node in the forward pass
+        :param required_descriptors: A list of descriptors that should be added to the SDFG.
+        :param context: the backward context
+        :return: the nested SDFG and backward result for the forward node
+    """
+
+    nsdfg = dace.SDFG(forward_node.label + "_backward_expansion")
+
+    def _get_fwd_descriptor(name):
+        """Returns the descriptor and whether it is an input"""
+        if name in forward_node.out_connectors:
+            return forward_out_desc_with_name(forward_node, context,
+                                              name), False
+        elif name in forward_node.in_connectors:
+            return forward_in_desc_with_name(forward_node, context, name), True
+
+        raise ValueError(
+            f"Could not find {name} in inputs or outputs of {forward_node}")
+
+    outputs_to_connect_from_forward = []
+
+    result = BackwardResult.empty()
+    inputs = set()
+    outputs = set()
+
+    for name in required_descriptors:
+        if name.endswith("_grad"):
+            # hook this up as a gradient
+            desc, is_input = _get_fwd_descriptor(name[:-5])
+            if is_input:
+                result.required_grad_names[name[:-5]] = name
+            else:
+                result.given_grad_names[name[:-5]] = name
+            # input grads are outputs of the backward node
+            if is_input:
+                outputs.add(name)
+            else:
+                inputs.add(name)
+        else:
+            desc, is_input = _get_fwd_descriptor(name)
+            if not is_input:
+                outputs_to_connect_from_forward.append(name)
+            inputs.add(name)
+        ndesc = copy.deepcopy(desc)
+        ndesc.transient = False
+        nsdfg.add_datadesc(name, ndesc)
+
+    bwd_node = context.backward_state.add_nested_sdfg(nsdfg, None, inputs,
+                                                      outputs)
+    for output in outputs_to_connect_from_forward:
+        connect_output_from_forward(forward_node, bwd_node, context, output)
+
+    return bwd_node, result
+
+
 def backward_program_for_node(
         program, context: BackwardContext,
         forward_node: nd.Node) -> typing.Tuple[nd.Node, BackwardResult]:
@@ -186,7 +255,6 @@ def connect_output_from_forward(forward_node: nd.Node, backward_node: nd.Node,
             n for n, _ in context.backward_state.all_nodes_recursive()
             if isinstance(n, nd.AccessNode) and n.data == output_arr_name
         ]
-        assert len(cand) == 1
         read = cand[0]
     context.backward_state.add_edge(read, None, backward_node,
                                     output_connector_name,

@@ -79,8 +79,8 @@ def program_for_node(program,
 
     program.__annotations__ = annotations
 
+    program.__name__ = node.label + "_expansion"
     result = DaceProgram(program, (), {}, False, dace.DeviceType.CPU)
-    result.name = node.label + "_expansion"
 
     sdfg = result.to_sdfg()
 
@@ -107,7 +107,7 @@ def empty_sdfg_for_node(
 
     input_nodes = {}
     output_nodes = {}
-    for edge, is_input in node.iter_edges(state):
+    for edge, is_input in node.iter_edges(state, ignore_unknown=True):
         if is_input:
             conn_name = edge.dst_conn
             nsdfg.add_datadesc(

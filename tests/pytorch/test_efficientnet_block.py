@@ -10,13 +10,13 @@ import daceml.onnx as donnx
 from daceml.onnx.op_implementations.cudnn_implementations import CudnnConvolution
 from daceml.pytorch import DaceModule
 from daceml.testing import torch_tensors_close
-from daceml.util import expand_onnx_nodes
+from daceml.transformation import PadConvFusion, ConstantDeviceCopyElimination
 
 
 @pytest.mark.pure
 @pytest.mark.gpu
 @pytest.mark.parametrize("bn_impl", ["cuDNN", "pure"])
-def test_mbconv(bn_impl):
+def test_mbconv(bn_impl, use_cpp_dispatcher):
     with change_default(donnx.ONNXConv, "cuDNN"),\
         change_default(donnx.ONNXBatchNormalization, bn_impl):
 
@@ -30,7 +30,9 @@ def test_mbconv(bn_impl):
         torch_model.set_swish(memory_efficient=False)
         dace_model = MBConvBlock(block_params[0], global_params).cuda()
         dace_model.set_swish(memory_efficient=False)
-        dace_model = DaceModule(dace_model, training=True)
+        dace_model = DaceModule(dace_model,
+                                training=True,
+                                compile_torch_extension=use_cpp_dispatcher)
         dace_model.model.load_state_dict(torch_model.state_dict())
 
         for (dace_name,
@@ -64,10 +66,10 @@ def test_mbconv(bn_impl):
             torch_tensors_close(dace_name, value, dace_value)
 
 
-@pytest.mark.pure
+@pytest.mark.ort
 @pytest.mark.gpu
-def test_pure_conv():
-    with change_default(donnx.ONNXConv, "pure"), \
+def test_fast_mb(use_cpp_dispatcher):
+    with change_default(donnx.ONNXConv, "cuDNN"), \
          change_default(donnx.ONNXBatchNormalization, "cuDNN"):
         with torch.no_grad():
             dace_inputs = torch.rand(8, 32, 224, 224).cuda()
@@ -79,7 +81,9 @@ def test_pure_conv():
         torch_model.set_swish(memory_efficient=False)
         dace_model = MBConvBlock(block_params[0], global_params).cuda()
         dace_model.set_swish(memory_efficient=False)
-        dace_model = DaceModule(dace_model, training=True)
+        dace_model = DaceModule(dace_model,
+                                training=True,
+                                compile_torch_extension=use_cpp_dispatcher)
         dace_model.model.load_state_dict(torch_model.state_dict())
 
         for (dace_name,
@@ -90,6 +94,21 @@ def test_pure_conv():
             torch_tensors_close(dace_name, value, dace_value)
 
         CudnnConvolution.default_algorithm = "gemm"
+
+        convs = ["Conv_81", "Conv_86", "Conv_89", "Conv_92"]
+
+        def set_impls_fuse_conv(module: DaceModule):
+            assert module.sdfg.apply_transformations(
+                ConstantDeviceCopyElimination) == 1
+            assert module.sdfg.apply_transformations(PadConvFusion) == 1
+
+            for state in module.sdfg.nodes():
+                for n in state.nodes():
+                    if isinstance(n, donnx.ONNXConv):
+                        if n.label == "Conv_92":
+                            n.implementation = "pure"
+
+        dace_model.prepend_post_onnx_hook("high_level", set_impls_fuse_conv)
 
         def fuse_everything(module: DaceModule):
             sdfg = module.sdfg

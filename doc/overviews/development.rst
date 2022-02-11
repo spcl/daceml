@@ -36,11 +36,25 @@ The CI runs several tests using the ``Makefile``:
 
 Testing
 -------
-DaCeML uses ``pytest`` to run tests. The pytest runner takes a custom argument ``--gpu`` to run GPU tests.
+DaCeML uses ``pytest`` to run tests.
 Tests can be parallelized using ``xdist`` by passing the arguments ``-n auto --dist loadfile``.
 
-If you provide the fixture (i.e. an argument to the test) with name ``gpu``, then the test will be parameterized to pass
-both ``True`` and ``False`` to that argument.
+Fixtures and Arguments
+~~~~~~~~~~~~~~~~~~~~~~
+The pytest runner takes several custom arguments: ``--gpu``, ``--gpu-only``,
+``--skip-cpu-blas``.
+
+There are also a few useful fixtures in use. For example the ``gpu`` fixture
+parameterizes the test to run twice, once with ``True`` and once with
+``False``. The fixture is written to interact correctly with the pytest
+arguments like ``--gpu``.
+
+There are some subtle, but hopefully intutitive interactions between the
+fixtures and the arguments.
+See `test_fixtures.py
+<https://github.com/spcl/daceml/blob/master/tests/test_fixtures.py>`_ to
+understand the expected behavior, and
+`conftest.py <https://github.com/spcl/daceml/blob/master/tests/conftest.py>`_ for their implementation.
 
 Setting the default implementation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

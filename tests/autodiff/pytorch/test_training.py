@@ -4,6 +4,8 @@ import pytest
 
 import numpy as np
 import torch
+from efficientnet_pytorch import get_model_params
+from efficientnet_pytorch.model import MBConvBlock
 from torchvision import datasets, transforms
 from torch import nn, optim
 from transformers import BertLayer, BertConfig
@@ -96,6 +98,7 @@ def test_mnist(sdfg_name, gpu):
     training_step(dace_model, model, (images, labels), sdfg_name, gpu)
 
 
+@pytest.mark.cpublas
 @pytest.mark.pure
 def test_bert(sdfg_name, gpu):
     batch_size = 2

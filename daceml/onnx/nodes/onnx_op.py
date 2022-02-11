@@ -150,13 +150,17 @@ class ONNXOp(nd.LibraryNode):
         return [conn_to_edge[name] for name in parameters]
 
     def iter_edges(
-            self,
-            state: SDFGState) -> Iterator[Tuple[MultiConnectorEdge, bool]]:
+        self,
+        state: SDFGState,
+        ignore_unknown=False,
+    ) -> Iterator[Tuple[MultiConnectorEdge, bool]]:
         """ Returns an iterator over tuples of an edge and a boolean that indicates whether that edge is an input,
             ordered by the order required by the schema.
             This method assumes that this node has been validated.
 
             :param state: the state containing this node.
+            :param ignore_unknown: whether to ignore any edges that don't exist in the ONNX schema. Otherwise, an 
+                                   error will be thrown.
         """
         in_edges: List[MultiConnectorEdge] = state.in_edges(self)
         out_edges: List[MultiConnectorEdge] = state.out_edges(self)
@@ -171,8 +175,9 @@ class ONNXOp(nd.LibraryNode):
                 i for i, param in enumerate(parameters) if param.name == name
             ]
 
-            # since validation passed, we know there will only be one
             if len(matched) != 1:
+                if ignore_unknown:
+                    return None
                 raise ValueError(
                     "Found {} connectors with name '{}', expected to find exactly one"
                     .format(len(matched), name))
@@ -183,6 +188,16 @@ class ONNXOp(nd.LibraryNode):
             parameter_idx += number
 
             return parameter_idx
+
+        if ignore_unknown:
+            in_edges = [
+                e for e in in_edges
+                if get_idx(self.schema.inputs, e.dst_conn) is not None
+            ]
+            out_edges = [
+                e for e in out_edges
+                if get_idx(self.schema.outputs, e.src_conn) is not None
+            ]
 
         sorted_in = sorted(
             in_edges,

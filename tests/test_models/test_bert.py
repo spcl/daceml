@@ -4,6 +4,7 @@ Test a full model including indexing and input preparation. The model also inclu
 
 import os
 
+import pytest
 import onnx
 import torch
 from transformers import BertTokenizer, BertModel
@@ -12,6 +13,7 @@ import daceml.onnx as donnx
 from daceml.testing import copy_to_gpu, torch_tensors_close, get_data_file
 
 
+@pytest.mark.cpublas
 def test_bert_full(gpu, default_implementation, sdfg_name):
     # SDFG add doesn't work with scalars currently
     donnx.ONNXAdd.default_implementation = "onnxruntime"

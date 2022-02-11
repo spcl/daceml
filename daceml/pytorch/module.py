@@ -5,7 +5,7 @@ import itertools
 import os
 import tempfile
 from functools import wraps
-from typing import Optional, Tuple, Callable, OrderedDict, Type, Dict, Union
+from typing import Optional, Tuple, Callable, OrderedDict, Type, Dict, Union, List
 
 import dace
 from dace import nodes, data
@@ -16,7 +16,8 @@ from dace.codegen import compiled_sdfg
 from torch import Tensor
 from torch.onnx import TrainingMode
 
-from daceml.pytorch.module_codegen import compile_and_get_function
+from daceml.onnx.converters import clean_onnx_name
+from daceml.pytorch import dispatchers
 from daceml.autodiff.pytorch import make_backward_function
 from daceml.onnx import ONNXModel
 from daceml.onnx.shape_inference import infer_shapes
@@ -34,10 +35,14 @@ class DaceModule(nn.Module):
                      ``module``.
         :param training: whether to use train mode when tracing ``model``.
         :param backward: whether to enable the backward pass.
+        :param inputs_to_skip: if provided, a list of inputs to skip computing gradients for. 
+                               (only relevant when the backward pass is enabled)
         :param apply_strict: whether to apply strict transforms after conversion (this generally improves performance,
                              but can be slow).
         :param sdfg_name: the name to give to the sdfg (defaults to ``dace_model``).
         :param auto_optimize: whether to apply automatic optimizations.
+        :param compile_torch_extension: if True, a torch C++ extension will be compiled and used for this module.
+                                        Otherwise, a python ctypes implementation will be used.
         :param debug_transients: if True, the module will have all transients as outputs.
 
         :Example:
@@ -61,10 +66,13 @@ class DaceModule(nn.Module):
                  cuda: Optional[bool] = None,
                  training: bool = False,
                  backward=False,
+                 inputs_to_skip: Optional[List[str]] = None,
                  apply_strict: bool = True,
                  auto_optimize: bool = True,
                  debug_transients: bool = False,
+                 compile_torch_extension: bool = True,
                  sdfg_name: Optional[str] = None):
+
         super(DaceModule, self).__init__()
 
         self.backward = backward
@@ -77,6 +85,8 @@ class DaceModule(nn.Module):
         self.auto_optimize = auto_optimize
         self.apply_strict = apply_strict
         self.debug_transients = debug_transients
+        self.compile_torch_extension = compile_torch_extension
+        self.inputs_to_skip = inputs_to_skip or []
 
         self.function = None
 
@@ -105,8 +115,9 @@ class DaceModule(nn.Module):
                                 and node.desc(module.sdfg).transient
                                 and not isinstance(node.desc(module.sdfg),
                                                    data.Scalar)):
-                            module.dace_model.outputs.append(node.data)
-                            node.desc(module.sdfg).transient = False
+                            if "mean" not in node.data and "std" not in node.data:
+                                module.dace_model.outputs.append(node.data)
+                                node.desc(module.sdfg).transient = False
 
             self.prepend_post_onnx_hook("make_transients_outputs",
                                         transients_outputs)
@@ -272,18 +283,39 @@ class DaceModule(nn.Module):
             for _, hook in self.post_onnx_hooks.items():
                 hook(self)
 
+            # choose the backend that will generate the function to call during
+            # forward
+            if self.compile_torch_extension:
+                function_generator = dispatchers.register_and_compile_torch_extension
+            else:
+                function_generator = dispatchers.get_ctypes_dispatcher
+
             if self.backward:
+
+                # Determine what grads we need
+                # For now: we want gradients for all inputs that are not pytorch buffers
+                named_buffers = {n for n, _ in self.model.named_buffers()}
+                required_gradients = [
+                    clean_onnx_name(name) for name in self.dace_model.inputs
+                    if name not in named_buffers
+                    and name not in self.inputs_to_skip
+                ]
+                named_parameters = dict(self.model.named_parameters())
+                required_gradients.extend(
+                    clean_onnx_name(name)
+                    for name, param in named_parameters.items()
+                    if param.requires_grad)
+                required_gradients = list(set(required_gradients))
+
                 self.forward_sdfg, self.backward_sdfg, self._ad_result, self._ad_inp_arrs = make_backward_function(
-                    dace_model)
+                    dace_model, required_gradients)
 
                 for _, hook in self.post_autodiff_hooks.items():
                     hook(self.forward_sdfg, self.backward_sdfg)
 
-                self.compiled_function = compile_and_get_function(
-                    self, dummy_inputs)
+                self.compiled_function = function_generator(self, dummy_inputs)
             else:
-                self.compiled_function = compile_and_get_function(
-                    self, dummy_inputs)
+                self.compiled_function = function_generator(self, dummy_inputs)
 
             # order the parameters
             parameters_to_pass = self._call_params()
@@ -326,9 +358,11 @@ def dace_module(moduleclass,
                 cuda: Optional[bool] = None,
                 training: bool = False,
                 backward=False,
+                inputs_to_skip: Optional[List[str]] = None,
                 apply_strict: bool = True,
                 auto_optimize: bool = True,
                 sdfg_name: Optional[str] = None,
+                compile_torch_extension: bool = True,
                 debug_transients: bool = False) -> Type[DaceModule]:
     """ Decorator to apply on a definition of a ``torch.nn.Module`` to
         convert it to a data-centric module upon construction.
@@ -352,10 +386,14 @@ def dace_module(moduleclass,
                      ``module``.
         :param training: whether to use train mode when tracing ``model``.
         :param backward: whether to enable the backward pass.
+        :param inputs_to_skip: if provided, a list of inputs to skip computing gradients for. 
+                               (only relevant when the backward pass is enabled)
         :param apply_strict: whether to apply strict transforms after conversion (this generally improves performance,
                              but can be slow).
         :param auto_optimize: whether to apply automatic optimizations.
         :param sdfg_name: the name to give to the sdfg (defaults to ``dace_model``).
+        :param compile_torch_extension: if True, a torch C++ extension will be compiled and used for this module.
+                                        Otherwise, a python ctypes implementation will be used.
         :param debug_transients: if True, the module will have all transients as outputs.
     """
     @wraps(moduleclass)
@@ -365,9 +403,11 @@ def dace_module(moduleclass,
                           cuda=cuda,
                           training=training,
                           backward=backward,
+                          inputs_to_skip=inputs_to_skip,
                           apply_strict=apply_strict,
                           auto_optimize=auto_optimize,
                           sdfg_name=sdfg_name,
+                          compile_torch_extension=compile_torch_extension,
                           debug_transients=debug_transients)
 
     return _create

@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 import torch
 from transformers import BertConfig, BertLayer
@@ -7,6 +8,7 @@ from daceml.testing import copy_to_gpu, torch_tensors_close
 from daceml.transformation import parameter_to_transient
 
 
+@pytest.mark.cpublas
 def test_bert_encoder(gpu, default_implementation, sdfg_name):
     batch_size = 8
     seq_len = 512

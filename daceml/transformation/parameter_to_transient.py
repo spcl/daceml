@@ -80,17 +80,21 @@ def parameter_to_transient(dace_module: DaceModule, parameter_path: str):
         del dace_module.sdfg[array_name]
 
     def post_compile_hook(compiled_sdfg):
+
         struct = compiled_sdfg.get_state_struct()
 
-        if not hasattr(struct, gpu_array_name):
+        param_sdfg = compiled_sdfg.sdfg
+        struct_entry_name = f'__{param_sdfg.sdfg_id}_{gpu_array_name}'
+
+        if not hasattr(struct, struct_entry_name):
             raise ValueError(
                 f"Could not parse parameter {gpu_array_name} from state_struct."
             )
 
-        ptr = getattr(struct, gpu_array_name)
+        ptr = getattr(struct, struct_entry_name)
         # copy the data into the torch parameter tensor
         torch_tensor = dlpack.array_to_torch_tensor(
-            ptr, compiled_sdfg.sdfg.arrays[gpu_array_name])
+            ptr, param_sdfg.arrays[gpu_array_name])
         torch_tensor[:] = pt_tensor
 
     dace_module.post_compile_hooks["init_" +

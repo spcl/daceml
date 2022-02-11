@@ -11,7 +11,7 @@ from daceml.transformation import ConstantFolding
 
 
 @pytest.mark.ort
-def test_attn(gpu, sdfg_name):
+def test_attn(gpu, sdfg_name, use_cpp_dispatcher):
     B = 2
     H = 16
     P = 64
@@ -26,7 +26,9 @@ def test_attn(gpu, sdfg_name):
 
     pt_outputs = ptmodel(Q, K, V)
 
-    dace_model = DaceModule(ptmodel, sdfg_name=sdfg_name)
+    dace_model = DaceModule(ptmodel,
+                            sdfg_name=sdfg_name,
+                            compile_torch_extension=use_cpp_dispatcher)
 
     dace_outputs = dace_model(Q, K, V)
 

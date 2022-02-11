@@ -1,10 +1,17 @@
 import ast
+import collections
+
+import itertools
+import copy
 from typing import Dict
+import astunparse
 
 import astunparse
 from dace import registry, nodes as nd, SDFGState, SDFG, dtypes
+from dace.properties import CodeBlock
 from dace.sdfg.utils import node_path_graph
 from dace.transformation.transformation import Transformation, PatternNode
+from dace.frontend.python import astutils
 
 from daceml.util import find_str_not_in_set
 
@@ -65,13 +72,9 @@ class TaskletFusion(Transformation):
                                            and graph.out_degree(data) != 1):
             return False
 
-        # tsk2 should have one out connector only
-        if graph.out_degree(tsk2) != 1:
-            return False
-
         # try to parse the tasklet
         try:
-            if len(tsk1.code.code) != 1 or len(tsk2.code.code) != 1:
+            if len(tsk1.code.code) != 1:
                 return False
             if len(tsk1.code.code[0].targets) != 1:
                 return False
@@ -108,15 +111,22 @@ class TaskletFusion(Transformation):
                     in_edge.dst_conn = find_str_not_in_set(
                         set(inputs), in_edge.dst_conn)
                     repldict[old_value] = in_edge.dst_conn
+                else:
+                    # if the memlets are the same rename connector
+                    # on the first tasklet so that we only have one read
+                    pass
 
             inputs[in_edge.dst_conn] = tsk1.in_connectors[old_value]
 
         assigned_value = tsk1.code.code[0].value
         if repldict:
             assigned_value = Renamer(repldict).visit(assigned_value)
-        new_code = Inliner(tsk2_in_edge.dst_conn,
-                           assigned_value).visit(tsk2.code.code[0])
-        new_code_str = astunparse.unparse(new_code)
+
+        new_code = [
+            Inliner(tsk2_in_edge.dst_conn, assigned_value).visit(line)
+            for line in tsk2.code.code
+        ]
+        new_code_str = "\n".join(astunparse.unparse(line) for line in new_code)
 
         new_tasklet = state.add_tasklet(tsk1.label + "_fused_" + tsk2.label,
                                         inputs, tsk2.out_connectors,
@@ -145,3 +155,131 @@ class TaskletFusion(Transformation):
         if data is not None:
             state.remove_node(data)
         state.remove_node(tsk2)
+
+
+@registry.autoregister_params(singlestate=True)
+class TaskletFission(Transformation):
+
+    tsk = PatternNode(nd.Tasklet)
+
+    @classmethod
+    def expressions(cls):
+        return [node_path_graph(cls.tsk)]
+
+    def can_be_applied(self, graph: SDFGState, candidate: Dict[PatternNode,
+                                                               int],
+                       expr_index: int, sdfg: SDFG, strict: bool) -> bool:
+        tsk: nd.Tasklet = self.tsk(sdfg)
+
+        if tsk.language is not dtypes.Language.Python:
+            return False
+
+        # try to parse the tasklet
+        try:
+            if len(tsk.code.code) <= 1:
+                return False
+
+            for line in tsk.code.code:
+                if len(line.targets) != 1:
+                    return False
+
+                v = astutils.TaskletFreeSymbolVisitor(defined_syms=[])
+                v.visit(line.value)
+                if any(var not in tsk.in_connectors for var in v.free_symbols):
+                    return False
+
+                if not isinstance(line.targets[0], ast.Name):
+                    return False
+        except:
+            return False
+        return True
+
+    def apply(self, sdfg: SDFG):
+        state: SDFGState = sdfg.node(self.state_id)
+
+        tsk: nd.Tasklet = self.tsk(sdfg)
+
+        for i, line in enumerate(tsk.code.code):
+            id_to_assign = line.targets[0].id
+            if id_to_assign not in tsk.out_connectors:
+                # skip tasklets that aren't out connectors
+                continue
+
+            v = astutils.TaskletFreeSymbolVisitor(defined_syms=[])
+            v.visit(line.value)
+            in_connectors = {
+                var: tsk.in_connectors[var]
+                for var in v.free_symbols
+            }
+            out_connectors = {id_to_assign: tsk.out_connectors[id_to_assign]}
+            new_tsk = state.add_tasklet(f"{tsk.label}_{i}",
+                                        in_connectors, out_connectors,
+                                        astunparse.unparse(line))
+
+            for e in state.in_edges(tsk):
+                if e.dst_conn in in_connectors:
+                    state.add_edge(e.src, e.src_conn, new_tsk, e.dst_conn,
+                                   copy.deepcopy(e.data))
+
+            for e in state.out_edges_by_connector(tsk, id_to_assign):
+                state.add_edge(new_tsk, id_to_assign, e.dst, e.dst_conn,
+                               copy.deepcopy(e.data))
+        state.remove_node(tsk)
+
+
+@registry.autoregister_params(singlestate=True)
+class MergeTaskletReads(Transformation):
+    """
+    If a tasklet has two inputs that read the same thing, remove one of the
+    reads
+    """
+
+    src = PatternNode(nd.Node)
+    tsk = PatternNode(nd.Tasklet)
+
+    @classmethod
+    def expressions(cls):
+        return [node_path_graph(cls.src, cls.tsk)]
+
+    def can_be_applied(self, graph: SDFGState, candidate: Dict[PatternNode,
+                                                               int],
+                       expr_index: int, sdfg: SDFG, strict: bool) -> bool:
+        src: nd.AccessNode = self.src(sdfg)
+        tsk: nd.Tasklet = self.tsk(sdfg)
+
+        if tsk.language is not dtypes.Language.Python:
+            return False
+
+        edges = graph.edges_between(src, tsk)
+        for a, b in itertools.combinations(edges, 2):
+            if a.data == b.data and a.data.data == b.data.data:
+                return True
+        return False
+
+    def apply(self, sdfg: SDFG):
+
+        state: SDFGState = sdfg.node(self.state_id)
+        src: nd.AccessNode = self.src(sdfg)
+        tsk: nd.Tasklet = self.tsk(sdfg)
+
+        edges = state.edges_between(src, tsk)
+        mergable_connectors = collections.defaultdict(set)
+
+        for a, b in itertools.combinations(edges, 2):
+            if a.data == b.data and a.data.data == b.data.data:
+                mergable_connectors[a.dst_conn].add(b.dst_conn)
+                mergable_connectors[b.dst_conn].add(a.dst_conn)
+
+        to_merge = next(iter(mergable_connectors))
+
+        new_code = [
+            Renamer({v: to_merge
+                     for v in mergable_connectors[to_merge]}).visit(code)
+            for code in tsk.code.code
+        ]
+        new_code_str = astunparse.unparse(new_code)
+        for v in mergable_connectors[to_merge]:
+            for e in state.in_edges_by_connector(tsk, v):
+                state.remove_memlet_path(e)
+
+        tsk.code = CodeBlock(new_code_str, tsk.language)

@@ -56,6 +56,7 @@ class SDFGBackwardRunner:
         self.sdfg: dace.SDFG = sdfg
         self.target = target
 
+        assert len(sdfg.nodes()) == 1
         state = sdfg.nodes()[0]
         required_grads = list(
             node for node in state.nodes()
@@ -82,7 +83,7 @@ class SDFGBackwardRunner:
         for k, v in inputs.items():
             print(k, "-" * 10)
             print("\t{}".format(v.dtype))
-            print("\t{}".format("is_contiguous:", v.flags['C_CONTIGUOUS']))
+            print("\t{}".format("is_contiguous:", v.flags["C_CONTIGUOUS"]))
             print("\t{}".format(v))
 
         self.sdfg(**inputs)
@@ -91,7 +92,7 @@ class SDFGBackwardRunner:
         for k, v in inputs.items():
             print(k, "-" * 10)
             print("\t{}".format(v.dtype))
-            print("\t{}".format("is_contiguous:", v.flags['C_CONTIGUOUS']))
+            print("\t{}".format("is_contiguous:", v.flags["C_CONTIGUOUS"]))
             print("\t{}".format(v))
 
         results = {name: arr for name, arr in inputs.items()}
@@ -309,7 +310,6 @@ def test_reused_scalar_inplace_error(sdfg_name):
     assert "Inplace" in str(execinfo.value)
 
 
-@pytest.mark.skip(reason="this was rewritten and needs to be reimplemented")
 @run_correctness
 def test_tasklets_direct_scalar_edges():
     def torch_func(*, A):
@@ -320,7 +320,7 @@ def test_tasklets_direct_scalar_edges():
         tmp_c.backward()
         return dict(A_gradient=A.grad)
 
-    sdfg = dace.SDFG("dace_func")
+    sdfg = dace.SDFG("tasklets_direct_scalar_edges")
     state = sdfg.add_state()
 
     sdfg.add_array(
@@ -525,9 +525,9 @@ def test_add_mmul_transpose_log():
         S: dace.float32[1],
     ):
 
-        Xt[:] = np.transpose(X)
-        YW[:] = W * Y
-        Z[:] = Xt @ YW
+        Xt = np.transpose(X)
+        YW = W * Y
+        Z = Xt @ YW
 
         @dace.map(_[0:5, 0:3])
         def summap(i, j):
@@ -566,9 +566,9 @@ def test_reduce_node_1_axis_and_none_axis():
                                          Y: dace.float32[4, 3],
                                          W: dace.float32[7, 4, 3]):
 
-        Xt[:] = np.transpose(X)
-        YW[:] = np.sum(W, axis=0) * Y
-        Z[:] = Xt @ YW
+        Xt = np.transpose(X)
+        YW = np.sum(W, axis=0) * Y
+        Z = Xt @ YW
 
         Zl = dace.elementwise(lambda x: log(x + 1), Z)
         S = np.sum(Zl)
@@ -678,9 +678,14 @@ def test_reshape():
         S.backward()
         return dict(inp_gradient=inp.grad, bias_gradient=bias.grad)
 
-    return (SDFGBackwardRunner(sdfg, "__return", strict=False), torch_func,
-            dict(inp=np.random.rand(9).astype(np.float64),
-                 bias=np.random.rand(3).astype(np.float64)))
+    return (
+        SDFGBackwardRunner(sdfg, "__return", strict=False),
+        torch_func,
+        dict(
+            inp=np.random.rand(9).astype(np.float64),
+            bias=np.random.rand(3).astype(np.float64),
+        ),
+    )
 
 
 @run_correctness
@@ -689,11 +694,11 @@ def test_reshape_on_memlet_path():
     donnx.default_implementation = "pure"
 
     @dace.program
-    def single_state_reshape_memlet_path(inp: dace.float64[9],
+    def single_state_reshape_memlet_path(inp1: dace.float64[9],
                                          bias: dace.float64[3],
                                          target_shape: dace.int64[2]):
         reshaped = dace.define_local([3, 3], dace.float64)
-        donnx.ONNXReshape(data=inp, shape=target_shape, reshaped=reshaped)
+        donnx.ONNXReshape(data=inp1, shape=target_shape, reshaped=reshaped)
         Z = reshaped + bias
         Zl = dace.elementwise(lambda x: log(x + 1), Z)
         S = np.sum(Zl)
@@ -702,23 +707,28 @@ def test_reshape_on_memlet_path():
     sdfg = single_state_reshape_memlet_path.to_sdfg(strict=False)
 
     sdfg.expand_library_nodes()
-    sdfg.apply_strict_transformations()
+    sdfg.apply_transformations_repeated([StateFusion], strict=True)
 
     donnx.default_implementation = old_default
 
-    def torch_func(*, inp, bias):
-        reshaped = torch.reshape(inp, [3, 3])
+    def torch_func(*, inp1, bias):
+        reshaped = torch.reshape(inp1, [3, 3])
 
         Z = reshaped + bias
         Zl = torch.log(Z + 1)
         S = Zl.sum()
 
         S.backward()
-        return dict(inp_gradient=inp.grad, bias_gradient=bias.grad)
+        return dict(inp1_gradient=inp1.grad, bias_gradient=bias.grad)
 
-    return (SDFGBackwardRunner(sdfg, "__return", strict=False), torch_func,
-            dict(inp=np.random.rand(9).astype(np.float64),
-                 bias=np.random.rand(3).astype(np.float64)))
+    return (
+        SDFGBackwardRunner(sdfg, "__return", strict=False),
+        torch_func,
+        dict(
+            inp1=np.random.rand(9).astype(np.float64),
+            bias=np.random.rand(3).astype(np.float64),
+        ),
+    )
 
 
 @run_correctness
@@ -738,7 +748,7 @@ def test_reshape_reuse_in_same_state():
     sdfg = single_state_reshape_same_state.to_sdfg(strict=False)
 
     sdfg.expand_library_nodes()
-    sdfg.apply_strict_transformations()
+    sdfg.apply_transformations_repeated([StateFusion], strict=True)
 
     donnx.default_implementation = old_default
 
@@ -752,5 +762,8 @@ def test_reshape_reuse_in_same_state():
         S.backward()
         return dict(inp_gradient=inp.grad)
 
-    return (SDFGBackwardRunner(sdfg, "__return", strict=False), torch_func,
-            dict(inp=np.random.rand(9).astype(np.float64), ))
+    return (
+        SDFGBackwardRunner(sdfg, "__return", strict=False),
+        torch_func,
+        dict(inp=np.random.rand(9).astype(np.float64), ),
+    )

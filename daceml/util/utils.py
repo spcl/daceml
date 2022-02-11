@@ -170,7 +170,7 @@ def expand_onnx_nodes(sdfg: dace.SDFG,
         expanded_something = False
         for node in list(state.nodes()):  # Make sure we have a copy
             if isinstance(node, nd.NestedSDFG):
-                expand_onnx_nodes(node.sdfg)
+                expand_onnx_nodes(node.sdfg, predicate=predicate)
             elif isinstance(node, ONNXOp) or isinstance(node, blas.MatMul):
                 if predicate is None or predicate(node):
                     impl_name = node.expand(sdfg, state)
