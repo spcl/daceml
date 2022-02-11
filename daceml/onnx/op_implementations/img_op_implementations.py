@@ -526,6 +526,5 @@ class PureGlobalAveragePool(ONNXForward):
                                                      dynamic=True,
                                                      volume=0))
 
-        new_sdfg.save('my123.sdfg')
 
         return new_sdfg
