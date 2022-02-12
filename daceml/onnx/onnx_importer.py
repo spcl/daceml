@@ -250,11 +250,8 @@ class ONNXModel:
                 # get the access node
                 if name in access_nodes:
                     access = access_nodes[name]
-                    self._update_access_type(access, is_input)
                 else:
-                    access = nodes.AccessNode(
-                        clean_onnx_name(name), dtypes.AccessType.ReadOnly
-                        if is_input else dtypes.AccessType.WriteOnly)
+                    access = nodes.AccessNode(clean_onnx_name(name))
                     self.state.add_node(access)
                     access_nodes[name] = access
 
@@ -309,13 +306,6 @@ class ONNXModel:
 
         if self.cuda:
             self.sdfg.apply_gpu_transformations()
-
-    @staticmethod
-    def _update_access_type(node: dace.nodes.AccessNode, is_input: bool):
-        if node.access == dtypes.AccessType.ReadOnly and not is_input:
-            node.access = dtypes.AccessType.ReadWrite
-        elif node.access == dtypes.AccessType.WriteOnly and is_input:
-            node.access = dtypes.AccessType.ReadWrite
 
     def _add_constant_tensor(self, tensor: onnx.TensorProto, parent_pt_model,
                              storage: dtypes.StorageType):

@@ -139,14 +139,6 @@ def _is_int_value(value, target_value: int) -> bool:
     return True
 
 
-def _invert_access(access: dace.AccessType) -> dace.AccessType:
-    if access == dace.AccessType.ReadOnly:
-        return dace.AccessType.WriteOnly
-    elif access == dace.AccessType.WriteOnly:
-        return dace.AccessType.ReadOnly
-    return access
-
-
 def _add_through_connector(node: Union[nd.MapEntry, nd.MapExit]):
     i = 1
     while ("IN_{}".format(i) in node.in_connectors
@@ -1197,8 +1189,7 @@ class BackwardPassGenerator:
         given_gradients: List[str],
         required_gradients: List[str],
     ) -> ReverseNodeReturnType:
-        rev = nd.AccessNode(self.array_grad_name(node.data),
-                            access=_invert_access(node.access))
+        rev = nd.AccessNode(self.array_grad_name(node.data))
         self.backward_state.add_node(rev)
         return rev, BackwardResult(required_grad_names={None: None},
                                    given_grad_names={None: None})
