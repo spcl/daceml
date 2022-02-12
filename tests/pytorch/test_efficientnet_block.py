@@ -115,7 +115,7 @@ def test_fast_mb(use_cpp_dispatcher):
 
             sdfg.apply_transformations_repeated(HoistState)
             sdfg.apply_transformations_repeated(TrivialMapRangeElimination)
-            sdfg.apply_strict_transformations()
+            sdfg.simplify()
 
         dace_model.append_post_onnx_hook("fuse_sg", fuse_everything)
 

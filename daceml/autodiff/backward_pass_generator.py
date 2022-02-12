@@ -259,7 +259,6 @@ class BackwardPassGenerator:
                                before calling this method).
         :param zero_non_transients: Whether non-transient gradient buffers should be zero initialized in the backward
                                     SDFG.
-        :param apply_strict: whether to apply strict transformations before creating the backward pass.
     """
     def __init__(
             self,
@@ -270,8 +269,7 @@ class BackwardPassGenerator:
             required_gradients: List[Union[nd.AccessNode, str]],
             backward_sdfg: SDFG,  # this can be the same as SDFG
             backward_state: SDFGState,
-            zero_non_transients: bool,
-            apply_strict=False):
+            zero_non_transients: bool):
 
         if backward_state not in backward_sdfg.nodes():
             raise AutoDiffException(
@@ -334,7 +332,6 @@ class BackwardPassGenerator:
 
         # checks if backward has already been applied
         self._applied = False
-        self.apply_strict = apply_strict
         self.zero_non_transients = zero_non_transients
 
         for outp in self.given_gradients:
@@ -495,10 +492,6 @@ class BackwardPassGenerator:
         # expand until there is nothing left to expand
         while self._expand_nodes(forward_subgraph):
             # Nodes have been expanded again on the expanded graph; recalculate the forward graph
-            forward_subgraph = self._find_subgraph_to_differentiate()
-
-        if self.apply_strict:
-            self.sdfg.apply_strict_transformations()
             forward_subgraph = self._find_subgraph_to_differentiate()
 
         # check that all edges are float

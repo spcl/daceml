@@ -37,8 +37,8 @@ class DaceModule(nn.Module):
         :param backward: whether to enable the backward pass.
         :param inputs_to_skip: if provided, a list of inputs to skip computing gradients for. 
                                (only relevant when the backward pass is enabled)
-        :param apply_strict: whether to apply strict transforms after conversion (this generally improves performance,
-                             but can be slow).
+        :param simplify: whether to apply simplification transforms after conversion (this generally improves performance,
+                         but can be slow).
         :param sdfg_name: the name to give to the sdfg (defaults to ``dace_model``).
         :param auto_optimize: whether to apply automatic optimizations.
         :param compile_torch_extension: if True, a torch C++ extension will be compiled and used for this module.
@@ -67,7 +67,7 @@ class DaceModule(nn.Module):
                  training: bool = False,
                  backward=False,
                  inputs_to_skip: Optional[List[str]] = None,
-                 apply_strict: bool = True,
+                 simplify: bool = True,
                  auto_optimize: bool = True,
                  debug_transients: bool = False,
                  compile_torch_extension: bool = True,
@@ -83,7 +83,7 @@ class DaceModule(nn.Module):
         self.use_cuda = cuda
         self.sdfg_name = sdfg_name or type(module).__name__
         self.auto_optimize = auto_optimize
-        self.apply_strict = apply_strict
+        self.simplify = simplify
         self.debug_transients = debug_transients
         self.compile_torch_extension = compile_torch_extension
         self.inputs_to_skip = inputs_to_skip or []
@@ -129,10 +129,10 @@ class DaceModule(nn.Module):
                 def auto_optimize_backward(fwd_sdfg, bwd_sdfg):
                     utils.auto_optimize(fwd_sdfg,
                                         self.use_cuda,
-                                        apply_strict=self.apply_strict)
+                                        simplify=self.simplify)
                     utils.auto_optimize(bwd_sdfg,
                                         self.use_cuda,
-                                        apply_strict=self.apply_strict)
+                                        simplify=self.simplify)
 
                 self.append_post_autodiff_hook("auto_optimize",
                                                auto_optimize_backward)
@@ -141,19 +141,19 @@ class DaceModule(nn.Module):
                     "auto_optimize", lambda dace_module: utils.auto_optimize(
                         dace_module.dace_model.sdfg,
                         self.use_cuda,
-                        apply_strict=self.apply_strict))
-        elif self.apply_strict:
+                        simplify=self.simplify))
+        elif self.simplify:
             if self.backward:
 
-                def apply_strict(fwd_sdfg, bwd_sdfg):
-                    fwd_sdfg.apply_strict_transformations()
-                    bwd_sdfg.apply_strict_transformations()
+                def simplify(fwd_sdfg, bwd_sdfg):
+                    fwd_sdfg.simplify()
+                    bwd_sdfg.simplify()
 
-                self.append_post_autodiff_hook("apply_strict", apply_strict)
+                self.append_post_autodiff_hook("simplify", simplify)
             else:
                 self.append_post_onnx_hook(
-                    "apply_strict", lambda dace_module: dace_module.sdfg.
-                    apply_strict_transformations())
+                    "simplify",
+                    lambda dace_module: dace_module.sdfg.simplify())
 
     def reset_sdfg(self):
         """ Clear the sdfg so that optimizations are reapplied. """
@@ -359,7 +359,7 @@ def dace_module(moduleclass,
                 training: bool = False,
                 backward=False,
                 inputs_to_skip: Optional[List[str]] = None,
-                apply_strict: bool = True,
+                simplify: bool = True,
                 auto_optimize: bool = True,
                 sdfg_name: Optional[str] = None,
                 compile_torch_extension: bool = True,
@@ -388,7 +388,7 @@ def dace_module(moduleclass,
         :param backward: whether to enable the backward pass.
         :param inputs_to_skip: if provided, a list of inputs to skip computing gradients for. 
                                (only relevant when the backward pass is enabled)
-        :param apply_strict: whether to apply strict transforms after conversion (this generally improves performance,
+        :param simplify: whether to apply simplification transforms after conversion (this generally improves performance,
                              but can be slow).
         :param auto_optimize: whether to apply automatic optimizations.
         :param sdfg_name: the name to give to the sdfg (defaults to ``dace_model``).
@@ -404,7 +404,7 @@ def dace_module(moduleclass,
                           training=training,
                           backward=backward,
                           inputs_to_skip=inputs_to_skip,
-                          apply_strict=apply_strict,
+                          simplify=simplify,
                           auto_optimize=auto_optimize,
                           sdfg_name=sdfg_name,
                           compile_torch_extension=compile_torch_extension,

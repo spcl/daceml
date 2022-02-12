@@ -70,7 +70,7 @@ class ConstantFolding(transformation.SingleStateTransformation):
                        graph: dace.sdfg.graph.OrderedMultiDiConnectorGraph,
                        expr_index: int,
                        sdfg,
-                       strict: bool = False):
+                       permissive: bool = False):
 
         node = self.onnx_node
 

@@ -105,8 +105,9 @@ class ReplacementTransformation(transformation.SingleStateTransformation):
         return [result]
 
     def can_be_applied(self, graph: Union[dace.SDFG, dace.SDFGState],
-                       candidate: Dict[transformation.PatternNode, int],
-                       expr_index: int, sdfg: dace.SDFG, strict: bool) -> bool:
+                       candidate: Dict[transformation.PatternNode,
+                                       int], expr_index: int, sdfg: dace.SDFG,
+                       simplify: bool) -> bool:
         # All internal nodes must not be global (non-transient) or reused
         # anywhere else
         subgraph = gr.SubgraphView(

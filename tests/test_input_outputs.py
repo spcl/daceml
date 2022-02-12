@@ -39,8 +39,8 @@ class BreakOpChecker:
 
 
 @pytest.mark.parametrize("break_opchecker", [True, False])
-@pytest.mark.parametrize("apply_strict", [True, False])
-def test_squeeze(gpu, apply_strict, break_opchecker, default_implementation,
+@pytest.mark.parametrize("simplify", [True, False])
+def test_squeeze(gpu, simplify, break_opchecker, default_implementation,
                  sdfg_name):
 
     with BreakOpChecker() if break_opchecker else suppress():
@@ -77,9 +77,9 @@ def test_squeeze(gpu, apply_strict, break_opchecker, default_implementation,
         if gpu:
             sdfg.apply_gpu_transformations()
 
-        if apply_strict:
+        if simplify:
             sdfg.expand_library_nodes()
-            sdfg.apply_strict_transformations()
+            sdfg.simplify()
 
         result = sdfg(X_arr=X)
 
@@ -87,9 +87,9 @@ def test_squeeze(gpu, apply_strict, break_opchecker, default_implementation,
         assert result[0] == X
 
 
-@pytest.mark.parametrize("apply_strict", [True, False])
+@pytest.mark.parametrize("simplify", [True, False])
 @pytest.mark.parametrize("break_opchecker", [True, False])
-def test_shape(gpu, apply_strict, break_opchecker, default_implementation,
+def test_shape(gpu, simplify, break_opchecker, default_implementation,
                sdfg_name):
     with BreakOpChecker() if break_opchecker else suppress():
         sdfg = dace.SDFG(sdfg_name)
@@ -116,18 +116,18 @@ def test_shape(gpu, apply_strict, break_opchecker, default_implementation,
         if gpu:
             sdfg.apply_gpu_transformations()
 
-        if apply_strict:
+        if simplify:
             sdfg.expand_library_nodes()
-            sdfg.apply_strict_transformations()
+            sdfg.simplify()
 
         result = sdfg(X_arr=X)
 
         assert np.all(result == (2, 4))
 
 
-@pytest.mark.parametrize("apply_strict", [True, False])
+@pytest.mark.parametrize("simplify", [True, False])
 @pytest.mark.parametrize("break_opchecker", [True, False])
-def test_unsqueeze(gpu, apply_strict, break_opchecker, default_implementation,
+def test_unsqueeze(gpu, simplify, break_opchecker, default_implementation,
                    sdfg_name):
     with BreakOpChecker() if break_opchecker else suppress():
         sdfg = dace.SDFG(sdfg_name)
@@ -154,9 +154,9 @@ def test_unsqueeze(gpu, apply_strict, break_opchecker, default_implementation,
         if gpu:
             sdfg.apply_gpu_transformations()
 
-        if apply_strict:
+        if simplify:
             sdfg.expand_library_nodes()
-            sdfg.apply_strict_transformations()
+            sdfg.simplify()
 
         result = sdfg(X_arr=X)
 
@@ -165,10 +165,10 @@ def test_unsqueeze(gpu, apply_strict, break_opchecker, default_implementation,
 
 
 @pytest.mark.parametrize("scalars", [True, False])
-@pytest.mark.parametrize("apply_strict", [True, False])
+@pytest.mark.parametrize("simplify", [True, False])
 @pytest.mark.parametrize("break_opchecker", [True, False])
-def test_add(gpu, scalars, apply_strict, break_opchecker,
-             default_implementation, sdfg_name):
+def test_add(gpu, scalars, simplify, break_opchecker, default_implementation,
+             sdfg_name):
     with BreakOpChecker() if break_opchecker else suppress():
         sdfg = dace.SDFG(sdfg_name)
 
@@ -224,9 +224,9 @@ def test_add(gpu, scalars, apply_strict, break_opchecker,
         if gpu:
             sdfg.apply_gpu_transformations()
 
-        if apply_strict:
+        if simplify:
             sdfg.expand_library_nodes()
-            sdfg.apply_strict_transformations()
+            sdfg.simplify()
 
         result = sdfg(X_arr=X, W_arr=W)
 

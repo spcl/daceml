@@ -185,15 +185,12 @@ def expand_onnx_nodes(sdfg: dace.SDFG,
             states.append(state)  # Nodes have changed. Check state again
 
 
-def auto_optimize(sdfg: dace.SDFG,
-                  cuda,
-                  apply_strict=False,
-                  fold_constants=True):
+def auto_optimize(sdfg: dace.SDFG, cuda, simplify=False, fold_constants=True):
     """ Automatically optimize ``sdfg``.
 
         :param sdfg: the sdfg to optimize (inplace).
         :param cuda: whether to optimize for cuda.
-        :param apply_strict: whether to apply strict transformations to the sdfg after optimization.
+        :param simplify: whether to apply simplification transformations to the sdfg after optimization.
         :param fold_constants: whether to apply constant folding.
     """
     # avoid import loop
@@ -204,8 +201,7 @@ def auto_optimize(sdfg: dace.SDFG,
         log.debug("Applying constant folding")
         sdfg.apply_transformations_repeated(
             [transformation.ConstantFolding, dataflow.RedundantSecondArray],
-            validate_all=True,
-            strict=True)
+            validate_all=True)
     log.debug("Expanding ONNX nodes")
     expand_onnx_nodes(sdfg)
     log.debug("Setting fast implementations")
@@ -214,12 +210,12 @@ def auto_optimize(sdfg: dace.SDFG,
         sdfg,
         dace.DeviceType.GPU if cuda else dace.DeviceType.CPU,
         blocklist=["MKL"])
-    if apply_strict:
-        log.debug("Applying strict transforms")
+    if simplify:
+        log.debug("Applying simplification transforms")
         # there is a nondeterministic bug in redundant array that appears if
         # we don't apply inline first
         sdfg.apply_transformations_repeated(interstate.InlineSDFG)
-        sdfg.apply_strict_transformations()
+        sdfg.simplify()
 
 
 def iterables_equal(a, b) -> bool:

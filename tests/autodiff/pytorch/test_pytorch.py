@@ -105,7 +105,7 @@ def test_softmax(sdfg_name, gpu):
 
 
 def test_reshape_on_memlet_path(sdfg_name, gpu):
-    # required test: this function in a nn.Module, with apply strict so that the reshape is
+    # required test: this function in a nn.Module, with apply simplify so that the reshape is
     # inlined and copy is removed
     class Module(torch.nn.Module):
         def forward(self, x):
@@ -247,7 +247,7 @@ def test_simple_fused(sdfg_name, gpu):
 
     def fuse_maps(module: DaceModule):
         utils.expand_onnx_nodes(module.sdfg)
-        module.sdfg.apply_strict_transformations()
+        module.sdfg.simplify()
         assert module.sdfg.apply_transformations(MapFusion) == 1
 
     run_pytorch_module(Module(), sdfg_name, gpu, post_onnx_hooks=[fuse_maps])
