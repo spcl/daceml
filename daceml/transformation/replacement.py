@@ -2,7 +2,6 @@
 import dace
 from dace import registry, nodes, data as dt
 from dace.transformation import transformation, helpers as xfh
-from dace.transformation.transformation import PatternNode
 from typing import Any, Dict, List, Optional, Tuple, Union
 from dace.sdfg import utils as sdutil
 from daceml.onnx import nodes as onnx_op
@@ -13,7 +12,7 @@ def make_onnx_path(*path_nodes: nodes.Node) -> gr.OrderedDiGraph:
     result = gr.OrderedDiGraph()
 
     # First add the nodes in order, so that they can be accessed
-    path_nodes = [PatternNode(n) for n in path_nodes]
+    path_nodes = [transformation.PatternNode(n) for n in path_nodes]
     result.add_nodes_from(path_nodes)
 
     # Then make a path and add access nodes as necessary
@@ -36,7 +35,7 @@ def add_connecting_access_nodes(graph: gr.OrderedDiGraph):
                                             nodes.NestedSDFG))
                     for e in graph.out_edges(pnode)):
                 # Make new output node that everyone will link from
-                new_node = PatternNode(nodes.AccessNode)
+                new_node = transformation.PatternNode(nodes.AccessNode)
                 graph.add_node(new_node)
                 graph.add_edge(pnode, new_node)
                 outputs[pnode] = new_node
@@ -65,7 +64,7 @@ def onnx_constant_or_none(
     return sdfg._parent_onnx_model.clean_weights[name].item()
 
 
-class ReplacementTransformation(transformation.Transformation):
+class ReplacementTransformation(transformation.SingleStateTransformation):
     @classmethod
     def pattern(cls) -> gr.OrderedDiGraph[nodes.Node, dace.Memlet]:
         """ Returns a pattern to match as a directed graph. """
@@ -106,8 +105,8 @@ class ReplacementTransformation(transformation.Transformation):
         return [result]
 
     def can_be_applied(self, graph: Union[dace.SDFG, dace.SDFGState],
-                       candidate: Dict['PatternNode', int], expr_index: int,
-                       sdfg: dace.SDFG, strict: bool) -> bool:
+                       candidate: Dict[transformation.PatternNode, int],
+                       expr_index: int, sdfg: dace.SDFG, strict: bool) -> bool:
         # All internal nodes must not be global (non-transient) or reused
         # anywhere else
         subgraph = gr.SubgraphView(

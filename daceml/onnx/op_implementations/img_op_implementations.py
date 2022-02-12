@@ -320,15 +320,17 @@ class PureConv2D(ONNXForward):
         me = entry_nodes[0]
         for i in range(1, 4):
             me, _ = MapCollapse.apply_to(nsdfg,
-                                         _outer_map_entry=me,
-                                         _inner_map_entry=entry_nodes[i])
+                                         outer_map_entry=me,
+                                         inner_map_entry=entry_nodes[i],
+                                         permissive=True)
 
         # merge the second 3 maps
         me = entry_nodes[4]
         for i in range(5, 7):
             me, _ = MapCollapse.apply_to(nsdfg,
-                                         _outer_map_entry=me,
-                                         _inner_map_entry=entry_nodes[i])
+                                         outer_map_entry=me,
+                                         inner_map_entry=entry_nodes[i],
+                                         permissive=True)
 
         return nsdfg
 

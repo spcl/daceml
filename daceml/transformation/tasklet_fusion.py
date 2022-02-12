@@ -8,9 +8,9 @@ import astunparse
 
 import astunparse
 from dace import registry, nodes as nd, SDFGState, SDFG, dtypes
-from dace.properties import CodeBlock
+from dace.transformation import transformation
+from dace.properties import CodeBlock, make_properties
 from dace.sdfg.utils import node_path_graph
-from dace.transformation.transformation import Transformation, PatternNode
 from dace.frontend.python import astutils
 
 from daceml.util import find_str_not_in_set
@@ -38,14 +38,14 @@ class Inliner(ast.NodeTransformer):
             return self.generic_visit(node)
 
 
-@registry.autoregister_params(singlestate=True)
-class TaskletFusion(Transformation):
+@make_properties
+class TaskletFusion(transformation.SingleStateTransformation):
     """ Fuse a constant pad into a convolution.
     """
 
-    tsk1 = PatternNode(nd.Tasklet)
-    data = PatternNode(nd.AccessNode)
-    tsk2 = PatternNode(nd.Tasklet)
+    tsk1 = transformation.PatternNode(nd.Tasklet)
+    data = transformation.PatternNode(nd.AccessNode)
+    tsk2 = transformation.PatternNode(nd.Tasklet)
 
     @classmethod
     def expressions(cls):
@@ -54,12 +54,14 @@ class TaskletFusion(Transformation):
             node_path_graph(cls.tsk1, cls.tsk2)
         ]
 
-    def can_be_applied(self, graph: SDFGState, candidate: Dict[PatternNode,
-                                                               int],
-                       expr_index: int, sdfg: SDFG, strict: bool) -> bool:
-        tsk1: nd.Tasklet = self.tsk1(sdfg)
-        data: nd.AccessNode = self.data(sdfg) if self.expr_index == 0 else None
-        tsk2: nd.Tasklet = self.tsk2(sdfg)
+    def can_be_applied(self,
+                       graph: SDFGState,
+                       expr_index: int,
+                       sdfg: SDFG,
+                       permissive: bool = False) -> bool:
+        tsk1: nd.Tasklet = self.tsk1
+        data: nd.AccessNode = self.data if self.expr_index == 0 else None
+        tsk2: nd.Tasklet = self.tsk2
 
         if tsk1.language is not dtypes.Language.Python or tsk2.language is not dtypes.Language.Python:
             return False
@@ -82,11 +84,10 @@ class TaskletFusion(Transformation):
             return False
         return True
 
-    def apply(self, sdfg: SDFG) -> nd.Tasklet:
-        state: SDFGState = sdfg.node(self.state_id)
-        tsk1: nd.Tasklet = self.tsk1(sdfg)
-        data: nd.AccessNode = self.data(sdfg) if self.expr_index == 0 else None
-        tsk2: nd.Tasklet = self.tsk2(sdfg)
+    def apply(self, state: SDFGState, sdfg: SDFG) -> nd.Tasklet:
+        tsk1: nd.Tasklet = self.tsk1
+        data: nd.AccessNode = self.data if self.expr_index == 0 else None
+        tsk2: nd.Tasklet = self.tsk2
 
         tsk2_in_edge = state.out_edges(data if data is not None else tsk1)[0]
 
@@ -157,19 +158,21 @@ class TaskletFusion(Transformation):
         state.remove_node(tsk2)
 
 
-@registry.autoregister_params(singlestate=True)
-class TaskletFission(Transformation):
+@make_properties
+class TaskletFission(transformation.SingleStateTransformation):
 
-    tsk = PatternNode(nd.Tasklet)
+    tsk = transformation.PatternNode(nd.Tasklet)
 
     @classmethod
     def expressions(cls):
         return [node_path_graph(cls.tsk)]
 
-    def can_be_applied(self, graph: SDFGState, candidate: Dict[PatternNode,
-                                                               int],
-                       expr_index: int, sdfg: SDFG, strict: bool) -> bool:
-        tsk: nd.Tasklet = self.tsk(sdfg)
+    def can_be_applied(self,
+                       graph: SDFGState,
+                       expr_index: int,
+                       sdfg: SDFG,
+                       permissive: bool = False) -> bool:
+        tsk: nd.Tasklet = self.tsk
 
         if tsk.language is not dtypes.Language.Python:
             return False
@@ -194,10 +197,9 @@ class TaskletFission(Transformation):
             return False
         return True
 
-    def apply(self, sdfg: SDFG):
-        state: SDFGState = sdfg.node(self.state_id)
+    def apply(self, state: SDFGState, sdfg: SDFG):
 
-        tsk: nd.Tasklet = self.tsk(sdfg)
+        tsk: nd.Tasklet = self.tsk
 
         for i, line in enumerate(tsk.code.code):
             id_to_assign = line.targets[0].id
@@ -227,25 +229,27 @@ class TaskletFission(Transformation):
         state.remove_node(tsk)
 
 
-@registry.autoregister_params(singlestate=True)
-class MergeTaskletReads(Transformation):
+@make_properties
+class MergeTaskletReads(transformation.SingleStateTransformation):
     """
     If a tasklet has two inputs that read the same thing, remove one of the
     reads
     """
 
-    src = PatternNode(nd.Node)
-    tsk = PatternNode(nd.Tasklet)
+    src = transformation.PatternNode(nd.Node)
+    tsk = transformation.PatternNode(nd.Tasklet)
 
     @classmethod
     def expressions(cls):
         return [node_path_graph(cls.src, cls.tsk)]
 
-    def can_be_applied(self, graph: SDFGState, candidate: Dict[PatternNode,
-                                                               int],
-                       expr_index: int, sdfg: SDFG, strict: bool) -> bool:
-        src: nd.AccessNode = self.src(sdfg)
-        tsk: nd.Tasklet = self.tsk(sdfg)
+    def can_be_applied(self,
+                       graph: SDFGState,
+                       expr_index: int,
+                       sdfg: SDFG,
+                       permissive: bool = True) -> bool:
+        src: nd.AccessNode = self.src
+        tsk: nd.Tasklet = self.tsk
 
         if tsk.language is not dtypes.Language.Python:
             return False
@@ -256,11 +260,10 @@ class MergeTaskletReads(Transformation):
                 return True
         return False
 
-    def apply(self, sdfg: SDFG):
+    def apply(self, state: SDFGState, sdfg: SDFG):
 
-        state: SDFGState = sdfg.node(self.state_id)
-        src: nd.AccessNode = self.src(sdfg)
-        tsk: nd.Tasklet = self.tsk(sdfg)
+        src: nd.AccessNode = self.src
+        tsk: nd.Tasklet = self.tsk
 
         edges = state.edges_between(src, tsk)
         mergable_connectors = collections.defaultdict(set)

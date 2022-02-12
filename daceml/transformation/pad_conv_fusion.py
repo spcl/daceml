@@ -1,5 +1,6 @@
 import torch
-from dace.transformation.transformation import Transformation, PatternNode
+from dace.transformation import transformation
+from dace.properties import make_properties
 from dace.sdfg.utils import node_path_graph
 from dace import nodes, SDFG, SDFGState, registry, Memlet
 from typing import Dict, Union
@@ -9,25 +10,27 @@ from daceml.transformation.constant_folding import remove_node_and_computation
 from daceml.util import utils
 
 
-@registry.autoregister_params(singlestate=True)
-class PadConvFusion(Transformation):
+@make_properties
+class PadConvFusion(transformation.SingleStateTransformation):
     """ Fuse a constant pad into a convolution.
     """
 
-    pad = PatternNode(donnx.ONNXPad)
-    data = PatternNode(nodes.AccessNode)
-    conv = PatternNode(donnx.ONNXConv)
+    pad = transformation.PatternNode(donnx.ONNXPad)
+    data = transformation.PatternNode(nodes.AccessNode)
+    conv = transformation.PatternNode(donnx.ONNXConv)
 
     @classmethod
     def expressions(cls):
         return [node_path_graph(cls.pad, cls.data, cls.conv)]
 
-    def can_be_applied(self, graph: SDFGState, candidate: Dict[PatternNode,
-                                                               int],
-                       expr_index: int, sdfg: SDFG, strict: bool) -> bool:
-        pad: donnx.ONNXPad = self.pad(sdfg)
-        data_node: nodes.AccessNode = self.data(sdfg)
-        conv: donnx.ONNXConv = self.conv(sdfg)
+    def can_be_applied(self,
+                       graph: SDFGState,
+                       expr_index: int,
+                       sdfg: SDFG,
+                       permissive: bool = False) -> bool:
+        pad: donnx.ONNXPad = self.pad
+        data_node: nodes.AccessNode = self.data
+        conv: donnx.ONNXConv = self.conv
 
         if pad.mode != 'constant':
             return False
@@ -74,11 +77,10 @@ class PadConvFusion(Transformation):
 
         return True
 
-    def apply(self, sdfg: SDFG):
-        state: SDFGState = sdfg.node(self.state_id)
-        pad: donnx.ONNXPad = self.pad(sdfg)
-        data_node: nodes.AccessNode = self.data(sdfg)
-        conv: donnx.ONNXConv = self.conv(sdfg)
+    def apply(self, state: SDFGState, sdfg: SDFG):
+        pad: donnx.ONNXPad = self.pad
+        data_node: nodes.AccessNode = self.data
+        conv: donnx.ONNXConv = self.conv
 
         pads = list(state.in_edges_by_connector(pad, "pads"))[0].data.data
 

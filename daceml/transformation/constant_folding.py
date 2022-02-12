@@ -43,17 +43,16 @@ NONDETERMINISTIC_OPS = {'ONNXDropout',
 # yapf: enable
 
 
-@registry.autoregister_params(singlestate=True)
 @make_properties
-class ConstantFolding(transformation.Transformation):
+class ConstantFolding(transformation.SingleStateTransformation):
     """ Remove nodes where all inputs are known and replace them with constant nodes by precomputing the output.
     """
     # pattern matching only checks that the type of the node matches,
-    _onnx_node = ONNXOp("_")
+    onnx_node = transformation.PatternNode(ONNXOp)
 
-    @staticmethod
-    def expressions():
-        return [sdutil.node_path_graph(ConstantFolding._onnx_node)]
+    @classmethod
+    def expressions(cls):
+        return [sdutil.node_path_graph(cls.onnx_node)]
 
     @staticmethod
     def is_constant(sdfg: dace.SDFG, state: dace.SDFGState, node) -> bool:
@@ -67,14 +66,13 @@ class ConstantFolding(transformation.Transformation):
 
         return False
 
-    @staticmethod
-    def can_be_applied(graph: dace.sdfg.graph.OrderedMultiDiConnectorGraph,
-                       candidate: Dict[nd.Node, int],
+    def can_be_applied(self,
+                       graph: dace.sdfg.graph.OrderedMultiDiConnectorGraph,
                        expr_index: int,
                        sdfg,
                        strict: bool = False):
 
-        node: ONNXOp = graph.nodes()[candidate[ConstantFolding._onnx_node]]
+        node = self.onnx_node
 
         # SDFG must be imported from an ONNXModel
         if not hasattr(sdfg, "_parent_onnx_model"):
@@ -103,15 +101,14 @@ class ConstantFolding(transformation.Transformation):
 
         return True
 
-    @staticmethod
-    def match_to_str(graph, candidate):
-        node: ONNXOp = graph.nodes()[candidate[ConstantFolding._onnx_node]]
+    @classmethod
+    def match_to_str(cls, graph):
+        node: ONNXOp = cls.onnx_node
         return "Precompute outputs of {}".format(node)
 
-    def apply(self, sdfg: dace.SDFG):
+    def apply(self, state: dace.SDFGState, sdfg: dace.SDFG):
         parent: ONNXModel = sdfg._parent_onnx_model
-        state = sdfg.nodes()[self.state_id]
-        node = state.nodes()[self.subgraph[ConstantFolding._onnx_node]]
+        node = self.onnx_node
         log.debug(f"Applying constant folding: {node} in {state}")
 
         if isinstance(node, donnx.ONNXShape):
