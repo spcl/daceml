@@ -146,7 +146,9 @@ class SymbolicShapeInference:
             'Gelu': self._infer_Gelu,
             'LayerNormalization': self._infer_LayerNormalization,
             'LongformerAttention': self._infer_LongformerAttention,
-            'SkipLayerNormalization': self._infer_SkipLayerNormalization
+            'SkipLayerNormalization': self._infer_SkipLayerNormalization,
+            # Replacement placeholders.
+            'GcnConvPlaceholder': self._infer_GcnConvPlaceholder,
         }
         self.run_ = True
         self.suggested_merge_ = {}
@@ -1274,6 +1276,9 @@ class SymbolicShapeInference:
 
     def _infer_SkipLayerNormalization(self, node):
         self._propagate_shape_and_type(node)
+
+    def _infer_GcnConvPlaceholder(self, node):
+        self._compute_matmul_shape(node)
 
     def _propagate_shape_and_type(self, node, input_index=0, output_index=0):
         shape = self._get_shape(node, input_index)

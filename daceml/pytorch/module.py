@@ -21,6 +21,7 @@ from daceml.pytorch import dispatchers
 from daceml.autodiff.pytorch import make_backward_function
 from daceml.onnx import ONNXModel
 from daceml.onnx.shape_inference import infer_shapes
+from daceml.pytorch.replacement import replace_children
 from daceml.util import utils, find_str_not_in_set
 
 log = logging.getLogger(__name__)
@@ -246,6 +247,9 @@ class DaceModule(nn.Module):
 
             # save the state of the model, and restore it after tracing
             state = copy.deepcopy(self.state_dict())
+
+            replace_children(self.model)
+
             torch.onnx.export(
                 self.model,
                 dummy_inputs,
