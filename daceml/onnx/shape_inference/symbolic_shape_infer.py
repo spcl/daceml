@@ -148,7 +148,7 @@ class SymbolicShapeInference:
             'LongformerAttention': self._infer_LongformerAttention,
             'SkipLayerNormalization': self._infer_SkipLayerNormalization,
             # Replacement placeholders.
-            'GcnConvPlaceholder': self._infer_GcnConvPlaceholder,
+            'torch_geometric.nn.conv.gcn_conv.GCNConvPlaceholder': self._infer_GcnConvPlaceholder,
         }
         self.run_ = True
         self.suggested_merge_ = {}
