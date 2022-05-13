@@ -17,6 +17,7 @@ from dace.symbolic import pystr_to_symbolic
 from dace.transformation import dataflow
 
 from daceml import transformation
+from daceml.onnx.nodes.replacement import get_replaced_onnx_op, is_replaceable
 from daceml.onnx.shape_inference import shape_inference
 from daceml.onnx.converters import convert_attribute_proto, onnx_tensor_type_to_typeclass, clean_onnx_name
 from daceml.onnx.schema import ONNXParameterType
@@ -181,7 +182,7 @@ class ONNXModel:
         access_nodes = {}
         self._idx_to_node = []
         for i, node in enumerate(graph.node):
-            if not has_onnx_node(node.op_type):
+            if not has_onnx_node(node.op_type) and not is_replaceable(node.op_type):
                 raise ValueError("Unsupported ONNX operator: '{}'".format(
                     node.op_type))
 
@@ -235,7 +236,11 @@ class ONNXModel:
                 node_name = node.op_type + "_" + str(i)
 
             # construct the dace node
-            op_node = get_onnx_node(node.op_type)(node_name, **op_attributes)
+            if is_replaceable(node.op_type):
+                op_node = get_replaced_onnx_op(node.op_type)(node_name)
+            else:
+                op_node = get_onnx_node(node.op_type)(
+                    node_name, **op_attributes)
             self.state.add_node(op_node)
             self._idx_to_node.append(op_node)
 
