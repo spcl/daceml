@@ -533,8 +533,9 @@ class SymbolicShapeInference:
         if not all([d == dims[0] for d in dims]):
             self._add_suggested_merge(dims, apply=True)
 
-    def _compute_matmul_shape(self, node, output_dtype=None):
+    def _compute_matmul_shape(self, node, output_dtype=None, rhs_shape=None):
         lhs_shape = self._get_shape(node, 0)
+        if rhs_shape is None:
         rhs_shape = self._get_shape(node, 1)
         lhs_rank = len(lhs_shape)
         rhs_rank = len(rhs_shape)
@@ -1277,8 +1278,13 @@ class SymbolicShapeInference:
     def _infer_SkipLayerNormalization(self, node):
         self._propagate_shape_and_type(node)
 
-    def _infer_GcnConvPlaceholder(self, node):
-        self._compute_matmul_shape(node)
+    def _infer_GcnConvPlaceholder(self, node, module_id):
+        module = self.placeholder_name_to_module_[module_id]
+        weights_shape = module.lin.weight.shape
+        output_dtype = self.known_vi_[
+            node.input[0]].type.tensor_type.elem_type
+        self._compute_matmul_shape(
+            node, output_dtype=output_dtype, rhs_shape=weights_shape)
 
     def _propagate_shape_and_type(self, node, input_index=0, output_index=0):
         shape = self._get_shape(node, input_index)
@@ -1336,6 +1342,9 @@ class SymbolicShapeInference:
             self._onnx_infer_single_node(node)
             if node.op_type in self.dispatcher_:
                 self.dispatcher_[node.op_type](node)
+            elif get_replaced_placeholder_name(node.op_type) in self.placeholder_dispatcher_:
+                self.placeholder_dispatcher_[
+                    get_replaced_placeholder_name(node.op_type)](node, node.op_type)
             elif node.op_type in ['ConvTranspose']:
                 # onnx shape inference ops like ConvTranspose may have empty shape for symbolic input
                 # before adding symbolic compute for them
@@ -1469,12 +1478,13 @@ class SymbolicShapeInference:
                 output.CopyFrom(self.known_vi_[output.name])
 
     @staticmethod
-    def infer_shapes(in_mp, int_max=2**31 - 1, auto_merge=False, guess_output_rank=False, verbose=0):
+    def infer_shapes(in_mp, placeholder_name_to_module, int_max=2**31 - 1, auto_merge=False, guess_output_rank=False, verbose=0):
         onnx_opset = get_opset(in_mp)
         if not onnx_opset or onnx_opset < 7:
             print('Only support models of onnx opset 7 and above.')
             return None
-        symbolic_shape_inference = SymbolicShapeInference(int_max, auto_merge, guess_output_rank, verbose)
+        symbolic_shape_inference = SymbolicShapeInference(
+            int_max, auto_merge, guess_output_rank, verbose, placeholder_name_to_module)
         all_shapes_inferred = False
         symbolic_shape_inference._preprocess(in_mp)
         while symbolic_shape_inference.run_:
