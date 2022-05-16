@@ -151,7 +151,7 @@ class SymbolicShapeInference:
             'SkipLayerNormalization': self._infer_SkipLayerNormalization,
 
             # Replacement placeholders.
-            'torch_geometricDOTnnDOTconvDOTgcn_convDOTGCNConv': self._infer_GcnConvPlaceholder,
+            'torch_geometric.nn.conv.gcn_conv.GCNConv': self._infer_GcnConvPlaceholder,
         }
         self.run_ = True
         self.suggested_merge_ = {}

@@ -3,7 +3,7 @@ from typing import Dict
 import torch
 from dace import nodes as nd
 
-from daceml.onnx.nodes.replacement import _modules_to_replace, module_name_to_placeholder_name
+from daceml.onnx.nodes.replacement import _modules_to_replace
 
 
 def replace_modules(module: torch.nn.Module):
@@ -17,9 +17,8 @@ def replace_modules(module: torch.nn.Module):
             cls = submodule.__class__
             cls_name = f"{cls.__module__}.{cls.__qualname__}"
             if cls_name in _modules_to_replace:
-                placeholder_name = module_name_to_placeholder_name(cls_name)
                 setattr(module, name, GenericPlaceholder(
-                    placeholder_name, submodule, replaced_idx))
+                    cls_name, submodule, replaced_idx))
                 placeholder_id_to_module[replaced_idx] = submodule
                 replaced_idx += 1
             else:
