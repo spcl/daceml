@@ -21,7 +21,7 @@ from daceml.pytorch import dispatchers
 from daceml.autodiff.pytorch import make_backward_function
 from daceml.onnx import ONNXModel
 from daceml.onnx.shape_inference import infer_shapes
-from daceml.pytorch.module_replacement import replace_modules
+from daceml.pytorch.module_replacement import replace_modules, restore_replaced_modules
 from daceml.util import utils, find_str_not_in_set
 
 log = logging.getLogger(__name__)
@@ -245,7 +245,7 @@ class DaceModule(nn.Module):
         with tempfile.TemporaryDirectory() as dir_name:
             export_name = os.path.join(dir_name, "export.onnx")
 
-            replace_modules(self.model)
+            placeholder_name_to_module = replace_modules(self.model)
 
             # save the state of the model, and restore it after tracing
             state = copy.deepcopy(self.state_dict())
@@ -270,7 +270,8 @@ class DaceModule(nn.Module):
                 keep_initializers_as_inputs=True)
             self.load_state_dict(state)
 
-            onnx_model = infer_shapes(onnx.load(export_name))
+            onnx_model = infer_shapes(
+                onnx.load(export_name), placeholder_name_to_module)
             self.onnx_model = onnx_model
 
             dace_model = ONNXModel(self.sdfg_name,
@@ -281,6 +282,8 @@ class DaceModule(nn.Module):
                                    auto_optimize=self.auto_optimize)
             self.sdfg = dace_model.sdfg
             self.dace_model = dace_model
+
+            restore_replaced_modules(placeholder_name_to_module, self.sdfg)
 
             self.sdfg.validate()
 
