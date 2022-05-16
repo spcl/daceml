@@ -3,6 +3,7 @@ from typing import Dict, List, Type, Optional
 
 import dace
 from dace import SDFG, nodes
+from dace.properties import Property
 from dace.transformation.transformation import ExpandTransformation
 from daceml.onnx.forward_implementation_abc import ONNXForward
 from daceml.onnx.nodes.node_codegen import expand_node
@@ -35,27 +36,20 @@ _placeholder_name_to_onnx_op: Dict[str, Type[nodes.Node]] = {}
 _modules_to_replace: Dict[str, str] = {}
 
 
-def module_name_to_placeholder_name(name: str, idx: Optional[int] = None):
+def module_name_to_placeholder_name(name: str):
     name = name.replace('.', 'DOT')
-    if idx is not None:
-        name += '_' + str(idx)
     return name
 
 
-def get_replaced_placeholder_name(placeholder_name: str) -> str:
-    return "_".join(placeholder_name.split('_')[:-1])
-
-
 def is_replaceable(name: str) -> bool:
-    return get_replaced_placeholder_name(name) in _placeholder_name_to_onnx_op
+    return name in _placeholder_name_to_onnx_op
 
 
-def create_replaced_onnx_op(op_name: str) -> nodes.Node:
-    qualname = get_replaced_placeholder_name(op_name)
-    if qualname not in _placeholder_name_to_onnx_op:
-        raise ValueError(f'No replacement module for {qualname}.')
-    onnx_op = _placeholder_name_to_onnx_op[qualname]
-    return onnx_op(op_name)
+def get_replaced_onnx_op(name: str) -> nodes.Node:
+    if name not in _placeholder_name_to_onnx_op:
+        raise ValueError(f'No replacement module for {name}.')
+    onnx_op = _placeholder_name_to_onnx_op[name]
+    return onnx_op
 
 
 def make_schema_dict(replaced_name, placeholder_name, inputs: List[str], outputs: List[str]):
@@ -108,7 +102,7 @@ def make_schema_dict(replaced_name, placeholder_name, inputs: List[str], outputs
 def generate_onnx_op_placeholder(schema):
     attrs = {}
 
-    def __init__(self, name, *args, location=None, **op_attributes):
+    def __init__(self, name, module_id, *args, location=None, **op_attributes):
         super(ONNXOp, self).__init__(
             name,
             location=location,
@@ -124,6 +118,7 @@ def generate_onnx_op_placeholder(schema):
                 if out.param_type == ONNXParameterType.Single
             })
         self.backward_implementation = None
+        self.module_id = module_id
 
         if len(args) > 0:
             raise TypeError(
@@ -165,8 +160,9 @@ def generate_onnx_op_placeholder(schema):
     # TODO: Check if the documentation makes any sense.
     attrs['__doc__'] = docstring + "\n"
     attrs['schema'] = schema
-
     attrs['__init__'] = __init__
+    attrs['module_id'] = Property(
+        dtype=int, desc='id of replaced module', allow_none=False)
 
     cls = type(cls_name, (ONNXOp, ), attrs)
     cls = dace.library.node(cls)
