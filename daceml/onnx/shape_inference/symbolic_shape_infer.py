@@ -10,6 +10,9 @@ from onnx import helper, numpy_helper, shape_inference
 import sympy
 
 from packaging import version
+
+from daceml.onnx.nodes.replacement import get_replaced_placeholder_name
+
 assert version.parse(onnx.__version__) >= version.parse("1.5.0")
 
 
@@ -83,7 +86,7 @@ def sympy_reduce_product(x):
 
 
 class SymbolicShapeInference:
-    def __init__(self, int_max, auto_merge, guess_output_rank, verbose):
+    def __init__(self, int_max, auto_merge, guess_output_rank, verbose, placeholder_name_to_module):
         self.dispatcher_ = {
             'Add': self._infer_symbolic_compute_ops,
             'ArrayFeatureExtractor': self._infer_ArrayFeatureExtractor,
@@ -158,6 +161,13 @@ class SymbolicShapeInference:
         self.guess_output_rank_ = guess_output_rank
         self.verbose_ = verbose
         self.int_max_ = int_max
+
+        # Logic for handling placeholder nodes.
+        self.placeholder_dispatcher_ = {
+            # Replacement placeholders.
+            'torch_geometricDOTnnDOTconvDOTgcn_convDOTGCNConv': self._infer_GcnConvPlaceholder,
+        }
+        self.placeholder_name_to_module_ = placeholder_name_to_module
 
     def _add_suggested_merge(self, symbols, apply=False):
         assert all([(type(s) == str and s in self.symbolic_dims_) or is_literal(s) for s in symbols])
@@ -536,7 +546,7 @@ class SymbolicShapeInference:
     def _compute_matmul_shape(self, node, output_dtype=None, rhs_shape=None):
         lhs_shape = self._get_shape(node, 0)
         if rhs_shape is None:
-        rhs_shape = self._get_shape(node, 1)
+            rhs_shape = self._get_shape(node, 1)
         lhs_rank = len(lhs_shape)
         rhs_rank = len(rhs_shape)
         lhs_reduce_dim = 0
