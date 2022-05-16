@@ -17,7 +17,7 @@ from dace.symbolic import pystr_to_symbolic
 from dace.transformation import dataflow
 
 from daceml import transformation
-from daceml.onnx.nodes.replacement import is_replaceable, create_replaced_onnx_op
+from daceml.onnx.nodes.replacement import is_replaceable, get_replaced_onnx_op
 from daceml.onnx.shape_inference import shape_inference
 from daceml.onnx.converters import convert_attribute_proto, onnx_tensor_type_to_typeclass, clean_onnx_name
 from daceml.onnx.schema import ONNXParameterType
@@ -94,6 +94,7 @@ class ONNXModel:
                 dace_model(test_input)
 
     """
+
     def __init__(self,
                  name: str,
                  model: onnx.ModelProto,
@@ -237,7 +238,9 @@ class ONNXModel:
 
             # construct the dace node
             if is_replaceable(node.op_type):
-                op_node = create_replaced_onnx_op(node.op_type)
+                module_id = op_attributes.pop('module_id')
+                op_node = get_replaced_onnx_op(
+                    node.op_type)(node_name, module_id, **op_attributes)
             else:
                 op_node = get_onnx_node(node.op_type)(
                     node_name, **op_attributes)
@@ -309,8 +312,8 @@ class ONNXModel:
             self.sdfg.apply_transformations_repeated([
                 transformation.ConstantFolding, dataflow.RedundantSecondArray
             ],
-                                                     validate_all=True,
-                                                     strict=True)
+                validate_all=True,
+                strict=True)
 
         if self.cuda:
             self.sdfg.apply_gpu_transformations()

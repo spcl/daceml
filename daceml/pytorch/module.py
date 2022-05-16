@@ -245,7 +245,7 @@ class DaceModule(nn.Module):
         with tempfile.TemporaryDirectory() as dir_name:
             export_name = os.path.join(dir_name, "export.onnx")
 
-            placeholder_name_to_module = replace_modules(self.model)
+            placeholder_id_to_module = replace_modules(self.model)
 
             # save the state of the model, and restore it after tracing
             state = copy.deepcopy(self.state_dict())
@@ -271,7 +271,7 @@ class DaceModule(nn.Module):
             self.load_state_dict(state)
 
             onnx_model = infer_shapes(
-                onnx.load(export_name), placeholder_name_to_module)
+                onnx.load(export_name), placeholder_id_to_module)
             self.onnx_model = onnx_model
 
             dace_model = ONNXModel(self.sdfg_name,
@@ -283,7 +283,7 @@ class DaceModule(nn.Module):
             self.sdfg = dace_model.sdfg
             self.dace_model = dace_model
 
-            restore_replaced_modules(placeholder_name_to_module, self.sdfg)
+            restore_replaced_modules(placeholder_id_to_module, self.sdfg)
 
             self.sdfg.validate()
 
