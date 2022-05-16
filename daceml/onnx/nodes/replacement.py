@@ -36,11 +36,6 @@ _placeholder_name_to_onnx_op: Dict[str, Type[nodes.Node]] = {}
 _modules_to_replace: Dict[str, str] = {}
 
 
-def module_name_to_placeholder_name(name: str):
-    name = name.replace('.', 'DOT')
-    return name
-
-
 def is_replaceable(name: str) -> bool:
     return name in _placeholder_name_to_onnx_op
 
@@ -52,11 +47,11 @@ def get_replaced_onnx_op(name: str) -> nodes.Node:
     return onnx_op
 
 
-def make_schema_dict(replaced_name, placeholder_name, inputs: List[str], outputs: List[str]):
+def make_schema_dict(name, inputs: List[str], outputs: List[str]):
     schema_dict = {
-        'name': placeholder_name,
+        'name': name,
         'attributes': {},
-        'doc': f'Placeholder for {replaced_name}',
+        'doc': f'Placeholder for {name}',
         'domain': '',
         'since_version': 1,
         'type': 'ONNXSchema'
@@ -212,14 +207,11 @@ def generate_onnx_op_placeholder(schema):
 # Registration of replacement.
 
 def register_replacement(module_name: str, inputs: List[type] = None, outputs: List[type] = None):
-    placeholder_name = module_name_to_placeholder_name(module_name)
+    _modules_to_replace[module_name] = module_name
 
-    _modules_to_replace[module_name] = placeholder_name
-
-    schema_dict = make_schema_dict(
-        module_name, placeholder_name, inputs, outputs)
+    schema_dict = make_schema_dict(module_name, inputs, outputs)
     schema = ONNXSchema.from_json(schema_dict)
-    _placeholder_name_to_onnx_op[placeholder_name] = generate_onnx_op_placeholder(
+    _placeholder_name_to_onnx_op[module_name] = generate_onnx_op_placeholder(
         schema)
 
 
