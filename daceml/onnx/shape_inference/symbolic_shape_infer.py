@@ -10,8 +10,7 @@ from onnx import helper, numpy_helper, shape_inference
 import sympy
 
 from packaging import version
-
-from daceml.onnx.nodes.replacement import get_replaced_placeholder_name
+from daceml.onnx.converters import convert_attribute_proto
 
 assert version.parse(onnx.__version__) >= version.parse("1.5.0")
 
