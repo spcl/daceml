@@ -1184,7 +1184,11 @@ class BackwardPassGenerator:
     ) -> ReverseNodeReturnType:
         rev = nd.AccessNode(self.array_grad_name(node.data))
         self.backward_state.add_node(rev)
-        return rev, BackwardResult(required_grad_names={None: None},
+        if "views" in node.in_connectors:
+            required_grad_names = {"views": "views"}
+        else:
+            required_grad_names = {None: None}
+        return rev, BackwardResult(required_grad_names=required_grad_names,
                                    given_grad_names={None: None})
 
     def _reverse_MapEntry(
