@@ -959,7 +959,7 @@ class BackwardPassGenerator:
                 # code->code edges have a small special case:
                 # we need to copy the descriptor
                 data_name = new_edge_data.data
-                data_desc = self.sdfg.arrays[data_name]
+                data_desc = copy.deepcopy(self.sdfg.arrays[data_name])
                 if self.separate_sdfgs:
                     self.backward_sdfg.add_datadesc(data_name, data_desc)
                 else:
