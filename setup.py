@@ -49,9 +49,8 @@ setup(
             'pytest-timeout'
         ],
         'docs': [
-            'sphinx==3.2.1', 'sphinx_rtd_theme==0.5.2',
-            'sphinx-autodoc-typehints==1.11.1', 'sphinx-gallery==0.9.0',
-            'matplotlib==3.4.2'
+            'sphinx', 'sphinx_rtd_theme', 'sphinx-autodoc-typehints',
+            'sphinx-gallery', 'matplotlib'
         ],
         'debug': ['onnxruntime']
     })
