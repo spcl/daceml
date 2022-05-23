@@ -17,13 +17,8 @@ class GCNConv(ONNXForward):
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[nodes.Node, SDFG]:
-        weights = node.module.lin.weight.detach().numpy()
-        weights_name = f'{node.name}_weights'
-        sdfg.add_array(weights_name, shape=weights.shape,
-                       dtype=dace.float32)
-
-        def prog(input_0, input_1, output_0):
+        def prog(input_0, input_1, linDOTweight, output_0):
             # weights = np.ones((input_0.shape[1], 2), dtype=input_0.dtype)
-            output_0[:] = np.einsum('ij,jk->ik', input_0, weights)
+            output_0[:] = np.einsum('ij,jk->ik', input_0, linDOTweight)
 
         return program_for_node(prog, sdfg, state, node)
