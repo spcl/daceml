@@ -149,9 +149,6 @@ class SymbolicShapeInference:
             'LayerNormalization': self._infer_LayerNormalization,
             'LongformerAttention': self._infer_LongformerAttention,
             'SkipLayerNormalization': self._infer_SkipLayerNormalization,
-
-            # Replacement placeholders.
-            'torch_geometric.nn.conv.gcn_conv.GCNConv': self._infer_GcnConvPlaceholder,
         }
         self.run_ = True
         self.suggested_merge_ = {}
@@ -161,6 +158,9 @@ class SymbolicShapeInference:
         self.guess_output_rank_ = guess_output_rank
         self.verbose_ = verbose
         self.int_max_ = int_max
+
+        from daceml.onnx.nodes.replacement import _module_name_to_infer_shape
+        self.replacements_dispatcher = _module_name_to_infer_shape
         self.placeholder_id_to_module_ = placeholder_id_to_module
 
     def _add_suggested_merge(self, symbols, apply=False):
@@ -1357,18 +1357,6 @@ class SymbolicShapeInference:
     def _infer_SkipLayerNormalization(self, node):
         self._propagate_shape_and_type(node)
 
-    def _infer_GcnConvPlaceholder(self, node):
-        op_attributes = {
-            attribute_proto.name: convert_attribute_proto(attribute_proto)
-            for attribute_proto in node.attribute
-        }
-        module = self.placeholder_id_to_module_[op_attributes['module_id']]
-        weights_shape = module.lin.weight.shape
-        output_dtype = self.known_vi_[
-            node.input[0]].type.tensor_type.elem_type
-        self._compute_matmul_shape(
-            node, output_dtype=output_dtype, rhs_shape=weights_shape)
-
     def _propagate_shape_and_type(self, node, input_index=0, output_index=0):
         shape = self._get_shape(node, input_index)
         output_dtype = self.known_vi_[
@@ -1430,6 +1418,8 @@ class SymbolicShapeInference:
             self._onnx_infer_single_node(node)
             if node.op_type in self.dispatcher_:
                 self.dispatcher_[node.op_type](node)
+            elif node.op_type in self.replacements_dispatcher:
+                self.replacements_dispatcher[node.op_type](self, node)
             elif node.op_type in ['ConvTranspose']:
                 # onnx shape inference ops like ConvTranspose may have empty shape for symbolic input
                 # before adding symbolic compute for them
