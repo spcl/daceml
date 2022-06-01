@@ -33,7 +33,7 @@ ifneq ($(DACE_VERSION),)
 	$(ACTIVATE) $(PIP) install $(DACE_VERSION)
 endif
 	$(ACTIVATE) $(PIP) install $(TORCH_VERSION)
-	$(ACTIVATE) $(PIP) install -e .[testing,debug,docs]
+	$(ACTIVATE) $(PIP) install -e .[testing,docs]
 
 doc:
 # suppress warnings in ONNXOps docstrings using grep -v

@@ -37,7 +37,7 @@ setup(
         exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
     package_data={'': (['*.cpp'] + runtime_files)},
     install_requires=[
-        'dace == 0.13.1', 'onnx == 1.11.0', 'torch', 'protobuf == 3.19',
+        'dace == 0.13.1', 'onnx == 1.8.0', 'torch', 'protobuf == 3.19',
         'dataclasses; python_version < "3.7"'
     ],
     # install with pip and --find-links (see Makefile)
@@ -52,5 +52,4 @@ setup(
             'sphinx', 'sphinx_rtd_theme', 'sphinx-autodoc-typehints',
             'sphinx-gallery', 'matplotlib'
         ],
-        'debug': ['onnxruntime']
     })
