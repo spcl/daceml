@@ -1518,12 +1518,14 @@ class CuDNNBatchNormBackward(BackwardImplementation):
             f"reserved_ptr",
             dace.pointer(dace.typeclass(None)),
             storage=dtypes.StorageType.CPU_Heap,
+            transient=True,
             find_new_name=True)
 
         reserved_size_name, reserved_size_desc = context.forward_sdfg.add_scalar(
             f"reserved_size",
             dace.int64,
             storage=dtypes.StorageType.CPU_Heap,
+            transient=True,
             find_new_name=True)
 
         context.forward_state.add_edge(

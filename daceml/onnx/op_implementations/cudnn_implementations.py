@@ -597,10 +597,12 @@ class CudnnBatchNormalizationTraining(ONNXForward):
             out_connectors["reserved_ptr"] = dace.pointer(dace.typeclass(None))
             nsdfg.add_scalar(f"reserved_ptr",
                              dace.pointer(dace.typeclass(None)),
-                             storage=dtypes.StorageType.CPU_Heap)
+                             storage=dtypes.StorageType.CPU_Heap,
+                             transient=True)
             nsdfg.add_scalar(f"reserved_size",
                              dace.int64,
-                             storage=dtypes.StorageType.CPU_Heap)
+                             storage=dtypes.StorageType.CPU_Heap,
+                             transient=True)
             outputs["reserved_ptr"] = nstate.add_write("reserved_ptr")
             outputs["reserved_size"] = nstate.add_write("reserved_size")
 
