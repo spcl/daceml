@@ -1,6 +1,9 @@
+from copy import deepcopy
 from dataclasses import dataclass
 import logging
 from typing import Any, Callable, Dict, List, Type
+
+import torch
 
 import dace
 from dace import SDFG, nodes
@@ -127,7 +130,7 @@ def make_schema_dict(name, inputs: List[str], params: List[ParamInfo], outputs: 
 def generate_onnx_op_placeholder(schema):
     attrs = {}
 
-    def __init__(self, name, module_id, *args, location=None, **op_attributes):
+    def __init__(self, name, module, prefix, *args, location=None, **op_attributes):
         super(ONNXOp, self).__init__(
             name,
             location=location,
@@ -142,8 +145,10 @@ def generate_onnx_op_placeholder(schema):
                 for out in self.schema.outputs
                 if out.param_type == ONNXParameterType.Single
             })
+
         self.backward_implementation = None
-        self.module_id = module_id
+        self.module = module
+        self.prefix = prefix
 
         if len(args) > 0:
             raise TypeError(
@@ -186,8 +191,10 @@ def generate_onnx_op_placeholder(schema):
     attrs['__doc__'] = docstring + "\n"
     attrs['schema'] = schema
     attrs['__init__'] = __init__
-    attrs['module_id'] = Property(
-        dtype=int, desc='id of replaced module', allow_none=False)
+    attrs['module'] = Property(
+        dtype=torch.nn.Module, desc='Replaced module', allow_none=False)
+    attrs['prefix'] = Property(
+        dtype=str, desc='Prefix for the module.', allow_none=False)
 
     cls = type(cls_name, (ONNXOp, ), attrs)
     cls = dace.library.node(cls)
