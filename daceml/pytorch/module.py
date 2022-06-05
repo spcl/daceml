@@ -61,6 +61,7 @@ class DaceModule(nn.Module):
             >>> dace_module(torch.ones(2))
             tensor([0., 0.])
     """
+
     def __init__(self,
                  module: nn.Module,
                  dummy_inputs: Optional[Tuple[torch.Tensor]] = None,
@@ -279,11 +280,10 @@ class DaceModule(nn.Module):
                                    infer_shapes=False,
                                    cuda=self.use_cuda,
                                    parent_pytorch_module=self.model,
-                                   auto_optimize=self.auto_optimize)
+                                   auto_optimize=self.auto_optimize,
+                                   placeholder_id_to_module=placeholder_id_to_module)
             self.sdfg = dace_model.sdfg
             self.dace_model = dace_model
-
-            restore_replaced_modules(placeholder_id_to_module, self.sdfg)
 
             self.sdfg.validate()
 
