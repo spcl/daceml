@@ -7,19 +7,21 @@ import numpy as np
 import torch
 
 import onnx
-from dace.codegen import compiled_sdfg
 from onnx import numpy_helper
+from onnx.helper import make_tensor_value_info
 
 import dace
 from dace import data as dt, dtypes, nodes, SDFG, SDFGState
 from dace.frontend.python import parser
+from dace.codegen import compiled_sdfg
+from dace.dtypes import TORCH_DTYPE_TO_TYPECLASS
 from dace.symbolic import pystr_to_symbolic
 from dace.transformation import dataflow
 
 from daceml import transformation
 from daceml.onnx.nodes.replacement import is_replaceable, get_replaced_onnx_op
 from daceml.onnx.shape_inference import shape_inference
-from daceml.onnx.converters import convert_attribute_proto, onnx_tensor_type_to_typeclass, clean_onnx_name
+from daceml.onnx.converters import convert_attribute_proto, onnx_tensor_type_to_typeclass, clean_onnx_name, typeclass_to_onnx_tensor_type_int
 from daceml.onnx.schema import ONNXParameterType
 from daceml.onnx.nodes.onnx_op import get_onnx_node, has_onnx_node, ONNXOp
 from daceml.util import utils, is_cuda
@@ -106,7 +108,8 @@ class ONNXModel:
                  parent_pytorch_module: Optional[torch.nn.Module] = None,
                  storage: Optional[dtypes.StorageType] = None,
                  save_transients: Optional[Dict[str, torch.Tensor]] = None,
-                 auto_merge: bool = False):
+                 auto_merge: bool = False,
+                 placeholder_id_to_module: Optional[Dict[int, torch.nn.Module]] = None):
         """
         :param name: the name for the SDFG.
         :param model: the model to import.
@@ -238,8 +241,15 @@ class ONNXModel:
             # construct the dace node
             if is_replaceable(node.op_type):
                 module_id = op_attributes.pop('module_id')
+                if placeholder_id_to_module is None:
+                    raise ValueError(
+                        'Found a node to replace, but no replacement dict provided.')
+                elif module_id not in placeholder_id_to_module:
+                    raise ValueError(
+                        f'Module id {module_id} not found in replacement dict.')
+                prefix, module = placeholder_id_to_module[module_id]
                 op_node = get_replaced_onnx_op(
-                    node.op_type)(node_name, module_id, **op_attributes)
+                    node.op_type)(node_name, module, prefix, **op_attributes)
             else:
                 op_node = get_onnx_node(node.op_type)(
                     node_name, **op_attributes)
@@ -250,6 +260,8 @@ class ONNXModel:
                     enumerate(zip(node.input, repeat(True))),
                     enumerate(zip(node.output, repeat(False)))):
                 if clean_onnx_name(name) not in self.sdfg.arrays:
+                    if not name:
+                        continue
                     if name not in self.value_infos:
                         raise ValueError(
                             "Could not find array with name '{}'".format(name))
@@ -300,6 +312,57 @@ class ONNXModel:
 
                     self.state.add_edge(
                         op_node, conn_name, access, None,
+                        dace.Memlet.from_array(clean_onnx_name(name),
+                                               data_desc))
+
+            # Add input nodes for module weights.
+            if hasattr(op_node, 'module'):
+                for name, param in op_node.module.named_parameters():
+                    name = clean_onnx_name(op_node.prefix + name)
+                    elem_type = typeclass_to_onnx_tensor_type_int(
+                        TORCH_DTYPE_TO_TYPECLASS[param.dtype])
+                    value_info = make_tensor_value_info(
+                        name, elem_type, param.shape)
+                    self.value_infos[value_info.name] = value_info
+                    self._add_value_info(value_info, storage=storage)
+                    # TODO: add to weights
+
+                    access = nodes.AccessNode(
+                        name, dtypes.AccessType.ReadOnly)
+                    self.state.add_node(access)
+                    access_nodes[name] = access
+
+                    # get the connector name
+                    params = op_node.schema.inputs
+                    params_len = len(params)
+                    param_idx = len(node.input)
+                    if param_idx >= params_len:
+                        # this is a variadic parameter. Then the last parameter of the parameter must be variadic.
+                        if params[-1].param_type != ONNXParameterType.Variadic:
+                            raise ValueError(
+                                "Expected the last {i_or_o} parameter to be variadic,"
+                                " since the {i_or_o} with idx {param_idx} has more parameters than the schema ({params_len})"
+                                .format(i_or_o="input" if is_input else "output",
+                                        param_idx=param_idx,
+                                        params_len=params_len))
+                        conn_name = params[-1].name + "__" + str(param_idx -
+                                                                 params_len + 1)
+                    elif params[
+                            param_idx].param_type == ONNXParameterType.Variadic:
+                        # this is a variadic parameter, and it is within the range of params, so it must be the first
+                        # instance of a variadic parameter
+                        conn_name = params[param_idx].name + "__0"
+                    else:
+                        conn_name = params[param_idx].name
+
+                    data_desc = self.sdfg.arrays[clean_onnx_name(name)]
+
+                    # add the connector if required, and add an edge
+                    # conn_name = name
+                    if conn_name not in op_node.in_connectors:
+                        assert op_node.add_in_connector(conn_name)
+                    self.state.add_edge(
+                        access, None, op_node, conn_name,
                         dace.Memlet.from_array(clean_onnx_name(name),
                                                data_desc))
 

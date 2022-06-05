@@ -10,7 +10,7 @@ def inferGCNConv(ssi: SymbolicShapeInference, node):
         attribute_proto.name: convert_attribute_proto(attribute_proto)
         for attribute_proto in node.attribute
     }
-    module = ssi.placeholder_id_to_module_[op_attributes['module_id']]
+    _, module = ssi.placeholder_id_to_module_[op_attributes['module_id']]
     weights_shape = module.lin.weight.shape
     output_dtype = ssi.known_vi_[
         node.input[0]].type.tensor_type.elem_type
@@ -25,4 +25,4 @@ register_replacement('torch_geometric.nn.conv.gcn_conv.GCNConv',
                          ParamInfo('float32', 'bias', required=False),
                      ],
                      outputs=['float32'],
-                     shape_infer=inferGCNConv) 
+                     shape_infer=inferGCNConv)
