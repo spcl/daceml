@@ -1,7 +1,7 @@
 from copy import deepcopy
 from dataclasses import dataclass
 import logging
-from typing import Any, Callable, Dict, List, Type
+from typing import Any, Callable, Dict, Iterable, List, Tuple, Type
 
 import torch
 
@@ -9,54 +9,21 @@ import dace
 from dace import SDFG, nodes
 from dace.properties import Property
 from dace.transformation.transformation import ExpandTransformation
-from dace.dtypes import TYPECLASS_STRINGS
-from daceml.onnx.converters import clean_onnx_name
+from dace.dtypes import TYPECLASS_STRINGS, TORCH_DTYPE_TO_TYPECLASS
+from daceml.onnx.converters import clean_onnx_name, typeclass_to_onnx_str, typeclass_to_onnx_tensor_type_int
 from daceml.onnx.forward_implementation_abc import ONNXForward
 from daceml.onnx.nodes.node_codegen import expand_node
 from daceml.onnx.nodes.onnx_op import (ONNXOp, _get_attr_docstring,
                                        _get_connector_docstring,
                                        _get_typecons_docstring)
-from daceml.onnx.schema import ONNXParameterType, ONNXSchema
+from daceml.onnx.schema import ONNXParameter, ONNXParameterType, ONNXSchema, ONNXTypeConstraint
 from daceml.onnx.shape_inference.symbolic_shape_infer import SymbolicShapeInference
 
 log = logging.getLogger(__name__)
 
 
-@dataclass
-class ParamInfo:
-    dtype: str
-    name: str
-    required: bool
-
-    def __init__(self, dtype, name, required) -> None:
-        self.dtype = dtype
-        self.name = name
-        self.required = required
-
-    def to_onnx_type_info(self):
-        type_name = f'{self.name}_T'
-        type_info = {
-            'description': '',
-            'homogeneous': True,
-            'name': clean_onnx_name(self.name),
-            'param_type': 'Single' if self.required else 'Optional',
-            'type': 'ONNXParameter',
-            'type_str': type_name
-        }
-        type_constraint = (
-            type_name, {
-                'type': 'ONNXTypeConstraint',
-                'type_str': type_name,
-                'types': [self.dtype]
-            }
-        )
-
-        return type_info, type_constraint
-
-
 _modules_to_replace: Dict[str, str] = {}
 _module_name_to_onnx_op: Dict[str, Type[nodes.Node]] = {}
-_module_name_to_param_infos: Dict[str, List[ParamInfo]] = {}
 _module_name_to_infer_shape = {}  # todo annotate type
 
 
@@ -71,7 +38,7 @@ def get_replaced_onnx_op(name: str) -> nodes.Node:
     return onnx_op
 
 
-def make_schema_dict(name, inputs: List[str], params: List[ParamInfo], outputs: List[str]):
+def make_schema_dict(name, inputs: List[str], outputs: List[str]):
     schema_dict = {
         'name': name,
         'attributes': {},
@@ -110,27 +77,50 @@ def make_schema_dict(name, inputs: List[str], params: List[ParamInfo], outputs: 
     outputs_info, outputs_type_constraints = make_type_info_helper(
         outputs, is_input=False)
 
-    # Sort params by name to ensure the order is the same everywhere.
-    params = sorted(params, key=lambda p: (
-        not p.required, clean_onnx_name(p.name)))
-    params_all_info = [p.to_onnx_type_info() for p in params]
-    params_info = [p for p, _ in params_all_info]
-
-    params_type_constraints = {k: v for _, (k, v) in params_all_info}
-
     schema_dict.update({
-        'inputs': inputs_info + params_info,
+        'inputs': inputs_info,
         'outputs': outputs_info,
-        'type_constraints': {**inputs_type_constraints, **outputs_type_constraints, **params_type_constraints},
+        'type_constraints': {**inputs_type_constraints, **outputs_type_constraints},
     })
     return schema_dict
 
 
+def onnx_type_info_from_torch_params(params: Iterable[Tuple[str, torch.nn.Parameter]]):
+    onnx_params = []
+    onnx_type_constraints = {}
+    for name, p in params:
+        name = clean_onnx_name(name)
+        type_name = name + '_T'
+        onnx_params.append(ONNXParameter.from_json({
+            'description': '',
+            'homogeneous': True,
+            'name': name,
+            'param_type': 'Single',
+            'type': 'ONNXParameter',
+            'type_str': type_name
+        }))
+        onnx_type_constraints[type_name] = ONNXTypeConstraint.from_json({
+            'type': 'ONNXTypeConstraint',
+            'type_str': type_name,
+            'types': [TORCH_DTYPE_TO_TYPECLASS[p.dtype].to_string()],
+        })
+    return onnx_params, onnx_type_constraints
+
 # Generating an ONNX Library node.
+
+
 def generate_onnx_op_placeholder(schema):
     attrs = {}
 
     def __init__(self, name, module, prefix, *args, location=None, **op_attributes):
+        # Add information about module parameters to the schema.
+        onnx_params, onnx_type_constraints = onnx_type_info_from_torch_params(
+            module.named_parameters())
+        self.schema = deepcopy(self.schema)
+        self.schema.inputs += onnx_params
+        self.schema.type_constraints.update(onnx_type_constraints)
+        # TODO: Get input/output spec from module?
+
         super(ONNXOp, self).__init__(
             name,
             location=location,
@@ -159,6 +149,7 @@ def generate_onnx_op_placeholder(schema):
             raise TypeError(
                 f"__init__() takes no keyword arguments but following were given: {op_attributes}")
 
+    # TODO: the docsstrings for params are missing, but are they needed?
     input_connector_docstrings = "\n".join(
         _get_connector_docstring(param) for param in schema.inputs)
     output_connector_docstrings = "\n".join(
@@ -242,13 +233,10 @@ def generate_onnx_op_placeholder(schema):
 
 
 # Registration of replacement.
-def register_replacement(module_name: str, inputs: List[str], params: List[ParamInfo], outputs: List[str], shape_infer: Callable[[SymbolicShapeInference, Any], None]):
+def register_replacement(module_name: str, inputs: List[str], outputs: List[str], shape_infer: Callable[[SymbolicShapeInference, Any], None]):
     _modules_to_replace[module_name] = module_name
-    params = sorted(params, key=lambda p: (
-        not p.required, clean_onnx_name(p.name)))
-    _module_name_to_param_infos[module_name] = params
     _module_name_to_infer_shape[module_name] = shape_infer
-    schema_dict = make_schema_dict(module_name, inputs, params, outputs)
+    schema_dict = make_schema_dict(module_name, inputs, outputs)
     schema = ONNXSchema.from_json(schema_dict)
     _module_name_to_onnx_op[module_name] = generate_onnx_op_placeholder(
         schema)
