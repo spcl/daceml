@@ -317,54 +317,34 @@ class ONNXModel:
 
             # Add input nodes for module weights.
             if hasattr(op_node, 'module'):
-                for name, param in op_node.module.named_parameters():
-                    name = clean_onnx_name(op_node.prefix + name)
+                param_idx = len(node.input)
+                for local_name, param in op_node.module.named_parameters():
+                    name = clean_onnx_name(op_node.prefix + local_name)
+
+                    # Register the parameter tensor in the model.
                     elem_type = typeclass_to_onnx_tensor_type_int(
                         TORCH_DTYPE_TO_TYPECLASS[param.dtype])
                     value_info = make_tensor_value_info(
                         name, elem_type, param.shape)
                     self.value_infos[value_info.name] = value_info
                     self._add_value_info(value_info, storage=storage)
-                    # TODO: add to weights
+                    self.sdfg.arrays[name].transient = False
+                    self.weights[name] = param.data
 
+                    # Add access node for the weights.
                     access = nodes.AccessNode(
                         name, dtypes.AccessType.ReadOnly)
                     self.state.add_node(access)
                     access_nodes[name] = access
 
-                    # get the connector name
-                    params = op_node.schema.inputs
-                    params_len = len(params)
-                    param_idx = len(node.input)
-                    if param_idx >= params_len:
-                        # this is a variadic parameter. Then the last parameter of the parameter must be variadic.
-                        if params[-1].param_type != ONNXParameterType.Variadic:
-                            raise ValueError(
-                                "Expected the last {i_or_o} parameter to be variadic,"
-                                " since the {i_or_o} with idx {param_idx} has more parameters than the schema ({params_len})"
-                                .format(i_or_o="input" if is_input else "output",
-                                        param_idx=param_idx,
-                                        params_len=params_len))
-                        conn_name = params[-1].name + "__" + str(param_idx -
-                                                                 params_len + 1)
-                    elif params[
-                            param_idx].param_type == ONNXParameterType.Variadic:
-                        # this is a variadic parameter, and it is within the range of params, so it must be the first
-                        # instance of a variadic parameter
-                        conn_name = params[param_idx].name + "__0"
-                    else:
-                        conn_name = params[param_idx].name
-
                     data_desc = self.sdfg.arrays[clean_onnx_name(name)]
-
-                    # add the connector if required, and add an edge
-                    # conn_name = name
+                    # Add the connector if required, and add an edge.
+                    conn_name = clean_onnx_name(local_name)
                     if conn_name not in op_node.in_connectors:
                         assert op_node.add_in_connector(conn_name)
                     self.state.add_edge(
                         access, None, op_node, conn_name,
-                        dace.Memlet.from_array(clean_onnx_name(name),
-                                               data_desc))
+                        dace.Memlet.from_array(name, data_desc))
 
         if self.fold_constants:
             log.debug("Applying constant folding")
