@@ -19,7 +19,10 @@ class cuDNN:
     state_fields = ["daceml::cudnn::CudnnHandle *cudnn_handle;"]
     dependencies = [CUDA]
 
-    headers = ["../include/daceml_cudnn.h"]
+    headers = {
+        'cuda': ["../include/daceml_cudnn.h"],
+        'frame': ["../include/daceml_cudnn.h"]
+    }
     init_code = """
         __state->cudnn_handle = new daceml::cudnn::CudnnHandle;
     """

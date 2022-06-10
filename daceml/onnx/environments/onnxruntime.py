@@ -74,13 +74,13 @@ class ONNXRuntime:
         "OrtMemoryInfo* ort_cpu_mem_info;"
     ]
     dependencies = []
-
     headers = [
         "../include/dace_onnx.h",
         "onnxruntime_c_api.h",
         "cpu_provider_factory.h",
         "cuda_provider_factory.h",
     ]
+    headers = {'frame': headers, 'cuda': headers}
     init_code = """
     __state->ort_api = OrtGetApiBase()->GetApi(ORT_API_VERSION);
     __ort_check_status(__state->ort_api, __state->ort_api->CreateCpuMemoryInfo(OrtDeviceAllocator, /*type=*/OrtMemTypeDefault, &__state->ort_cpu_mem_info));
@@ -117,7 +117,7 @@ class ONNXRuntimeCUDA:
     ]
     dependencies = [ONNXRuntime]
 
-    headers = []
+    headers = {}
     max_concurrent_streams = None
     use_streams = False
 

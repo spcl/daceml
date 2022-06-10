@@ -98,7 +98,7 @@ class ONNXModel:
                  model: onnx.ModelProto,
                  infer_shapes: bool = True,
                  cuda: bool = False,
-                 apply_strict: bool = False,
+                 simplify: bool = False,
                  auto_optimize: bool = True,
                  fold_constants: bool = True,
                  parent_pytorch_module: Optional[torch.nn.Module] = None,
@@ -111,8 +111,7 @@ class ONNXModel:
         :param infer_shapes: whether to infer shapes for the model. If this is ``False``, the model must have
                              value infos (with shapes) for all arrays, including intermediate values.
         :param cuda: if ``True``, the model will be executed on the GPU.
-        :param apply_strict: if ``True``, apply strict transformations after all nodes have
-                             been expanded calling (warning: this can be very slow!)
+        :param simplify: if ``True``, apply simplification transformations after all nodes have been expanded.
         :param auto_optimize: if ``True``, apply automatic optimizations before calling.
         :param parent_pytorch_module: when not None, the weight tensors are loaded from the parameters of this model
                                       rather than the ONNX graph.
@@ -137,7 +136,7 @@ class ONNXModel:
         self.sdfg: SDFG = SDFG(name)  #: the generated SDFG.
         self.sdfg._parent_onnx_model = self
         self.cuda = cuda
-        self.apply_strict = apply_strict
+        self.simplify = simplify
         self.fold_constants = fold_constants
         self.state: SDFGState = self.sdfg.add_state(
         )  #: the state containing the model computation.
@@ -250,11 +249,8 @@ class ONNXModel:
                 # get the access node
                 if name in access_nodes:
                     access = access_nodes[name]
-                    self._update_access_type(access, is_input)
                 else:
-                    access = nodes.AccessNode(
-                        clean_onnx_name(name), dtypes.AccessType.ReadOnly
-                        if is_input else dtypes.AccessType.WriteOnly)
+                    access = nodes.AccessNode(clean_onnx_name(name))
                     self.state.add_node(access)
                     access_nodes[name] = access
 
@@ -304,18 +300,10 @@ class ONNXModel:
             self.sdfg.apply_transformations_repeated([
                 transformation.ConstantFolding, dataflow.RedundantSecondArray
             ],
-                                                     validate_all=True,
-                                                     strict=True)
+                                                     validate_all=True)
 
         if self.cuda:
             self.sdfg.apply_gpu_transformations()
-
-    @staticmethod
-    def _update_access_type(node: dace.nodes.AccessNode, is_input: bool):
-        if node.access == dtypes.AccessType.ReadOnly and not is_input:
-            node.access = dtypes.AccessType.ReadWrite
-        elif node.access == dtypes.AccessType.WriteOnly and is_input:
-            node.access = dtypes.AccessType.ReadWrite
 
     def _add_constant_tensor(self, tensor: onnx.TensorProto, parent_pt_model,
                              storage: dtypes.StorageType):
@@ -580,7 +568,7 @@ class ONNXModel:
         utils.auto_optimize(
             self.sdfg,
             self.cuda,
-            apply_strict=self.apply_strict,
+            simplify=self.simplify,
             # constants have been folded before GPU transforms
             fold_constants=False)
 

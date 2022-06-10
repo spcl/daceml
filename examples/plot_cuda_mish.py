@@ -148,13 +148,13 @@ dace_mish.reset_sdfg()
 
 
 # expand the onnx nodes, and apply automatic transformations like inlining
-def expand_and_strict_transforms(module):
+def expand_and_simplify(module):
     # use the pure expansions of operators
     with change_default(donnx, "pure"):
-        utils.auto_optimize(module.sdfg, cuda=True, apply_strict=True)
+        utils.auto_optimize(module.sdfg, cuda=True, simplify=True)
 
 
-dace_mish.append_post_onnx_hook("auto_optimize", expand_and_strict_transforms)
+dace_mish.append_post_onnx_hook("auto_optimize", expand_and_simplify)
 
 
 # apply subgraph fusion

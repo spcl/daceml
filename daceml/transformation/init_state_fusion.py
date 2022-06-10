@@ -62,9 +62,8 @@ def _edges_between_ok(
     return out_edges[0]
 
 
-@registry.autoregister_params(strict=False)
 @properties.make_properties
-class InitStateFusion(transformation.Transformation):
+class InitStateFusion(transformation.MultiStateTransformation):
 
     init_state = transformation.PatternNode(SDFGState)
     compute_state = transformation.PatternNode(SDFGState)
@@ -84,13 +83,12 @@ class InitStateFusion(transformation.Transformation):
 
     def can_be_applied(self,
                        graph: Union[SDFG, SDFGState],
-                       candidate: Dict['PatternNode', int],
                        expr_index: int,
                        sdfg: SDFG,
-                       strict: bool = False) -> bool:
+                       permissive: bool = False) -> bool:
 
-        init_state: SDFGState = self.init_state(sdfg)
-        compute_state: SDFGState = self.compute_state(sdfg)
+        init_state: SDFGState = self.init_state
+        compute_state: SDFGState = self.compute_state
 
         if not _edges_between_ok(sdfg, init_state, compute_state):
             return False
@@ -140,9 +138,9 @@ class InitStateFusion(transformation.Transformation):
                         return False
         return True
 
-    def apply(self, sdfg: SDFG):
-        init_state: SDFGState = self.init_state(sdfg)
-        compute_state: SDFGState = self.compute_state(sdfg)
+    def apply(self, _, sdfg: SDFG):
+        init_state: SDFGState = self.init_state
+        compute_state: SDFGState = self.compute_state
 
         # both states should only contain a single map
         init_maps: List[nodes.MapEntry] = [

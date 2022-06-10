@@ -82,12 +82,11 @@ There are two main ways to generate backward passes in DaCeML.
 
             @dace.map(_[0:5, 0:3])
             def summap(i, j):
-                s >> S(1, lambda x, y: x + y)[0]
+                s >> S(1, lambda a, b: a + b)[0]
                 z << Z[i, j]
                 s = z
 
         sdfg = dace_gemm.to_sdfg()
-
         add_backward_pass(sdfg=sdfg, state=sdfg.nodes()[0], inputs=["X", "Y"], outputs=["S"])
 
 

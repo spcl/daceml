@@ -139,14 +139,6 @@ def _is_int_value(value, target_value: int) -> bool:
     return True
 
 
-def _invert_access(access: dace.AccessType) -> dace.AccessType:
-    if access == dace.AccessType.ReadOnly:
-        return dace.AccessType.WriteOnly
-    elif access == dace.AccessType.WriteOnly:
-        return dace.AccessType.ReadOnly
-    return access
-
-
 def _add_through_connector(node: Union[nd.MapEntry, nd.MapExit]):
     i = 1
     while ("IN_{}".format(i) in node.in_connectors
@@ -267,7 +259,6 @@ class BackwardPassGenerator:
                                before calling this method).
         :param zero_non_transients: Whether non-transient gradient buffers should be zero initialized in the backward
                                     SDFG.
-        :param apply_strict: whether to apply strict transformations before creating the backward pass.
     """
     def __init__(
             self,
@@ -278,8 +269,7 @@ class BackwardPassGenerator:
             required_gradients: List[Union[nd.AccessNode, str]],
             backward_sdfg: SDFG,  # this can be the same as SDFG
             backward_state: SDFGState,
-            zero_non_transients: bool,
-            apply_strict=False):
+            zero_non_transients: bool):
 
         if backward_state not in backward_sdfg.nodes():
             raise AutoDiffException(
@@ -342,7 +332,6 @@ class BackwardPassGenerator:
 
         # checks if backward has already been applied
         self._applied = False
-        self.apply_strict = apply_strict
         self.zero_non_transients = zero_non_transients
 
         for outp in self.given_gradients:
@@ -503,10 +492,6 @@ class BackwardPassGenerator:
         # expand until there is nothing left to expand
         while self._expand_nodes(forward_subgraph):
             # Nodes have been expanded again on the expanded graph; recalculate the forward graph
-            forward_subgraph = self._find_subgraph_to_differentiate()
-
-        if self.apply_strict:
-            self.sdfg.apply_strict_transformations()
             forward_subgraph = self._find_subgraph_to_differentiate()
 
         # check that all edges are float
@@ -974,7 +959,7 @@ class BackwardPassGenerator:
                 # code->code edges have a small special case:
                 # we need to copy the descriptor
                 data_name = new_edge_data.data
-                data_desc = self.sdfg.arrays[data_name]
+                data_desc = copy.deepcopy(self.sdfg.arrays[data_name])
                 if self.separate_sdfgs:
                     self.backward_sdfg.add_datadesc(data_name, data_desc)
                 else:
@@ -1197,11 +1182,18 @@ class BackwardPassGenerator:
         given_gradients: List[str],
         required_gradients: List[str],
     ) -> ReverseNodeReturnType:
-        rev = nd.AccessNode(self.array_grad_name(node.data),
-                            access=_invert_access(node.access))
+        rev = nd.AccessNode(self.array_grad_name(node.data))
         self.backward_state.add_node(rev)
-        return rev, BackwardResult(required_grad_names={None: None},
-                                   given_grad_names={None: None})
+        required_grad_names = {None: None}
+        given_grad_names = {None: None}
+
+        if "views" in node.in_connectors:
+            required_grad_names = {"views": "views"}
+        if "views" in node.out_connectors:
+            given_grad_names = {"views": "views"}
+
+        return rev, BackwardResult(required_grad_names=required_grad_names,
+                                   given_grad_names=given_grad_names)
 
     def _reverse_MapEntry(
         self,

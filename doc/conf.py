@@ -43,6 +43,7 @@ import torch
 import torch.nn as nn
 import os
 import dace
+dace.Config.set('debugprint', value=False)
 '''
 
 html_sidebars = {

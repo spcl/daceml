@@ -20,14 +20,12 @@ log = logging.getLogger(__name__)
 def make_backward_function(
     model: ONNXModel,
     required_grads: List[str],
-    apply_strict=False
 ) -> Tuple[dace.SDFG, dace.SDFG, BackwardResult, Dict[str, dt.Data]]:
     """ Convert an ONNXModel to a PyTorch differentiable function. This method should not be used on its own.
         Instead use the ``backward=True`` parameter of :class:`daceml.pytorch.DaceModule`.
 
         :param model: the model to convert.
         :param required_grads: the list of inputs names of the module that we must compute gradients for.
-        :param apply_strict: whether to apply strict transformations before creating the backward pass.
         :return: A 4-tuple of forward SDFG, backward SDFG, backward result, and input arrays for 
                  backward pass (as mapping of names to DaCe data descriptors).
     """
@@ -50,7 +48,6 @@ def make_backward_function(
         required_gradients=required_grads,
         backward_sdfg=backward_sdfg,
         backward_state=backward_state,
-        apply_strict=apply_strict,
         zero_non_transients=False)
 
     backward_result, backward_grad_arrays, backward_input_arrays = gen.backward(

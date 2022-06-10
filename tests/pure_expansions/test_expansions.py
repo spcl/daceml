@@ -483,7 +483,7 @@ def test_reshape_add():
 
         return reshaped + bias
 
-    sdfg: dace.SDFG = add_reshape.to_sdfg(strict=False)
+    sdfg: dace.SDFG = add_reshape.to_sdfg(simplify=False)
 
     sdfg.apply_transformations_repeated(
         [transformation.interstate.StateFusion])

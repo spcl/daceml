@@ -9,22 +9,20 @@ from dace.properties import Property, make_properties
 from dace.sdfg import nodes as nd
 from dace.sdfg import utils as sdutil
 from dace.transformation import transformation
-from dace.transformation.transformation import PatternNode
 from dace.frontend.common import einsum
 from daceml.onnx import parse_variadic_param
 
 log = logging.getLogger(__name__)
 
 
-@registry.autoregister_params(singlestate=True)
 @make_properties
-class HorizontalEinsumFusion(transformation.Transformation):
+class HorizontalEinsumFusion(transformation.SingleStateTransformation):
     """ Fuse horizontal einsums
     """
     # pattern matching only checks that the type of the node matches,
-    top = PatternNode(donnx.ONNXEinsum)
-    access = PatternNode(nodes.AccessNode)
-    bot = PatternNode(donnx.ONNXEinsum)
+    top = transformation.PatternNode(donnx.ONNXEinsum)
+    access = transformation.PatternNode(nodes.AccessNode)
+    bot = transformation.PatternNode(donnx.ONNXEinsum)
 
     allow_nonblas = Property(
         dtype=bool,
@@ -41,13 +39,12 @@ class HorizontalEinsumFusion(transformation.Transformation):
 
     def can_be_applied(self,
                        graph: dace.sdfg.graph.OrderedMultiDiConnectorGraph,
-                       candidate: Dict[nd.Node, int],
                        expr_index: int,
                        sdfg,
-                       strict: bool = False):
-        top: donnx.ONNXEinsum = self.top(sdfg)
-        access: nodes.AccessNode = self.access(sdfg)
-        bot: donnx.ONNXEinsum = self.bot(sdfg)
+                       permissive: bool = False):
+        top: donnx.ONNXEinsum = self.top
+        access: nodes.AccessNode = self.access
+        bot: donnx.ONNXEinsum = self.bot
         top_inputs, top_output = top.equation.split("->")
         top_inputs = top_inputs.split(",")
         bot_inputs, bot_output = bot.equation.split("->")
@@ -102,12 +99,10 @@ class HorizontalEinsumFusion(transformation.Transformation):
 
         return True
 
-    def apply(self, sdfg: dace.SDFG):
-        state = sdfg.nodes()[self.state_id]
-
-        top: donnx.ONNXEinsum = self.top(sdfg)
-        access: nodes.AccessNode = self.access(sdfg)
-        bot: donnx.ONNXEinsum = self.bot(sdfg)
+    def apply(self, state: dace.SDFGState, sdfg: dace.SDFG):
+        top: donnx.ONNXEinsum = self.top
+        access: nodes.AccessNode = self.access
+        bot: donnx.ONNXEinsum = self.bot
 
         top_inputs, top_output = top.equation.split("->")
         top_inputs = top_inputs.split(",")

@@ -33,7 +33,7 @@ def middle_sqrt(Y: dace.float32[3, 3]):
 
 @run_correctness
 def test_nested():
-    sdfg = middle_sqrt.to_sdfg(strict=False)
+    sdfg = middle_sqrt.to_sdfg(simplify=False)
 
     sdfg.apply_transformations_repeated([StateFusion])
 
@@ -44,7 +44,7 @@ def test_nested():
         Z.backward()
         return dict(Y_gradient=Y.grad)
 
-    return (SDFGBackwardRunner(sdfg, "__return", strict=False), torch_func,
+    return (SDFGBackwardRunner(sdfg, "__return", simplify=False), torch_func,
             dict(Y=np.random.rand(3, 3).astype(np.float32)))
 
 
@@ -60,7 +60,7 @@ def middle_sqrt_with_intermediate(Y: dace.float32[3, 3]):
 
 @run_correctness
 def test_nested_forwarding():
-    sdfg = middle_sqrt_with_intermediate.to_sdfg(strict=False)
+    sdfg = middle_sqrt_with_intermediate.to_sdfg(simplify=False)
 
     sdfg.apply_transformations_repeated([StateFusion])
 
@@ -72,7 +72,7 @@ def test_nested_forwarding():
         Z.backward()
         return dict(Y_gradient=Y.grad)
 
-    return (SDFGBackwardRunner(sdfg, "__return", strict=False), torch_func,
+    return (SDFGBackwardRunner(sdfg, "__return", simplify=False), torch_func,
             dict(Y=np.random.rand(3, 3).astype(np.float32)))
 
 
@@ -97,7 +97,7 @@ def outer_sqrt_with_intermediate(Y: dace.float32[3, 3]):
 
 @run_correctness
 def test_triple_nested_forwarding():
-    sdfg = outer_sqrt_with_intermediate.to_sdfg(strict=False)
+    sdfg = outer_sqrt_with_intermediate.to_sdfg(simplify=False)
 
     sdfg.apply_transformations_repeated([StateFusion])
 
@@ -110,7 +110,7 @@ def test_triple_nested_forwarding():
         Z.backward()
         return dict(Y_gradient=Y.grad)
 
-    return (SDFGBackwardRunner(sdfg, "__return", strict=False), torch_func,
+    return (SDFGBackwardRunner(sdfg, "__return", simplify=False), torch_func,
             dict(Y=np.random.rand(3, 3).astype(np.float32)))
 
 
@@ -132,7 +132,7 @@ def test_view_forwarding():
         Zl = dace.elementwise(lambda x: log(x + 1), Z)
         result[:] = np.sum(Zl)
 
-    sdfg = add_reshape_grad_test_nested.to_sdfg(strict=False)
+    sdfg = add_reshape_grad_test_nested.to_sdfg(simplify=False)
 
     sdfg.expand_library_nodes()
 
@@ -147,8 +147,8 @@ def test_view_forwarding():
         sdfg(inp1=inp1, bias=bias, result=result)
         return result + 1
 
-    outer_sdfg = inner_view_forwarding.to_sdfg(strict=False)
-    outer_sdfg.apply_transformations_repeated([StateFusion], strict=True)
+    outer_sdfg = inner_view_forwarding.to_sdfg(simplify=False)
+    outer_sdfg.apply_transformations_repeated([StateFusion])
 
     def torch_func(*, inp1, bias):
         reshaped = torch.reshape(inp1 + 1, [3, 3])
@@ -161,7 +161,7 @@ def test_view_forwarding():
         return dict(inp1_gradient=inp1.grad, bias_gradient=bias.grad)
 
     return (SDFGBackwardRunner(outer_sdfg, "__return",
-                               strict=False), torch_func,
+                               simplify=False), torch_func,
             dict(inp1=np.random.rand(9).astype(np.float64),
                  bias=np.random.rand(3).astype(np.float64)))
 
@@ -178,7 +178,7 @@ def middle_sqrt_with_intermediate(Y: dace.float32[3, 3]):
 
 @run_correctness
 def test_nested_forwarding():
-    sdfg = middle_sqrt_with_intermediate.to_sdfg(strict=False)
+    sdfg = middle_sqrt_with_intermediate.to_sdfg(simplify=False)
 
     sdfg.apply_transformations_repeated([StateFusion])
 
@@ -190,7 +190,7 @@ def test_nested_forwarding():
         Z.backward()
         return dict(Y_gradient=Y.grad)
 
-    return (SDFGBackwardRunner(sdfg, "__return", strict=False), torch_func,
+    return (SDFGBackwardRunner(sdfg, "__return", simplify=False), torch_func,
             dict(Y=np.random.rand(3, 3).astype(np.float32)))
 
 
@@ -215,7 +215,7 @@ def outer_sqrt_with_intermediate(Y: dace.float32[3, 3]):
 
 @run_correctness
 def test_triple_nested_forwarding():
-    sdfg = outer_sqrt_with_intermediate.to_sdfg(strict=False)
+    sdfg = outer_sqrt_with_intermediate.to_sdfg(simplify=False)
 
     sdfg.apply_transformations_repeated([StateFusion])
 
@@ -228,5 +228,5 @@ def test_triple_nested_forwarding():
         Z.backward()
         return dict(Y_gradient=Y.grad)
 
-    return (SDFGBackwardRunner(sdfg, "__return", strict=False), torch_func,
+    return (SDFGBackwardRunner(sdfg, "__return", simplify=False), torch_func,
             dict(Y=np.random.rand(3, 3).astype(np.float32)))

@@ -18,6 +18,10 @@ class TestModule(nn.Module):
         return x + 2
 
 
+@pytest.mark.skip(
+    reason=
+    "this transformation will need to be rewritten: dace now supports accessing as acessnodes"
+)
 @pytest.mark.pure
 def test_input_to_constant(sdfg_name):
 

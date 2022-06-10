@@ -135,30 +135,27 @@ def _replace_in_tasklet(tasklet: nodes.Tasklet, name: str, new_name: str):
     replace_properties(tasklet, symrepl, name, new_name)
 
 
-@registry.autoregister_params(singlestate=True)
 @properties.make_properties
-class InputToConstant(xf.Transformation):
+class InputToConstant(xf.SingleStateTransformation):
     """ Convert constant inputs to dace compile time constants.
     """
 
-    _access_node = xf.PatternNode(nodes.AccessNode)
+    access_node = xf.PatternNode(nodes.AccessNode)
 
-    @staticmethod
-    def expressions():
-        return [sdutil.node_path_graph(InputToConstant._access_node)]
+    @classmethod
+    def expressions(cls):
+        return [sdutil.node_path_graph(cls.access_node)]
 
-    @staticmethod
-    def can_be_applied(state: dace.SDFGState,
-                       candidate: Dict[nodes.Node, int],
+    def can_be_applied(self,
+                       state: dace.SDFGState,
                        expr_index: int,
                        sdfg,
-                       strict: bool = False):
+                       permissive: bool = False):
         # SDFG must be imported from an ONNXModel
         if not hasattr(sdfg, "_parent_onnx_model"):
             return False
 
-        node: nodes.AccessNode = state.nodes()[candidate[
-            InputToConstant._access_node]]
+        node: nodes.AccessNode = self.access_node
 
         # check that the data is a onnx parameter
         if node.data not in {
@@ -187,15 +184,13 @@ class InputToConstant(xf.Transformation):
 
         return True
 
-    @staticmethod
-    def match_to_str(graph, candidate):
-        node = graph.nodes()[candidate[InputToConstant._access_node]]
+    def match_to_str(self, graph):
+        node = self.access_node
         return "Convert '{}' to a compile time constant".format(node.data)
 
-    def apply(self, sdfg: dace.SDFG):
+    def apply(self, state: dace.SDFGState, sdfg: dace.SDFG):
         parent: ONNXModel = sdfg._parent_onnx_model
-        state = sdfg.nodes()[self.state_id]
-        node = state.nodes()[self.subgraph[InputToConstant._access_node]]
+        node = self.access_node
         data_name = node.data
 
         # add the weight as a dace constant

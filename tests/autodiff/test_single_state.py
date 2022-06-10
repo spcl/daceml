@@ -50,9 +50,9 @@ def run_correctness(func):
 
 
 class SDFGBackwardRunner:
-    def __init__(self, sdfg, target, strict=True):
-        if strict:
-            sdfg.apply_strict_transformations()
+    def __init__(self, sdfg, target, simplify=True):
+        if simplify:
+            sdfg.simplify()
         self.sdfg: dace.SDFG = sdfg
         self.target = target
 
@@ -394,8 +394,8 @@ def test_tasklets_only_reuse():
             c >> C[0]
             c = a * b
 
-    sdfg = tasklets_only_reuse.to_sdfg(strict=False)
-    sdfg.apply_strict_transformations()
+    sdfg = tasklets_only_reuse.to_sdfg(simplify=False)
+    sdfg.simplify()
 
     return (
         SDFGBackwardRunner(sdfg, "C"),
@@ -443,8 +443,8 @@ def test_tasklets_multioutput():
             c >> C[0]
             c = a * b * d
 
-    sdfg = tasklets_multioutput.to_sdfg(strict=False)
-    sdfg.apply_strict_transformations()
+    sdfg = tasklets_multioutput.to_sdfg(simplify=False)
+    sdfg.simplify()
 
     return (
         SDFGBackwardRunner(sdfg, "C"),
@@ -491,8 +491,8 @@ def test_tasklets_only():
             c >> C[0]
             c = a * b
 
-    sdfg = tasklets_only.to_sdfg(strict=False)
-    sdfg.apply_strict_transformations()
+    sdfg = tasklets_only.to_sdfg(simplify=False)
+    sdfg.simplify()
 
     return (
         SDFGBackwardRunner(sdfg, "C"),
@@ -664,7 +664,7 @@ def test_reshape():
         S = np.sum(Zl)
         return S
 
-    sdfg = single_state_reshape.to_sdfg(strict=False)
+    sdfg = single_state_reshape.to_sdfg(simplify=False)
 
     sdfg.apply_transformations_repeated([StateFusion])
 
@@ -679,7 +679,7 @@ def test_reshape():
         return dict(inp_gradient=inp.grad, bias_gradient=bias.grad)
 
     return (
-        SDFGBackwardRunner(sdfg, "__return", strict=False),
+        SDFGBackwardRunner(sdfg, "__return", simplify=False),
         torch_func,
         dict(
             inp=np.random.rand(9).astype(np.float64),
@@ -704,10 +704,10 @@ def test_reshape_on_memlet_path():
         S = np.sum(Zl)
         return S
 
-    sdfg = single_state_reshape_memlet_path.to_sdfg(strict=False)
+    sdfg = single_state_reshape_memlet_path.to_sdfg(simplify=False)
 
     sdfg.expand_library_nodes()
-    sdfg.apply_transformations_repeated([StateFusion], strict=True)
+    sdfg.apply_transformations_repeated([StateFusion])
 
     donnx.default_implementation = old_default
 
@@ -722,7 +722,7 @@ def test_reshape_on_memlet_path():
         return dict(inp1_gradient=inp1.grad, bias_gradient=bias.grad)
 
     return (
-        SDFGBackwardRunner(sdfg, "__return", strict=False),
+        SDFGBackwardRunner(sdfg, "__return", simplify=False),
         torch_func,
         dict(
             inp1=np.random.rand(9).astype(np.float64),
@@ -745,10 +745,10 @@ def test_reshape_reuse_in_same_state():
         S = np.sum(Zl)
         return S
 
-    sdfg = single_state_reshape_same_state.to_sdfg(strict=False)
+    sdfg = single_state_reshape_same_state.to_sdfg(simplify=False)
 
     sdfg.expand_library_nodes()
-    sdfg.apply_transformations_repeated([StateFusion], strict=True)
+    sdfg.apply_transformations_repeated([StateFusion])
 
     donnx.default_implementation = old_default
 
@@ -763,7 +763,7 @@ def test_reshape_reuse_in_same_state():
         return dict(inp_gradient=inp.grad)
 
     return (
-        SDFGBackwardRunner(sdfg, "__return", strict=False),
+        SDFGBackwardRunner(sdfg, "__return", simplify=False),
         torch_func,
         dict(inp=np.random.rand(9).astype(np.float64), ),
     )

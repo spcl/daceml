@@ -1,6 +1,6 @@
 from typing import Dict
 
-from dace import registry, properties, SDFG, nodes as nd, dtypes
+from dace import registry, properties, SDFG, SDFGState, nodes as nd, dtypes
 from dace.sdfg import graph
 from dace.transformation import transformation
 from dace.sdfg import utils as sdutil
@@ -9,34 +9,30 @@ from daceml.onnx import ONNXModel
 from daceml.onnx.converters import clean_onnx_name
 
 
-@registry.autoregister_params(singlestate=True)
 @properties.make_properties
-class ConstantDeviceCopyElimination(transformation.Transformation):
+class ConstantDeviceCopyElimination(transformation.SingleStateTransformation):
     """ Move Host to Device copies to SDFG initialization by adding a post_compile_hook
     """
 
     # pattern matching only checks that the type of the node matches,
-    _host_node = transformation.PatternNode(nd.AccessNode)
-    _device_node = transformation.PatternNode(nd.AccessNode)
+    host_node = transformation.PatternNode(nd.AccessNode)
+    device_node = transformation.PatternNode(nd.AccessNode)
 
     @staticmethod
     def expressions():
         return [
-            sdutil.node_path_graph(ConstantDeviceCopyElimination._host_node,
-                                   ConstantDeviceCopyElimination._device_node)
+            sdutil.node_path_graph(ConstantDeviceCopyElimination.host_node,
+                                   ConstantDeviceCopyElimination.device_node)
         ]
 
-    @staticmethod
-    def can_be_applied(graph: graph.OrderedMultiDiConnectorGraph,
-                       candidate: Dict[nd.Node, int],
+    def can_be_applied(self,
+                       graph: graph.OrderedMultiDiConnectorGraph,
                        expr_index: int,
                        sdfg,
-                       strict: bool = False):
+                       permissive: bool = False):
 
-        host_node: nd.AccessNode = graph.nodes()[candidate[
-            ConstantDeviceCopyElimination._host_node]]
-        device_node: nd.AccessNode = graph.nodes()[candidate[
-            ConstantDeviceCopyElimination._device_node]]
+        host_node: nd.AccessNode = self.host_node
+        device_node: nd.AccessNode = self.device_node
 
         # SDFG must be imported from an ONNXModel
         if not hasattr(sdfg, "_parent_onnx_model"):
@@ -61,24 +57,17 @@ class ConstantDeviceCopyElimination(transformation.Transformation):
 
         return host_node.data in sdfg._parent_onnx_model.clean_weights
 
-    @staticmethod
-    def match_to_str(graph, candidate):
-        host_node: nd.AccessNode = graph.nodes()[candidate[
-            ConstantDeviceCopyElimination._host_node]]
+    def match_to_str(self, graph):
+        host_node: nd.AccessNode = self.host_node
         return "Move host-to-device copy of {} to SDFG initialization".format(
             host_node.data)
 
-    def apply(self, sdfg: SDFG):
+    def apply(self, state: SDFGState, sdfg: SDFG):
         parent: ONNXModel = sdfg._parent_onnx_model
-        state = sdfg.nodes()[self.state_id]
-        host_node: nd.AccessNode = state.nodes()[self.subgraph[
-            ConstantDeviceCopyElimination._host_node]]
-        device_node: nd.AccessNode = state.nodes()[self.subgraph[
-            ConstantDeviceCopyElimination._device_node]]
+        host_node: nd.AccessNode = self.host_node
+        device_node: nd.AccessNode = self.device_node
 
         onnx_host_name = find_unclean_onnx_name(parent, host_node.data)
-        # onnx_device_name = utils.find_unclean_onnx_name(
-        #     parent, device_node.data)
         device_node.desc(sdfg).transient = False
 
         state.remove_node(host_node)

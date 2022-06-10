@@ -189,21 +189,21 @@ def backward_program_for_node(
     outputs = {}
     for name, param in params.items():
         if name in input_names:
-            inputs[name] = forward_in_desc_with_name(forward_node, context,
-                                                     name)
+            inputs[name] = copy.deepcopy(
+                forward_in_desc_with_name(forward_node, context, name))
 
         elif name_without_grad_in(name, input_names):
-            outputs[name] = forward_in_desc_with_name(forward_node, context,
-                                                      name[:-5])
+            outputs[name] = copy.deepcopy(
+                forward_in_desc_with_name(forward_node, context, name[:-5]))
             backward_result.required_grad_names[name[:-5]] = name
 
         elif name in output_names:
-            inputs[name] = forward_out_desc_with_name(forward_node, context,
-                                                      name)
+            inputs[name] = copy.deepcopy(
+                forward_out_desc_with_name(forward_node, context, name))
 
         elif name_without_grad_in(name, output_names):
-            inputs[name] = forward_out_desc_with_name(forward_node, context,
-                                                      name[:-5])
+            inputs[name] = copy.deepcopy(
+                forward_out_desc_with_name(forward_node, context, name[:-5]))
             backward_result.given_grad_names[name[:-5]] = name
 
         else:
@@ -241,9 +241,9 @@ def connect_output_from_forward(forward_node: nd.Node, backward_node: nd.Node,
     # add the array of the output to backward_input_arrays that it will be forwarded by the autodiff engine
     output_arr_name = output_edge.data.data
     if output_arr_name not in context.backward_generator.backward_input_arrays:
-        data_desc = context.forward_sdfg.arrays[output_arr_name]
+        data_desc = copy.deepcopy(context.forward_sdfg.arrays[output_arr_name])
         context.backward_generator.backward_input_arrays[
-            output_arr_name] = copy.deepcopy(data_desc)
+            output_arr_name] = data_desc
 
         if context.backward_generator.separate_sdfgs:
             data_desc.transient = False

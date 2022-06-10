@@ -33,7 +33,7 @@ ifneq ($(DACE_VERSION),)
 	$(ACTIVATE) $(PIP) install $(DACE_VERSION)
 endif
 	$(ACTIVATE) $(PIP) install $(TORCH_VERSION)
-	$(ACTIVATE) $(PIP) install -e .[testing,debug,docs]
+	$(ACTIVATE) $(PIP) install -e .[testing,docs]
 
 doc:
 # suppress warnings in ONNXOps docstrings using grep -v
@@ -41,7 +41,6 @@ doc:
 	| grep -v ".*daceml\/daceml\/onnx\/nodes\/onnx_op\.py:docstring of daceml\.onnx\.nodes\.onnx_op\.ONNX.*:[0-9]*: WARNING:"
 
 
-doctest: export DACE_debugprint=False
 doctest:
 	$(ACTIVATE) cd doc && make doctest
 

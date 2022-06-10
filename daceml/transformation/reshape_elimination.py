@@ -34,35 +34,31 @@ def expand_library_nodes_except_reshape(self, recursive=True):
             states.append(state)  # Nodes have changed. Check state again
 
 
-@registry.autoregister_params(singlestate=True)
 @properties.make_properties
-class ReshapeElimination(xf.Transformation):
+class ReshapeElimination(xf.SingleStateTransformation):
     """ Merge a reshape into a preceding or following nested SDFG call.
     """
     # pattern matching only checks that the type of the node matches,
-    _reshape_node = xf.PatternNode(donnx.ONNXReshape)
-    _access_node = xf.PatternNode(nodes.AccessNode)
-    _nsdfg = xf.PatternNode(nodes.NestedSDFG)
+    reshape_node = xf.PatternNode(donnx.ONNXReshape)
+    access_node = xf.PatternNode(nodes.AccessNode)
+    nsdfg = xf.PatternNode(nodes.NestedSDFG)
 
-    @staticmethod
-    def expressions():
+    @classmethod
+    def expressions(cls):
         return [
-            sdfg_utils.node_path_graph(ReshapeElimination._reshape_node,
-                                       ReshapeElimination._access_node,
-                                       ReshapeElimination._nsdfg)
+            sdfg_utils.node_path_graph(cls.reshape_node, cls.access_node,
+                                       cls.nsdfg)
         ]
 
-    @staticmethod
-    def can_be_applied(graph: dace.sdfg.graph.OrderedMultiDiConnectorGraph,
-                       candidate: Dict[nodes.Node, int],
+    def can_be_applied(self,
+                       graph: dace.sdfg.graph.OrderedMultiDiConnectorGraph,
                        expr_index: int,
                        sdfg,
-                       strict: bool = False):
+                       permissive: bool = False):
 
         graph: dace.SDFGState
-        reshape_node = graph.nodes()[candidate[
-            ReshapeElimination._reshape_node]]
-        access_node = graph.nodes()[candidate[ReshapeElimination._access_node]]
+        reshape_node = self.reshape_node
+        access_node = self.access_node
 
         if not sdfg.arrays[access_node.data].transient:
             return False
@@ -99,20 +95,16 @@ class ReshapeElimination(xf.Transformation):
 
         return True
 
-    @staticmethod
-    def match_to_str(graph, candidate):
-        node = graph.nodes()[candidate[ReshapeElimination._reshape_node]]
+    @classmethod
+    def match_to_str(cls, graph, candidate):
+        node = graph.nodes()[candidate[cls.reshape_node]]
         return "Eliminate {}".format(node)
 
-    def apply(self, sdfg: dace.SDFG):
+    def apply(self, state: dace.SDFGState, sdfg: dace.SDFG):
         # Extract the subgraph, execute it and insert an AccessNode to the result
-
-        state = sdfg.nodes()[self.state_id]
-        reshape_node = state.nodes()[self.subgraph[
-            ReshapeElimination._reshape_node]]
-        access_node = state.nodes()[self.subgraph[
-            ReshapeElimination._access_node]]
-        nsdfg_node = state.nodes()[self.subgraph[ReshapeElimination._nsdfg]]
+        reshape_node = self.reshape_node
+        access_node = self.access_node
+        nsdfg_node = self.nsdfg
 
         old_edge_in = utils.in_edge_with_name(reshape_node, state, "data")
         old_edge_in_shape = utils.in_edge_with_name(reshape_node, state,
