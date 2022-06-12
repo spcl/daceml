@@ -11,7 +11,7 @@ def inferGCNConv(ssi: SymbolicShapeInference, node):
         for attribute_proto in node.attribute
     }
     _, module = ssi.placeholder_id_to_module_[op_attributes['module_id']]
-    weights_shape = module.lin.weight.shape
+    weights_shape = module.lin.weight.T.shape
     output_dtype = ssi.known_vi_[
         node.input[0]].type.tensor_type.elem_type
     ssi._compute_matmul_shape(

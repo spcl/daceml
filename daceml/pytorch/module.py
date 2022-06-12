@@ -21,7 +21,7 @@ from daceml.pytorch import dispatchers
 from daceml.autodiff.pytorch import make_backward_function
 from daceml.onnx import ONNXModel
 from daceml.onnx.shape_inference import infer_shapes
-from daceml.pytorch.module_replacement import replace_modules, restore_replaced_modules
+from daceml.pytorch.module_replacement import replace_modules
 from daceml.util import utils, find_str_not_in_set
 
 log = logging.getLogger(__name__)
