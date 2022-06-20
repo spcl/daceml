@@ -12,7 +12,7 @@ Example adapted from https://github.com/pytorch/examples/blob/master/mnist/main.
 # %%
 # To run a PyTorch module through DaceML we will need to create the corresponding `DaceModule`
 
-from daceml.pytorch import DaceModule
+from daceml.torch import DaceModule
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

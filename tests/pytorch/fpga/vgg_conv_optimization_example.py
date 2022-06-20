@@ -18,7 +18,7 @@ import numpy as np
 
 import daceml.onnx as donnx
 import dace
-from daceml.pytorch import DaceModule, dace_module
+from daceml.torch import DaceModule, dace_module
 import copy
 
 from daceml.util import utils

@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from daceml.pytorch import DaceModule
+from daceml.torch import DaceModule
 import pytest
 import dace
 import daceml.onnx as donnx

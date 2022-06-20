@@ -20,7 +20,7 @@ class DaCeMLTorchFunction:
 
 
 def get_arglist(
-        module: 'daceml.pytorch.DaceModule') -> Tuple[List[str], List[str]]:
+        module: 'daceml.torch.DaceModule') -> Tuple[List[str], List[str]]:
     """ Get the list of forward-pass argument names for a module
 
         :param module: the module
@@ -32,7 +32,7 @@ def get_arglist(
 
 
 def compile_and_init_sdfgs(
-    module: 'daceml.pytorch.DaceModule', dummy_inputs
+    module: 'daceml.torch.DaceModule', dummy_inputs
 ) -> (Union[Tuple[CompiledSDFG, int], Tuple[CompiledSDFG, int, CompiledSDFG,
                                             int]]):
     """

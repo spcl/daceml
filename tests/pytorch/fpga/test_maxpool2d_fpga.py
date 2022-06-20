@@ -12,7 +12,7 @@ from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
 from daceml.util import utils
 
 import daceml.onnx as donnx
-from daceml.pytorch import DaceModule, dace_module
+from daceml.torch import DaceModule, dace_module
 import copy
 import argparse
 from multiprocessing import Process, Queue

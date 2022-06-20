@@ -8,7 +8,7 @@ from torch import nn
 
 import daceml.onnx as donnx
 from daceml.onnx.op_implementations import CudnnConvolution
-from daceml.pytorch import DaceModule
+from daceml.torch import DaceModule
 from daceml.testing import torch_tensors_close
 from daceml.transformation import ConstantDeviceCopyElimination, PadConvFusion
 

@@ -3,7 +3,7 @@ import dace
 import pytest
 import torch
 from dace.transformation.dataflow import MapFusion
-from daceml.pytorch import dace_module
+from daceml.torch import dace_module
 
 from daceml.transformation import TaskletFusion, TaskletFission
 from daceml.transformation.tasklet_fusion import MergeTaskletReads

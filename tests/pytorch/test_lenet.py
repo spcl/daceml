@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 
 import daceml.onnx as donnx
-from daceml.pytorch import DaceModule
+from daceml.torch import DaceModule
 
 import torch
 import torch.nn as nn
