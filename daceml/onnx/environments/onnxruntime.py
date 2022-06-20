@@ -6,15 +6,22 @@ from dace.config import Config, _env2bool
 
 log = logging.getLogger(__name__)
 
-if 'ORT_ROOT' not in os.environ and 'ORT_RELEASE' not in os.environ:
-    raise ValueError("This environment expects the environment variable "
-                     "ORT_ROOT or ORT_RELEASE to be set (see README.md)")
+
+def is_installed():
+    if 'ORT_ROOT' not in os.environ or 'ORT_RELEASE' not in os.environ:
+        log.info(
+            "This environment expects the environment variable ORT_ROOT or ORT_RELEASE to be set (see README.md)"
+        )
+        return False
+    else:
+        return True
 
 
 def _get_src_includes():
     """
     Get the includes and dll path when ORT is built from source
     """
+
     ort_path = os.path.abspath(os.environ['ORT_ROOT'])
     cand_path = os.path.join(ort_path, "build", "Linux",
                              dace.Config.get("compiler", "build_type"))
@@ -45,12 +52,24 @@ def _get_dist_includes():
     return includes, ort_dll_path
 
 
-if 'ORT_RELEASE' in os.environ:
-    log.debug("Using ORT_RELEASE")
-    INCLUDES, ORT_DLL_PATH = _get_dist_includes()
-else:
-    log.debug("Using ORT_ROOT")
-    INCLUDES, ORT_DLL_PATH = _get_src_includes()
+def _get_includes():
+    if 'ORT_ROOT' in os.environ:
+        includes, _ = _get_src_includes()
+    elif 'ORT_RELEASE' in os.environ:
+        includes, _ = _get_dist_includes()
+    else:
+        includes = []
+    return includes
+
+
+def _get_dll_path():
+    if 'ORT_ROOT' in os.environ:
+        _, dll_path = _get_src_includes()
+    elif 'ORT_RELEASE' in os.environ:
+        _, dll_path = _get_dist_includes()
+    else:
+        return []
+    return [dll_path]
 
 
 @dace.library.environment
@@ -62,8 +81,6 @@ class ONNXRuntime:
     cmake_minimum_version = None
     cmake_packages = []
     cmake_variables = {}
-    cmake_includes = INCLUDES
-    cmake_libraries = [ORT_DLL_PATH]
     cmake_compile_flags = []
     cmake_link_flags = []
     cmake_files = []
@@ -96,6 +113,18 @@ class ONNXRuntime:
     __state->ort_api->ReleaseEnv(__state->ort_env);
     """
 
+    @staticmethod
+    def is_installed():
+        return is_installed()
+
+    @staticmethod
+    def cmake_includes():
+        return _get_includes()
+
+    @staticmethod
+    def cmake_libraries():
+        return _get_dll_path()
+
 
 @dace.library.environment
 class ONNXRuntimeCUDA:
@@ -106,8 +135,6 @@ class ONNXRuntimeCUDA:
     cmake_minimum_version = None
     cmake_packages = []
     cmake_variables = {}
-    cmake_includes = INCLUDES
-    cmake_libraries = [ORT_DLL_PATH]
     cmake_compile_flags = []
     cmake_link_flags = []
     cmake_files = []
@@ -116,6 +143,8 @@ class ONNXRuntimeCUDA:
         "OrtMemoryInfo* ort_cuda_pinned_mem_info;"
     ]
     dependencies = [ONNXRuntime]
+    cmake_libraries = []
+    cmake_includes = []
 
     headers = {}
     max_concurrent_streams = None
@@ -123,6 +152,7 @@ class ONNXRuntimeCUDA:
 
     @staticmethod
     def init_code(_):
+        _setup_env()
 
         if ONNXRuntimeCUDA.use_streams and ONNXRuntimeCUDA.max_concurrent_streams == 0:
             raise ValueError(
@@ -178,7 +208,7 @@ __state->ort_api->CreateKernelSession(__state->ort_session_options, &__state->or
     """
 
 
-def setup_env():
+def _setup_env():
     num_concurrent_streams = Config.get("compiler", "cuda",
                                         "max_concurrent_streams")
     if 'ORT_USE_STREAMS' in os.environ:
@@ -200,6 +230,3 @@ def setup_env():
         ONNXRuntimeCUDA.use_streams = False
     ONNXRuntimeCUDA.max_concurrent_streams = Config.get(
         "compiler", "cuda", "max_concurrent_streams")
-
-
-setup_env()
