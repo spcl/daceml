@@ -19,6 +19,7 @@ from daceml.onnx.binary_utilities.python_onnx_node_evaluation import evaluate_no
 from daceml.onnx.converters import clean_onnx_name
 from daceml.onnx.nodes.onnx_op import ONNXOp
 from daceml.onnx import ONNXModel
+from daceml.onnx.environments import ONNXRuntime
 
 log = logging.getLogger(__name__)
 
@@ -71,6 +72,8 @@ class ConstantFolding(transformation.SingleStateTransformation):
                        expr_index: int,
                        sdfg,
                        permissive: bool = False):
+        if not ONNXRuntime.is_installed():
+            return False
 
         node = self.onnx_node
 
