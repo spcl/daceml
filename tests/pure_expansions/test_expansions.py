@@ -526,3 +526,20 @@ def test_sum_arrays(input_desc, sdfg_name):
     result = prog(*inputs)
 
     assert np.allclose(result, np_result)
+
+
+@pytest.mark.pure
+def test_shape(gpu):
+    @dace.program
+    def shape(inp: dace.float64[9, 5, 3]):
+        shp = dace.define_local([3], dace.int64)
+        donnx.ONNXShape(data=inp, shape=shp)
+        return shp
+
+    sdfg: dace.SDFG = shape.to_sdfg()
+    sdfg.expand_library_nodes()
+    sdfg.simplify()
+
+    inp = np.random.rand(9, 5, 3).astype(np.float64)
+    result = sdfg(inp=inp.copy())
+    assert np.allclose(result, [9, 5, 3]), result

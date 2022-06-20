@@ -1092,3 +1092,42 @@ class PureSliceAllConstant(ONNXForward):
             dace.Memlet(data="data", subset=sbs, other_subset=osbs))
 
         return nsdfg
+
+
+@op_implementation(op="Shape", name="pure")
+class PureShape(ONNXForward):
+    @staticmethod
+    def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
+        data_desc = in_desc_with_name(node, state, sdfg, "data")
+
+        try:
+            np.array(data_desc.shape, np.int64)
+        except Exception:
+            # this happens if the shape is symbolic, for example
+            return False
+
+        return True
+
+    @staticmethod
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+
+        data_desc = in_desc_with_name(node, state, sdfg, "data")
+        shape_val = np.array(data_desc.shape, np.int64)
+
+        nsdfg = dace.SDFG(node.label + "_expansion")
+        nstate = nsdfg.add_state()
+        nsdfg.add_datadesc("data", copy.deepcopy(data_desc),)
+        nsdfg.arrays["data"].transient = False
+        nsdfg.add_array("shape", shape_val.shape, dtype=dace.int64)
+        s = nstate.add_write("shape")
+
+        for i, v in enumerate(shape_val):
+            tasklet = nstate.add_tasklet("write_shape", {},
+                                         {'shape_scalar': dace.int64},
+                                         f"shape_scalar = {v}")
+            nstate.add_edge(tasklet, "shape_scalar", s, None,
+                            dace.Memlet("shape[{}]".format(i)))
+
+        return nsdfg
