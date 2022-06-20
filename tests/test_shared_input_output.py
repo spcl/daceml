@@ -10,7 +10,7 @@ from torch.nn import functional as F
 
 import dace
 import daceml.onnx as donnx
-from daceml.pytorch import DaceModule
+from daceml.torch import DaceModule
 
 from daceml.testing.utils import torch_tensors_close
 

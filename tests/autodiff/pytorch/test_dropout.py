@@ -1,7 +1,7 @@
 import pytest
 import torch
 from torch import nn
-from daceml.pytorch import DaceModule
+from daceml.torch import DaceModule
 from daceml.testing import torch_tensors_close
 
 
