@@ -23,7 +23,7 @@ from daceml.onnx.nodes.replacement import is_replaceable, get_replaced_onnx_op
 from daceml.onnx.shape_inference import shape_inference
 from daceml.onnx.converters import convert_attribute_proto, onnx_tensor_type_to_typeclass, clean_onnx_name, typeclass_to_onnx_tensor_type_int
 from daceml.onnx.schema import ONNXParameterType
-from daceml.onnx.nodes.onnx_op import get_onnx_node, has_onnx_node, ONNXOp
+from daceml.onnx.nodes.onnx_op import get_onnx_node, has_onnx_node
 from daceml.util import utils, is_cuda
 
 log = logging.getLogger(__name__)
@@ -317,7 +317,6 @@ class ONNXModel:
 
             # Add input nodes for module weights.
             if hasattr(op_node, 'module'):
-                param_idx = len(node.input)
                 for local_name, param in op_node.module.named_parameters():
                     name = clean_onnx_name(op_node.prefix + local_name)
 
@@ -329,7 +328,7 @@ class ONNXModel:
                     self.value_infos[value_info.name] = value_info
                     self._add_value_info(value_info, storage=storage)
                     self.sdfg.arrays[name].transient = False
-                    self.weights[name] = param.data
+                    self.inputs.append(op_node.prefix + local_name)
 
                     # Add access node for the weights.
                     access = nodes.AccessNode(
@@ -637,6 +636,7 @@ def create_output_array(
         :param use_torch: whether to return a numpy array or a torch tensor.
         :param zeros: if true init with zeros else empty.
     """
+
     def eval_dim(dim):
         for sym in dim.free_symbols:
             dim = dim.subs(sym, inferred_symbols[sym.name])

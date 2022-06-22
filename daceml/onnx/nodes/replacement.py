@@ -25,6 +25,7 @@ log = logging.getLogger(__name__)
 _modules_to_replace: Dict[str, str] = {}
 _module_name_to_onnx_op: Dict[str, Type[nodes.Node]] = {}
 _module_name_to_infer_shape = {}  # todo annotate type
+_module_name_to_shape_from_module = {}  # todo annotate type
 
 
 def is_replaceable(name: str) -> bool:
@@ -233,9 +234,10 @@ def generate_onnx_op_placeholder(schema):
 
 
 # Registration of replacement.
-def register_replacement(module_name: str, inputs: List[str], outputs: List[str], shape_infer: Callable[[SymbolicShapeInference, Any], None]):
+def register_replacement(module_name: str, inputs: List[str], outputs: List[str], shape_infer: Callable[[SymbolicShapeInference, Any], None], shape_from_module):
     _modules_to_replace[module_name] = module_name
     _module_name_to_infer_shape[module_name] = shape_infer
+    _module_name_to_shape_from_module[module_name] = shape_from_module
     schema_dict = make_schema_dict(module_name, inputs, outputs)
     schema = ONNXSchema.from_json(schema_dict)
     _module_name_to_onnx_op[module_name] = generate_onnx_op_placeholder(

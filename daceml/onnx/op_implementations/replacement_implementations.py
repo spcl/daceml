@@ -28,13 +28,13 @@ class GCNConv(ONNXForward):
             E = input_1.shape[1]
             A = np.zeros((N, N), dtype=dtype)
 
-            for i in range(E):
+            for e in range(E):
                 # Multiple edges are allowed.
-                A[input_1[1, i], input_1[0, i]] += 1  # Edge connections.
+                A[input_1[1, e], input_1[0, e]] += 1  # Edge connections.
 
             if node.module.normalize and node.module.add_self_loops:
                 for i in range(N):
-                    # Adding self-loops only adds the missing ones.
+                    # In pyg GCNConv adding self-loops only adds the missing ones.
                     # Pytorch geometric implementation just sets all self-loops to weight 1,
                     # even if there are multiple self-loops.
                     A[i, i] = 1
@@ -45,8 +45,8 @@ class GCNConv(ONNXForward):
                 norm[degrees == 0] = 0  # Get rid of nans.
                 D = np.zeros((N, N), dtype=dace.float32)
                 # D = np.diag(degrees) # Not implemented in Dace
-                for i in range(N):
-                    D[i, i] = norm[i]
+                for j in range(N):
+                    D[j, j] = norm[j]
                 A = D @ A @ D
 
             tmp = np.einsum(
