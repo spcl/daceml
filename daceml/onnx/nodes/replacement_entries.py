@@ -1,8 +1,7 @@
-
 # Op replacement registration.
-from daceml.onnx.shape_inference.symbolic_shape_infer import SymbolicShapeInference
 from daceml.onnx.converters import convert_attribute_proto
 from daceml.onnx.nodes.replacement import register_replacement
+from daceml.onnx.shape_inference.symbolic_shape_infer import SymbolicShapeInference
 
 
 def inferGCNConv(ssi: SymbolicShapeInference, node):
@@ -18,7 +17,19 @@ def inferGCNConv(ssi: SymbolicShapeInference, node):
         node, output_dtype=output_dtype, rhs_shape=weights_shape)
 
 
+def gcnconv_shape(module):
+    M = module.lin.weight.shape[0]
+
+    def shape_from_inputs(*inputs):
+        x = inputs[0]
+        N = x.shape[0]
+        return (N, M)
+
+    return shape_from_inputs
+
+
 register_replacement('torch_geometric.nn.conv.gcn_conv.GCNConv',
                      inputs=['float32', 'int64'],
                      outputs=['float32'],
-                     shape_infer=inferGCNConv)
+                     shape_infer=inferGCNConv,
+                     shape_from_module=gcnconv_shape)
