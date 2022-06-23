@@ -314,15 +314,17 @@ class ONNXModel:
             raise ValueError("Initializer tensor '{}' has no type".format(
                 tensor.name))
 
-        if tensor.name in self.inputs:
-            # do not duplicate a weight if it is already an input
-            return
-
         name = clean_onnx_name(tensor.name)
 
         dtype = onnx_tensor_type_to_typeclass(tensor.data_type)
 
-        if len(tensor.dims) == 0:
+        if tensor.name in self.inputs:
+            # remove the tensor from inputs since this is a consant
+            self.inputs.remove(tensor.name)
+
+            # note: inputs already have data-descriptors created for them, so
+            # we skip the below code
+        elif len(tensor.dims) == 0:
             # this is a scalar
             self.sdfg.add_scalar(name, dtype, storage=storage)
         else:

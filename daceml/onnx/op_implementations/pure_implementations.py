@@ -1118,7 +1118,10 @@ class PureShape(ONNXForward):
 
         nsdfg = dace.SDFG(node.label + "_expansion")
         nstate = nsdfg.add_state()
-        nsdfg.add_datadesc("data", copy.deepcopy(data_desc),)
+        nsdfg.add_datadesc(
+            "data",
+            copy.deepcopy(data_desc),
+        )
         nsdfg.arrays["data"].transient = False
         nsdfg.add_array("shape", shape_val.shape, dtype=dace.int64)
         s = nstate.add_write("shape")

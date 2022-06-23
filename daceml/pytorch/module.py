@@ -4,17 +4,20 @@ import logging
 import itertools
 import os
 import tempfile
-from functools import wraps
-from typing import Optional, Tuple, Callable, OrderedDict, Type, Dict, Union, List
+import functools
+from typing import Optional, Tuple, Callable, OrderedDict, Type, Dict, Union, List, Set
+
+import torch
+import torch.nn as nn
+from torch import Tensor
+from torch.onnx import TrainingMode
+
+import onnx
+import onnxsim
 
 import dace
 from dace import nodes, data
-import onnx
-import torch
-import torch.nn as nn
 from dace.codegen import compiled_sdfg
-from torch import Tensor
-from torch.onnx import TrainingMode
 
 from daceml.onnx.converters import clean_onnx_name
 from daceml.pytorch import dispatchers
@@ -24,6 +27,20 @@ from daceml.onnx.shape_inference import infer_shapes
 from daceml.util import utils, find_str_not_in_set
 
 log = logging.getLogger(__name__)
+
+
+def _onnx_delete_initializers(model: onnx.ModelProto, names: Set[str]):
+    """
+    Delete the given initializers from the given onnx model.
+    Operates inplace
+    """
+    to_remove = []
+    for i, initializer in enumerate(model.graph.initializer):
+        if initializer.name in names:
+            to_remove.append(i)
+
+    for i in reversed(to_remove):
+        model.graph.initializer.pop(i)
 
 
 class DaceModule(nn.Module):
@@ -265,10 +282,32 @@ class DaceModule(nn.Module):
                 do_constant_folding=False,
                 keep_initializers_as_inputs=True)
             self.load_state_dict(state)
+            onnx_model_exported = onnx.load(export_name)
 
-            onnx_model = infer_shapes(onnx.load(export_name))
+            # Remove buffers and parameters from initializers
+            # they should already be in the inputs (from the pytorch exporter)
+            # this prevents onnx tools from messing with parameters
+            input_names = set()
+            for name, _ in itertools.chain(self.named_parameters(),
+                                           self.named_buffers()):
+                # pytorch adds a "model." prefix here that isn't in the onnx export;
+                # remove it
+                if not name.startswith("model."):
+                    raise ValueError(
+                        "Expected parameter names to start with 'model.'")
+                input_names.add(name[6:])
+
+            _onnx_delete_initializers(onnx_model_exported, input_names)
+
+            # Preprocess ONNX model using ONNX tools
+            onnx_model, check = onnxsim.simplify(onnx_model_exported,
+                                                 skip_fuse_bn=True)
+            if not check:
+                raise RuntimeError("onnx-simplifier optimizations failed")
+            onnx_model = infer_shapes(onnx_model)
+
             self.onnx_model = onnx_model
-
+            # load using importer
             dace_model = ONNXModel(self.sdfg_name,
                                    onnx_model,
                                    infer_shapes=False,
@@ -396,7 +435,7 @@ def dace_module(moduleclass,
                                         Otherwise, a python ctypes implementation will be used.
         :param debug_transients: if True, the module will have all transients as outputs.
     """
-    @wraps(moduleclass)
+    @functools.wraps(moduleclass)
     def _create(*args, **kwargs):
         return DaceModule(moduleclass(*args, **kwargs),
                           dummy_inputs=dummy_inputs,
