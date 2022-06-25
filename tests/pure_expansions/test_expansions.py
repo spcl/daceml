@@ -628,3 +628,26 @@ def test_gather_onnx_2(gpu):
     np_result = np.take(data, indices, axis=1)
 
     assert np.allclose(result, np_result)
+
+
+@pytest.mark.pure
+def test_unsqueeze(gpu):
+    @dace.program
+    def unsqueeze(inp: dace.float64[3, 3]):
+        output = dace.define_local([3, 1, 3, 1], dace.float64)
+        donnx.ONNXUnsqueeze(data=inp, expanded=output, axes=[1, 3])
+        return output
+
+    sdfg: dace.SDFG = unsqueeze.to_sdfg()
+
+    data = np.array([
+        [1.0, 1.2, 1.9],
+        [2.3, 3.4, 3.9],
+        [4.5, 5.7, 5.9],
+    ])
+
+    np_result = np.reshape(data, [3, 1, 3, 1])
+
+    result = sdfg(inp=data.copy())
+    assert result.shape == (3, 1, 3, 1)
+    assert np.allclose(result, np_result)
