@@ -349,7 +349,7 @@ class ONNXModel:
             self.sdfg.apply_transformations_repeated([
                 transformation.ConstantFolding, dataflow.RedundantSecondArray
             ],
-                                                     validate_all=True)
+                validate_all=True)
 
         if self.cuda:
             self.sdfg.apply_gpu_transformations()
