@@ -37,7 +37,7 @@ setup(
         exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
     package_data={'': (['*.cpp'] + runtime_files)},
     install_requires=[
-        'dace == 0.13.1', 'onnx == 1.8.0', 'torch', 'protobuf == 3.19',
+        'dace == 0.13.2', 'onnx == 1.8.0', 'torch', 'protobuf == 3.19',
         'dataclasses; python_version < "3.7"', 'onnx-simplifier == 0.3.10'
     ],
     # install with pip and --find-links (see Makefile)

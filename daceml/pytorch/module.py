@@ -13,7 +13,6 @@ from torch import Tensor
 from torch.onnx import TrainingMode
 
 import onnx
-import onnxsim
 
 import dace
 from dace import nodes, data
@@ -23,7 +22,6 @@ from daceml.onnx.converters import clean_onnx_name
 from daceml.pytorch import dispatchers
 from daceml.autodiff.pytorch import make_backward_function
 from daceml.onnx import ONNXModel
-from daceml.onnx.shape_inference import infer_shapes
 from daceml.util import utils, find_str_not_in_set
 
 log = logging.getLogger(__name__)
@@ -299,20 +297,10 @@ class DaceModule(nn.Module):
 
             _onnx_delete_initializers(onnx_model_exported, input_names)
 
-            # Preprocess ONNX model using ONNX tools
-            onnx_model, check = onnxsim.simplify(onnx_model_exported,
-                                                 skip_fuse_bn=True)
-            if not check:
-                raise RuntimeError("onnx-simplifier optimizations failed")
-            onnx_model = infer_shapes(onnx_model)
-
-            self.onnx_model = onnx_model
             # load using importer
             dace_model = ONNXModel(self.sdfg_name,
-                                   onnx_model,
-                                   infer_shapes=False,
+                                   onnx_model_exported,
                                    cuda=self.use_cuda,
-                                   parent_pytorch_module=self.model,
                                    auto_optimize=self.auto_optimize)
             self.sdfg = dace_model.sdfg
             self.dace_model = dace_model
