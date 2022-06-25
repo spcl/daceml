@@ -1134,3 +1134,70 @@ class PureShape(ONNXForward):
                             dace.Memlet("shape[{}]".format(i)))
 
         return nsdfg
+
+
+@op_implementation(op="Gather", name="pure")
+class PureGather(ONNXForward):
+    @staticmethod
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+        # To understand this operator, read the docs for np.take.
+        # The ONNX docs are not easy to understand (and are incorrect in opset 11)
+
+        nsdfg, nstate, _, _ = empty_sdfg_for_node(sdfg,
+                                                  state,
+                                                  node,
+                                                  add_access_nodes=False)
+        out_shape = out_desc_with_name(node, state, sdfg, "output").shape
+        idx_desc = in_desc_with_name(node, state, sdfg, "indices")
+        idx_shape = idx_desc.shape
+        data_shape = in_desc_with_name(node, state, sdfg, "data").shape
+
+        # FIXME: we can sometimes generate views
+
+        # Generate a copy kernel that loops over every element in the output
+        # and read the correct element according to the indices
+
+        axis = node.axis
+
+        map_ranges = [(f"i{i}", f"0:{s}") for i, s in enumerate(out_shape)]
+        # the map ranges can be partitioned into two parts.
+        # the first part is the range over the indices, the second part is the
+        # range over the data
+        if isinstance(idx_desc, data.Scalar):
+            # handle the edgecase here because the shape of a scalar in dace is
+            # (1,) not ()
+            idx_len = 0
+        else:
+            idx_len = len(idx_shape)
+        map_ranges_indices = map_ranges[axis:axis + idx_len]
+        map_ranges_data = map_ranges[:axis] + map_ranges[axis + idx_len:]
+
+        # compute the indexing expressions
+        fst = lambda x: x[0]
+        output_idx_str = 'output[' + ', '.join(map(fst, map_ranges)) + ']'
+        # the memlet string used to read data, which reads the whole axis
+        data_memlet_elems = list(map(fst, map_ranges_data))
+        data_memlet_elems.insert(axis, f'0:{data_shape[axis]}')
+
+        data_memlet_str = 'data[' + ', '.join(data_memlet_elems) + ']'
+
+        indices_idx_str = 'indices'
+        if map_ranges_indices:
+            indices_idx_str += '[' + ', '.join(map(fst,
+                                                   map_ranges_indices)) + ']'
+        else:
+            indices_idx_str += '[0]'
+
+        tasklet, me, mx = nstate.add_mapped_tasklet(
+            node.label + "_tasklet",
+            map_ranges=map_ranges,
+            inputs={
+                "__data": dace.Memlet(data_memlet_str),
+                "idx": dace.Memlet(indices_idx_str),
+            },
+            code=f"__output = __data[idx]",
+            outputs={"__output": dace.Memlet(output_idx_str)},
+            external_edges=True)
+
+        return nsdfg
