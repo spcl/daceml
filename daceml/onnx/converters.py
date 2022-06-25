@@ -1,8 +1,10 @@
-import re
 import logging
+import re
 from typing import Union
 
+import dace
 import onnx
+import torch
 from dace import dtypes as dt
 from dace.dtypes import typeclass
 from onnx.numpy_helper import to_array
@@ -209,3 +211,20 @@ def clean_onnx_name(name: str) -> str:
         name = f"ONNX_{name}"
     return name.replace(".", "DOT").replace(":", "COLON").replace(
         "/", "SLASH").replace("-", "DASH")
+
+
+TYPECLASS_TO_TORCH_DTYPE = {
+    dace.bool_: torch.bool,
+    dace.int8: torch.int8,
+    dace.int16: torch.int16,
+    dace.int32: torch.int32,
+    dace.int64: torch.int64,
+    dace.uint8: torch.uint8,
+    dace.float16: torch.float16,
+    dace.float32: torch.float32,
+    dace.float64: torch.float64,
+    dace.complex64: torch.complex64,
+    dace.complex128: torch.complex128,
+}
+
+TORCH_DTYPE_TO_TYPECLASS = {v: k for k, v in TYPECLASS_TO_TORCH_DTYPE.items()}

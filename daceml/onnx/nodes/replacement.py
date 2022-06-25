@@ -9,8 +9,8 @@ import dace
 from dace import SDFG, nodes
 from dace.properties import Property
 from dace.transformation.transformation import ExpandTransformation
-from dace.dtypes import TYPECLASS_STRINGS, TORCH_DTYPE_TO_TYPECLASS
-from daceml.onnx.converters import clean_onnx_name, typeclass_to_onnx_str, typeclass_to_onnx_tensor_type_int
+from dace.dtypes import TYPECLASS_STRINGS
+from daceml.onnx.converters import clean_onnx_name, TORCH_DTYPE_TO_TYPECLASS
 from daceml.onnx.forward_implementation_abc import ONNXForward
 from daceml.onnx.nodes.node_codegen import expand_node
 from daceml.onnx.nodes.onnx_op import (ONNXOp, _get_attr_docstring,

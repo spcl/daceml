@@ -14,14 +14,14 @@ import dace
 from dace import data as dt, dtypes, nodes, SDFG, SDFGState
 from dace.frontend.python import parser
 from dace.codegen import compiled_sdfg
-from dace.dtypes import TORCH_DTYPE_TO_TYPECLASS
 from dace.symbolic import pystr_to_symbolic
 from dace.transformation import dataflow
 
 from daceml import transformation
 from daceml.onnx.nodes.replacement import is_replaceable, get_replaced_onnx_op
 from daceml.onnx.shape_inference import shape_inference
-from daceml.onnx.converters import convert_attribute_proto, onnx_tensor_type_to_typeclass, clean_onnx_name, typeclass_to_onnx_tensor_type_int
+from daceml.onnx.converters import convert_attribute_proto, onnx_tensor_type_to_typeclass, clean_onnx_name, \
+    typeclass_to_onnx_tensor_type_int, TORCH_DTYPE_TO_TYPECLASS
 from daceml.onnx.schema import ONNXParameterType
 from daceml.onnx.nodes.onnx_op import get_onnx_node, has_onnx_node
 from daceml.util import utils, is_cuda
@@ -331,8 +331,7 @@ class ONNXModel:
                     self.inputs.append(op_node.prefix + local_name)
 
                     # Add access node for the weights.
-                    access = nodes.AccessNode(
-                        name, dtypes.AccessType.ReadOnly)
+                    access = nodes.AccessNode(name)
                     self.state.add_node(access)
                     access_nodes[name] = access
 
