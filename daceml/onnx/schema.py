@@ -274,25 +274,25 @@ class ONNXSchema:
     def __repr__(self):
         return self.domain + "." + self.name
 
-    def non_variadic_inputs(self) -> List[ONNXParameter]:
+    def non_variadic_inputs(self) -> List[str]:
         return [
             i.name for i in self.inputs
             if i.param_type is not ONNXParameterType.Variadic
         ]
 
-    def variadic_inputs(self) -> List[ONNXParameter]:
+    def variadic_inputs(self) -> List[str]:
         return [
             i.name for i in self.inputs
             if i.param_type is ONNXParameterType.Variadic
         ]
 
-    def non_variadic_outputs(self) -> List[ONNXParameter]:
+    def non_variadic_outputs(self) -> List[str]:
         return [
             i.name for i in self.outputs
             if i.param_type is not ONNXParameterType.Variadic
         ]
 
-    def variadic_outputs(self) -> List[ONNXParameter]:
+    def variadic_outputs(self) -> List[str]:
         return [
             i.name for i in self.outputs
             if i.param_type is ONNXParameterType.Variadic
