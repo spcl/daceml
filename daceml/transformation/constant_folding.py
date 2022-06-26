@@ -1,7 +1,7 @@
 import copy
 import logging
 from collections import deque
-from typing import Dict
+from typing import Dict, Optional
 
 import numpy as np
 
@@ -194,21 +194,37 @@ class ConstantFolding(transformation.SingleStateTransformation):
         remove_node_and_computation(sdfg, state, node)
 
 
-def remove_node_and_computation(sdfg: dace.SDFG, state: dace.SDFGState,
-                                node: nd.Node):
+def remove_node_and_computation(sdfg: dace.SDFG,
+                                state: dace.SDFGState,
+                                node: nd.Node,
+                                connector: Optional[str] = None):
     """ Remove a node and the parent nodes that compute this node, if the outputs are not used elsewhere.
 
         :param sdfg: the sdfg containing the node.
         :param state: the state containing the node.
         :param node: the node to remove
+        :param connector: if not None, the computation of the connector of
+                          ``node`` will be removed, but not ``node`` itself.
     """
+
+    if connector is not None:
+        if connector not in node.in_connectors:
+            return
+        node.remove_in_connector(connector)
+
     queue = deque([node])
     while len(queue) > 0:
         current_node = queue.popleft()
 
-        edges = state.in_edges(current_node)
-        state.remove_node(current_node)
+        if connector is not None and node is current_node:
+            # this should only happen in the first iteration
+            edges = state.in_edges_by_connector(node, connector)
+        else:
+            edges = state.in_edges(current_node)
+            state.remove_node(current_node)
+
         for e in edges:
+            state.remove_edge(e)
             next_node = e.src
             data_used_in_other_states = isinstance(next_node, nd.AccessNode) and \
                                         any(n.data == next_node.data

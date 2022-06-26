@@ -11,6 +11,7 @@ from daceml.onnx.nodes import onnx_op
 from daceml.onnx.forward_implementation_abc import ONNXForward
 from daceml.onnx.nodes.node_utils import parse_variadic_param
 from daceml.util.utils import in_desc_with_name, out_desc_with_name
+from daceml.transformation import constant_folding
 
 
 def op_implementation(op, name):
@@ -45,6 +46,9 @@ def program_for_node(program,
     """ Expand a function to a dace program.
 
         The dtypes for the arguments will be extracted by matching the parameter names to edges.
+
+        All inputs that are not specified as parameters will be removed using
+        constant_folding.remove_node_and_computation
     """
     input_names = node.schema.non_variadic_inputs()
     variadic_input_names = node.schema.variadic_inputs()
@@ -56,10 +60,11 @@ def program_for_node(program,
         # this is currently the case for only one onnx op
         raise ValueError(
             "program_for_node cannot be applied on nodes of this type;"
-            " '{}' is both an input and an output".format(
-                next(input_names.intersection(output_names))))
+            " '{}' are both an input and an output".format(
+                set(input_names).intersection(output_names)))
 
     params = inspect.signature(program).parameters
+    connectors_to_remove = set(input_names).difference(params)
 
     annotations = {}
     for name, param in params.items():
@@ -82,6 +87,9 @@ def program_for_node(program,
     result = DaceProgram(program, (), {}, False, dace.DeviceType.CPU)
     if extra_vars is not None:
         result.global_vars.update(extra_vars)
+
+    for conn in connectors_to_remove:
+        constant_folding.remove_node_and_computation(sdfg, state, node, conn)
 
     sdfg = result.to_sdfg()
 

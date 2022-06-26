@@ -5,7 +5,7 @@ import typing
 
 import dace
 import numpy as np
-from dace import SDFGState, SDFG, nodes, subsets
+from dace import SDFGState, SDFG, nodes, subsets, data
 from dace.frontend.common import create_einsum_sdfg
 from dace.sdfg.nodes import Node
 
@@ -328,9 +328,8 @@ class PureExpand(ONNXForward):
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
-        node.remove_in_connector("shape")
-        shape_node = in_edge_with_name(node, state, "shape").src
-        constant_folding.remove_node_and_computation(sdfg, state, shape_node)
+        constant_folding.remove_node_and_computation(sdfg, state, node,
+                                                     "shape")
 
         def prog(input, output):
             output[:] = input
@@ -702,24 +701,10 @@ class PureLeakyRelu(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@op_implementation(op="Reshape", name="pure")
-class PureReshape(ONNXForward):
-    '''
-        Reshape expansion: this relies on views
-    '''
-    @staticmethod
-    def forward(node: onnx_op.ONNXOp, state: SDFGState,
-                sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        new_shape = out_desc_with_name(node, state, sdfg, "reshaped").shape
-        node.remove_in_connector("shape")
-        shape_node = in_edge_with_name(node, state, "shape").src
-        constant_folding.remove_node_and_computation(sdfg, state, shape_node)
-
-        def prog(data, reshaped):
-            reshaped[:] = np.reshape(data, new_shape)
-
-        return program_for_node(prog, sdfg, state, node)
+@python_pure_op_implementation(
+    compute=dict(shape=lambda reshaped: reshaped.shape))
+def Reshape(data, reshaped):
+    reshaped[:] = np.reshape(data, shape)
 
 
 @python_pure_op_implementation(compute=dict(
