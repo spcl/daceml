@@ -1,0 +1,41 @@
+cff-version: 1.2.0
+title: "DaCeML - A Data-Centric Optimization Framework for Machine Learning"
+message: "Please cite as" 
+authors:
+  - family-names: Rausch
+    given-names: Oliver
+  - family-names: Ben-Nun
+    given-names: Tal
+  - family-names: Dryden
+    given-names: Nikoli
+  - family-names: Ivanov
+    given-names: Andrei
+  - family-names: Li
+    given-names: Shigang
+  - family-names: Hoefler
+    given-names: Torsten
+  - family-names: De Matteis
+    given-names: Tiziano
+  - family-names: Burger
+    given-names: Manuel
+preferred-citation:
+  title: "DaCeML: A Data-Centric Optimization Framework for Machine Learning"
+  doi: "10.1145/3524059.3532364"
+  year: "2022"
+  type: conference-paper
+  collection-title: "Proceedings of the 36th ACM International Conference on Supercomputing"
+  conference: 
+    name: "ICS '22"
+  authors:
+    - family-names: Rausch
+      given-names: Oliver
+    - family-names: Ben-Nun
+      given-names: Tal
+    - family-names: Dryden
+      given-names: Nikoli
+    - family-names: Ivanov
+      given-names: Andrei
+    - family-names: Li
+      given-names: Shigang
+    - family-names: Hoefler
+      given-names: Torsten
