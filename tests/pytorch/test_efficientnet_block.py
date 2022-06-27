@@ -98,10 +98,6 @@ def test_fast_mb(use_cpp_dispatcher):
         convs = ["Conv_81", "Conv_86", "Conv_89", "Conv_92"]
 
         def set_impls_fuse_conv(module: DaceModule):
-            assert module.sdfg.apply_transformations(
-                ConstantDeviceCopyElimination) == 1
-            assert module.sdfg.apply_transformations(PadConvFusion) == 1
-
             for state in module.sdfg.nodes():
                 for n in state.nodes():
                     if isinstance(n, donnx.ONNXConv):
