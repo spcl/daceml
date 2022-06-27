@@ -62,9 +62,6 @@ def _nested_HasField(obj, full_attr):
 
 def simplify_onnx_model(model: onnx.ModelProto,
                         auto_merge: bool) -> onnx.ModelProto:
-    onnx.checker.check_model(model)
-
-    model = shape_inference.infer_shapes(model, auto_merge=auto_merge)
     model, check = onnxsim.simplify(model, skip_fuse_bn=True)
 
     if not check:
@@ -139,6 +136,9 @@ class ONNXModel:
                 log.warning(
                     f"Expected the onnx model to be exported with opset 12, got {opset.version}. This model may fail "
                     f"to import as a result.")
+
+        onnx.checker.check_model(model)
+        model = shape_inference.infer_shapes(model, auto_merge=auto_merge)
         if onnx_simplify:
             model = simplify_onnx_model(model, auto_merge)
 
@@ -227,19 +227,8 @@ class ONNXModel:
 
                 value_name = next(iter(op_attributes))
 
-                if node.output[0] not in self.value_infos:
-                    raise ValueError(
-                        "Could not find array with name '{}'".format(
-                            node.output[0]))
-                if node.output[0] not in self.outputs:
-                    # output arrays were already added above
-                    self._add_value_info(self.value_infos[node.output[0]],
-                                         storage=storage)
-                self.sdfg.arrays[clean_onnx_name(
-                    node.output[0])].transient = False
-
-                self.weights[node.output[0]] = torch.from_numpy(
-                    op_attributes[value_name].copy())
+                self._add_constant_tensor(
+                    (node.output[0], op_attributes[value_name]), storage)
                 continue
 
             if node.HasField("name"):
@@ -312,47 +301,55 @@ class ONNXModel:
         if self.cuda:
             self.sdfg.apply_gpu_transformations()
 
-    def _add_constant_tensor(self, tensor: onnx.TensorProto,
+    def _add_constant_tensor(self, tensor: Union[onnx.TensorProto,
+                                                 Tuple[str, np.ndarray]],
                              storage: dtypes.StorageType):
-        if not tensor.HasField("name"):
-            raise ValueError("Got tensor without name")
+        if isinstance(tensor, tuple):
+            unclean_name, value = tensor
+            dtype = dtypes.DTYPE_TO_TYPECLASS[value.dtype.type]
+            shape = value.shape
+            np_array = value
+        else:
+            if not tensor.HasField("name"):
+                raise ValueError("Got tensor without name")
 
-        if not tensor.HasField("data_type"):
-            raise ValueError("Initializer tensor '{}' has no type".format(
-                tensor.name))
+            if not tensor.HasField("data_type"):
+                raise ValueError("Initializer tensor '{}' has no type".format(
+                    tensor.name))
+            unclean_name = tensor.name
+            dtype = onnx_tensor_type_to_typeclass(tensor.data_type)
+            shape = [d for d in tensor.dims]
+            np_array = numpy_helper.to_array(tensor)
 
-        name = clean_onnx_name(tensor.name)
-
-        dtype = onnx_tensor_type_to_typeclass(tensor.data_type)
-
-        if tensor.name in self.inputs:
+        name = clean_onnx_name(unclean_name)
+        if unclean_name in self.inputs:
             # remove the tensor from inputs since this is a consant
-            self.inputs.remove(tensor.name)
-
+            self.inputs.remove(unclean_name)
             # note: inputs already have data-descriptors created for them, so
             # we skip the below code
-        elif len(tensor.dims) == 0:
+        elif len(shape) == 0:
             # this is a scalar
             self.sdfg.add_scalar(name, dtype, storage=storage)
         else:
-            dims = [d for d in tensor.dims]
             if name not in self.sdfg.arrays:
-                self.sdfg.add_array(name, dims, dtype, storage=storage)
+                self.sdfg.add_array(name,
+                                    shape,
+                                    dtype,
+                                    storage=storage,
+                                    transient=False)
             else:
                 existing_arr = self.sdfg.arrays[name]
                 if existing_arr.dtype != dtype:
                     raise ValueError(
                         "Invalid ONNX model; found two values with name '{}', but different dtypes ({} and {})"
                         .format(name, existing_arr.dtype, dtype))
-                if tuple(existing_arr.shape) != tuple(dims):
+                if tuple(existing_arr.shape) != tuple(shape):
                     raise ValueError(
                         "Invalid ONNX model; found two values with name '{}', but different dimensions ({} and {})"
-                        .format(name, existing_arr.shape, dims))
-
-        weight_arr = numpy_helper.to_array(tensor)
+                        .format(name, existing_arr.shape, shape))
 
         # we need to copy here because the weight_arr tensor is not writable
-        self.weights[tensor.name] = torch.from_numpy(weight_arr.copy())
+        self.weights[name] = torch.from_numpy(np_array.copy())
 
     def _add_value_info(self,
                         value_info: onnx.ValueInfoProto,

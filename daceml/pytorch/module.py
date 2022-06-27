@@ -52,6 +52,7 @@ class DaceModule(nn.Module):
         :param backward: whether to enable the backward pass.
         :param inputs_to_skip: if provided, a list of inputs to skip computing gradients for. 
                                (only relevant when the backward pass is enabled)
+        :param onnx_simplify: whether to apply onnx simplification using onnxsim.
         :param simplify: whether to apply simplification transforms after conversion (this generally improves performance,
                          but can be slow).
         :param sdfg_name: the name to give to the sdfg (defaults to ``dace_model``).
@@ -82,6 +83,7 @@ class DaceModule(nn.Module):
                  training: bool = False,
                  backward=False,
                  inputs_to_skip: Optional[List[str]] = None,
+                 onnx_simplify: bool = True,
                  simplify: bool = True,
                  auto_optimize: bool = True,
                  debug_transients: bool = False,
@@ -98,6 +100,7 @@ class DaceModule(nn.Module):
         self.use_cuda = cuda
         self.sdfg_name = sdfg_name or type(module).__name__
         self.auto_optimize = auto_optimize
+        self.onnx_simplify = onnx_simplify
         self.simplify = simplify
         self.debug_transients = debug_transients
         self.compile_torch_extension = compile_torch_extension
@@ -300,6 +303,7 @@ class DaceModule(nn.Module):
             # load using importer
             dace_model = ONNXModel(self.sdfg_name,
                                    onnx_model_exported,
+                                   onnx_simplify=self.onnx_simplify,
                                    cuda=self.use_cuda,
                                    auto_optimize=self.auto_optimize)
             self.sdfg = dace_model.sdfg
@@ -386,6 +390,7 @@ def dace_module(moduleclass,
                 training: bool = False,
                 backward=False,
                 inputs_to_skip: Optional[List[str]] = None,
+                onnx_simplify: bool = True,
                 simplify: bool = True,
                 auto_optimize: bool = True,
                 sdfg_name: Optional[str] = None,
@@ -415,6 +420,7 @@ def dace_module(moduleclass,
         :param backward: whether to enable the backward pass.
         :param inputs_to_skip: if provided, a list of inputs to skip computing gradients for. 
                                (only relevant when the backward pass is enabled)
+        :param onnx_simplify: whether to apply onnx simplification using onnxsim.
         :param simplify: whether to apply simplification transforms after conversion (this generally improves performance,
                              but can be slow).
         :param auto_optimize: whether to apply automatic optimizations.
@@ -431,6 +437,7 @@ def dace_module(moduleclass,
                           training=training,
                           backward=backward,
                           inputs_to_skip=inputs_to_skip,
+                          onnx_simplify=onnx_simplify,
                           simplify=simplify,
                           auto_optimize=auto_optimize,
                           sdfg_name=sdfg_name,
