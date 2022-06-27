@@ -135,6 +135,7 @@ def test_view_forwarding():
     sdfg = add_reshape_grad_test_nested.to_sdfg(simplify=False)
 
     sdfg.expand_library_nodes()
+    del sdfg.arrays["target_shape"]
 
     donnx.default_implementation = old_default
 
