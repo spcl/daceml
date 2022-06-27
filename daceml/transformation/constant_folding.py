@@ -209,7 +209,8 @@ def remove_node_and_computation(sdfg: dace.SDFG,
                           ``node`` will be removed, but not ``node`` itself.
     """
     if connector is not None:
-        assert connector in node.in_connectors
+        if connector not in node.in_connectors:
+            return
         node.remove_in_connector(connector)
         edges = state.in_edges_by_connector(node, connector)
         for e in edges:
@@ -222,3 +223,9 @@ def remove_node_and_computation(sdfg: dace.SDFG,
     pass_pipeline.Pipeline([
         dead_dataflow_elimination.DeadDataflowElimination()
     ]).apply_pass(sdfg, {})
+
+    # remove dangling nodes, this can happen iwth non-transients
+    for node, parent in sdfg.all_nodes_recursive():
+        if (isinstance(node, nd.AccessNode)
+                and parent.in_degree(node) + parent.out_degree(node) == 0):
+            parent.remove_node(node)

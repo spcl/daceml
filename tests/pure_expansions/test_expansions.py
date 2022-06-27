@@ -302,6 +302,9 @@ def test_reshape(new_shape, sdfg_name):
 
     sdfg.expand_library_nodes()
 
+    # we don't need shape anymore
+    del sdfg.arrays["shape"]
+
     result = sdfg(X=X)
 
     assert np.allclose(numpy_result, result)
