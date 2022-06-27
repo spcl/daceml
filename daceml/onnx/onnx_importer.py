@@ -349,7 +349,7 @@ class ONNXModel:
                         .format(name, existing_arr.shape, shape))
 
         # we need to copy here because the weight_arr tensor is not writable
-        self.weights[name] = torch.from_numpy(np_array.copy())
+        self.weights[unclean_name] = torch.from_numpy(np_array.copy())
 
     def _add_value_info(self,
                         value_info: onnx.ValueInfoProto,
