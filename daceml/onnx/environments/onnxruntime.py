@@ -8,7 +8,7 @@ log = logging.getLogger(__name__)
 
 
 def is_installed():
-    if 'ORT_ROOT' not in os.environ or 'ORT_RELEASE' not in os.environ:
+    if 'ORT_ROOT' not in os.environ and 'ORT_RELEASE' not in os.environ:
         log.info(
             "This environment expects the environment variable ORT_ROOT or ORT_RELEASE to be set (see README.md)"
         )

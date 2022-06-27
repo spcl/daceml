@@ -7,12 +7,14 @@ import numpy as np
 
 import dace
 import torch
-from dace import data as dt, dtypes
+from dace import data as dt, dtypes, memlet as mm
 from dace import registry
 from dace.properties import make_properties
 from dace.transformation import transformation
 from dace.sdfg import nodes as nd
 from dace.sdfg import utils as sdutil
+from dace.transformation.passes import dead_dataflow_elimination
+from dace.transformation import pass_pipeline
 
 import daceml.onnx as donnx
 from daceml.onnx.binary_utilities.python_onnx_node_evaluation import evaluate_node
@@ -206,41 +208,17 @@ def remove_node_and_computation(sdfg: dace.SDFG,
         :param connector: if not None, the computation of the connector of
                           ``node`` will be removed, but not ``node`` itself.
     """
-
     if connector is not None:
-        if connector not in node.in_connectors:
-            return
+        assert connector in node.in_connectors
         node.remove_in_connector(connector)
-
-    queue = deque([node])
-    while len(queue) > 0:
-        current_node = queue.popleft()
-
-        if connector is not None and node is current_node:
-            # this should only happen in the first iteration
-            edges = state.in_edges_by_connector(node, connector)
-        else:
-            edges = state.in_edges(current_node)
-            state.remove_node(current_node)
-
+        edges = state.in_edges_by_connector(node, connector)
         for e in edges:
             state.remove_edge(e)
-            next_node = e.src
-            data_used_in_other_states = isinstance(next_node, nd.AccessNode) and \
-                                        any(n.data == next_node.data
-                                            for s in sdfg.nodes()
-                                            for n in s.nodes() if s is not state)
+    else:
+        edges = state.out_edges(node)
+        for e in edges:
+            state.remove_edge(e)
 
-            if len(state.out_edges(
-                    next_node)) == 0 and not data_used_in_other_states:
-                queue.append(next_node)
-
-    # remove all now useless data descriptors
-    all_read_or_written_data = set(e.data.data for s in sdfg.nodes()
-                                   for e in s.edges())
-    all_read_or_written_data = all_read_or_written_data.union(
-        node.data for node, _ in sdfg.all_nodes_recursive()
-        if isinstance(node, nd.AccessNode))
-    to_delete = set(sdfg.arrays) - all_read_or_written_data
-    for name in to_delete:
-        del sdfg.arrays[name]
+    pass_pipeline.Pipeline([
+        dead_dataflow_elimination.DeadDataflowElimination()
+    ]).apply_pass(sdfg, {})

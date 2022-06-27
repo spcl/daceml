@@ -139,7 +139,8 @@ class ONNXModel:
                 log.warning(
                     f"Expected the onnx model to be exported with opset 12, got {opset.version}. This model may fail "
                     f"to import as a result.")
-        model = simplify_onnx_model(model, auto_merge)
+        if onnx_simplify:
+            model = simplify_onnx_model(model, auto_merge)
 
         self.do_auto_optimize = auto_optimize
 
@@ -149,7 +150,6 @@ class ONNXModel:
         self.sdfg._parent_onnx_model = self
         self.cuda = cuda
         self.simplify = simplify
-        self.onnx_simplify = onnx_simplify
         self.state: SDFGState = self.sdfg.add_state(
         )  #: the state containing the model computation.
 
@@ -231,8 +231,10 @@ class ONNXModel:
                     raise ValueError(
                         "Could not find array with name '{}'".format(
                             node.output[0]))
-                self._add_value_info(self.value_infos[node.output[0]],
-                                     storage=storage)
+                if node.output[0] not in self.outputs:
+                    # output arrays were already added above
+                    self._add_value_info(self.value_infos[node.output[0]],
+                                         storage=storage)
                 self.sdfg.arrays[clean_onnx_name(
                     node.output[0])].transient = False
 
