@@ -22,6 +22,7 @@ from daceml.util import utils
 #+yapf: enable
 @pytest.mark.pure
 def test_matmul_expansion(a_shape, b_shape, sdfg_name):
+    blas.Gemm.default_implementation = "pure"
     sdfg = dace.SDFG(sdfg_name)
 
     X = np.random.rand(*a_shape).astype(np.float32)

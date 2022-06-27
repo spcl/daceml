@@ -332,6 +332,7 @@ def test_tiled(input_to_constant=False):
     print("----------- Success! ---------------")
 
 
+@pytest.mark.fpga
 @pytest.mark.xilinx
 def test_tiled_xilinx(input_to_constant=False):
     '''
