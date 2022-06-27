@@ -39,6 +39,11 @@ class PureLog(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
+@python_pure_op_implementation
+def Exp(input, output):
+    output[:] = np.exp(input)
+
+
 @op_implementation(op="Sqrt", name="pure")
 class PureSqrt(ONNXForward):
     @staticmethod
