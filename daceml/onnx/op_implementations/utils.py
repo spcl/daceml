@@ -1,6 +1,7 @@
 import inspect
 import copy
 from typing import Dict, Tuple, Optional, Callable, Union, Any
+import functools
 
 import dace
 from dace import SDFGState, SDFG, dtypes, nodes
@@ -138,9 +139,7 @@ def empty_sdfg_for_node(
 
 
 @dace.dtypes.paramdec
-def python_pure_op_implementation(func,
-                                  compute: Optional[Dict[str,
-                                                         Callable]] = None):
+def python_pure_op_implementation(func, **compute: Dict[str, Callable]):
     """
     A decorator that registers an python op implementation. The name of the
     function will be the name of the op that is being replaced.
