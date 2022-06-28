@@ -28,7 +28,7 @@ jobs:
 
       - name: Test with pytest
         env:
-          PYTEST_ARGS: --cov=daceml --cov-report=term --cov-report xml --cov-config=.coveragerc --gpu-only -m "not slow and not fpga and not xilinx" --timeout=500
+          PYTEST_ARGS: --cov=daceml --cov-report=term --cov-report xml --cov-config=.coveragerc --gpu-only -m "not slow and not fpga and not xilinx" --timeout=500 --ignore=tests/pure_implementations/test_onnx_cases.py
         run: make test
 
       - name: Upload coverage

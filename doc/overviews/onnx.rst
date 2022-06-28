@@ -158,6 +158,15 @@ Pure Implementations
 Several nodes have an SDFG implementation (i.e. not ONNXRuntime based). The list of all implementations can be found
 :ref:`here <pure-ops>`.
 
+Running ONNX Node Tests
+~~~~~~~~~~~~~~~~~~
+After implementing a pure operator, you can run the built-in ONNX node tests using:
+``pytest test/pure_expansions/tests/pure_expansions/test_onnx_cases.py``
+(use the ``-k <test_name>`` flag to run a specific test).
+
+The source code for the test cases for a certain operator can be found in the
+`ONNX repository <https://github.com/onnx/onnx/tree/v1.7.0/onnx/backend/test/case/node>`_.
+
 Importing ONNX models
 ---------------------
 ONNX models can be imported using the :class:`~daceml.onnx.ONNXModel` frontend.

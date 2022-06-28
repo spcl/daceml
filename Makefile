@@ -47,6 +47,9 @@ doctest:
 test: 
 	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests
 
+test-onnx: 
+	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests/pure_expansions/test_onnx_cases.py
+
 test-parallel: 
 	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests -n auto --dist loadfile
 
