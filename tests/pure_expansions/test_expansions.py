@@ -348,13 +348,17 @@ def test_flatten(sdfg_name):
 @pytest.mark.parametrize("axis", [0, -1])
 def test_softmax(axis, sdfg_name):
 
-    X = np.random.normal(scale=10, size=(2, 4, 10)).astype(np.float32)
-
-    torch_result = torch.nn.functional.softmax(torch.Tensor(X),
-                                               dim=axis).numpy()
+    X = np.random.normal(scale=10, size=(2, 10)).astype(np.float32)
+    if axis == 0:
+        torch_result = torch.nn.functional.softmax(torch.Tensor(X).flatten(),
+                                                   dim=0).numpy().reshape(
+                                                       2, 10)
+    else:
+        torch_result = torch.nn.functional.softmax(torch.Tensor(X),
+                                                   dim=axis).numpy()
     sdfg = dace.SDFG(sdfg_name)
 
-    sdfg.add_array("X", [2, 4, 10], dace.float32)
+    sdfg.add_array("X", [2, 10], dace.float32)
     sdfg.add_array("__return", torch_result.shape, dace.float32)
 
     state = sdfg.add_state()

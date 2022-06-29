@@ -413,27 +413,17 @@ class PureReduceMin(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@op_implementation(op="Softmax", name="pure")
-class PureSoftmax(ONNXForward):
-    @staticmethod
-    def forward(node: onnx_op.ONNXOp, state: SDFGState,
-                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+softmax_compute = dict(
+    axis=lambda node, input: list(range(len(input.shape)))[node.axis:],
+    keepdims=lambda node: node.axis != 0)
 
-        axis = node.axis
 
-        reduced_shape = list(
-            copy.deepcopy(in_desc_with_name(node, state, sdfg, "input").shape))
-        reduced_shape[axis] = 1
-
-        def prog(input, output):
-            maximum = np.max(input, axis=axis)
-            max_keepdims = np.reshape(maximum, reduced_shape)
-            exp_arr = np.exp(input - max_keepdims)
-            sum = np.sum(exp_arr, axis=axis)
-            sum_keepdims = np.reshape(sum, reduced_shape)
-            output[:] = exp_arr / sum_keepdims
-
-        return program_for_node(prog, sdfg, state, node)
+@python_pure_op_implementation(compute=softmax_compute)
+def Softmax(input, output):
+    maximum = np.maximum.reduce(input, axis=axis, keepdims=keepdims)
+    exponent = np.exp(input - maximum)
+    sum = np.add.reduce(exponent, axis=axis, keepdims=keepdims)
+    output[:] = exponent / sum
 
 
 @op_implementation(op="Transpose", name="pure")
@@ -1021,6 +1011,13 @@ class PureSliceAllConstant(ONNXForward):
         starts = PureSliceAllConstant._get_constant('starts', node, state,
                                                     sdfg)
         steps = PureSliceAllConstant._get_constant('steps', node, state, sdfg)
+
+        constant_folding.remove_node_and_computation(sdfg, state, node, "axes")
+        constant_folding.remove_node_and_computation(sdfg, state, node, "ends")
+        constant_folding.remove_node_and_computation(sdfg, state, node,
+                                                     "starts")
+        constant_folding.remove_node_and_computation(sdfg, state, node,
+                                                     "steps")
 
         nsdfg = dace.SDFG(node.label + "_expansion")
         nstate = nsdfg.add_state()
