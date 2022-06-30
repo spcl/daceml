@@ -14,6 +14,10 @@ import daceml.onnx.converters as converters
 from daceml.util import utils
 
 
+def assert_allclose(a, b, rtol=1e-5, atol=1e-8):
+    np.testing.assert_allclose(a, b, rtol=rtol, atol=atol)
+
+
 #+yapf: disable
 @pytest.mark.parametrize("a_shape, b_shape",
                          [([2, 4], [4, 3]),
@@ -54,7 +58,7 @@ def test_matmul_expansion(a_shape, b_shape, sdfg_name):
 
     result = sdfg(X=X, Z=Z)
 
-    assert np.allclose(expected_result, result)
+    assert_allclose(expected_result, result)
 
 
 @pytest.mark.pure
@@ -106,7 +110,7 @@ def test_cast_int_to_float(sdfg_name):
 
     result = sdfg(X=X)
 
-    assert np.allclose(X.astype(np.float32), result)
+    assert_allclose(X.astype(np.float32), result)
 
 
 @pytest.mark.pure
@@ -140,7 +144,7 @@ def test_cast_float_to_int(sdfg_name):
 
     result = sdfg(X=X)
 
-    assert np.allclose(X.astype(np.int32), result)
+    assert_allclose(X.astype(np.int32), result)
 
 
 @pytest.mark.pure
@@ -174,7 +178,7 @@ def test_cast_float_to_long(sdfg_name):
 
     result = sdfg(X=X)
 
-    assert np.allclose(X.astype(np.int64), result)
+    assert_allclose(X.astype(np.int64), result)
 
 
 #+yapf: disable
@@ -228,7 +232,7 @@ def test_reduce(keepdims, reduce_type, axes, sdfg_name):
 
     result = sdfg(X=X)
 
-    assert np.allclose(numpy_result, result, rtol=1e-5, atol=1e-5)
+    assert_allclose(numpy_result, result, rtol=1e-5, atol=1e-5)
 
 
 @pytest.mark.pure
@@ -269,7 +273,7 @@ def test_reduce_scalar(sdfg_name):
 
     result = sdfg(X=X)
 
-    assert np.allclose(numpy_result, result)
+    assert_allclose(numpy_result, result)
 
 
 @pytest.mark.pure
@@ -308,7 +312,7 @@ def test_reshape(new_shape, sdfg_name):
 
     result = sdfg(X=X)
 
-    assert np.allclose(numpy_result, result)
+    assert_allclose(numpy_result, result)
 
 
 @pytest.mark.pure
@@ -341,7 +345,7 @@ def test_flatten(sdfg_name):
 
     result = sdfg(X=X)
 
-    assert np.allclose(numpy_result, result)
+    assert_allclose(numpy_result, result)
 
 
 @pytest.mark.pure
@@ -457,7 +461,7 @@ def test_reciprocal(sdfg_name):
 
     result = sdfg(X=X)
 
-    assert np.allclose(numpy_result, result)
+    assert_allclose(numpy_result, result)
 
 
 @pytest.mark.pure
@@ -478,7 +482,7 @@ def test_einsum():
     A = np.random.rand(5, 4, 3).astype(np.float64)
     B = np.random.rand(3, 2).astype(np.float64)
     result = test_einsum(A.copy(), B.copy())
-    assert np.allclose(result, np.einsum("bij ,jk -> bik", A, B))
+    assert_allclose(result, np.einsum("bij ,jk -> bik", A, B))
 
 
 @pytest.mark.pure
@@ -502,7 +506,7 @@ def test_reshape_add():
                   bias=bias.copy(),
                   target_shape=np.array([3, 3]).astype(np.int64))
 
-    assert np.allclose(result, inp.reshape(3, 3) + bias)
+    assert_allclose(result, inp.reshape(3, 3) + bias)
 
 
 @pytest.mark.parametrize("input_desc",
@@ -533,7 +537,7 @@ def test_sum_arrays(input_desc, sdfg_name):
     np_result = (inputs[0] + inputs[1]) + inputs[2]
     result = prog(*inputs)
 
-    assert np.allclose(result, np_result)
+    assert_allclose(result, np_result)
 
 
 @pytest.mark.pure
@@ -550,7 +554,7 @@ def test_shape(gpu):
 
     inp = np.random.rand(9, 5, 3).astype(np.float64)
     result = sdfg(inp=inp.copy())
-    assert np.allclose(result, [9, 5, 3]), result
+    assert_allclose(result, [9, 5, 3]), result
 
 
 @pytest.mark.pure
@@ -569,7 +573,7 @@ def test_gather_onnx_1(gpu):
     data = np.array([[1.0, 1.2], [2.3, 3.4], [4.5, 5.7]])
     indices = np.array([[0, 1], [1, 2]])
     result = sdfg(inp=data.copy(), indices=indices.copy())
-    assert np.allclose(result, data[indices])
+    assert_allclose(result, data[indices])
 
 
 @pytest.mark.pure
@@ -589,7 +593,7 @@ def test_gather_bert(gpu):
     input_ids = np.random.randint(low=0, high=64,
                                   size=(8, 16)).astype(np.int64)
     result = sdfg(embs=embs.copy(), input_ids=input_ids.copy())
-    assert np.allclose(result, embs[input_ids])
+    assert_allclose(result, embs[input_ids])
 
 
 @pytest.mark.pure
@@ -610,7 +614,7 @@ def test_gather_scalar(gpu):
     result = sdfg(inp=data.copy(), indices=indices.copy())
     np_result = np.take(data, indices, axis=1)
 
-    assert np.allclose(result, np_result)
+    assert_allclose(result, np_result)
 
 
 @pytest.mark.pure
@@ -635,7 +639,7 @@ def test_gather_onnx_2(gpu):
     result = sdfg(inp=data.copy(), indices=indices.copy())
     np_result = np.take(data, indices, axis=1)
 
-    assert np.allclose(result, np_result)
+    assert_allclose(result, np_result)
 
 
 @pytest.mark.pure
@@ -658,4 +662,4 @@ def test_unsqueeze(gpu):
 
     result = sdfg(inp=data.copy())
     assert result.shape == (3, 1, 3, 1)
-    assert np.allclose(result, np_result)
+    assert_allclose(result, np_result)
