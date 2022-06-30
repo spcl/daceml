@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 from daceml.autodiff import AutoDiffException
-from daceml.pytorch import dace_module
+from daceml.torch import dace_module
 
 
 def test_fail_non_float():

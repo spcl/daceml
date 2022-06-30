@@ -3,7 +3,7 @@
 daceml.pytorch
 ==============
 
-.. py:module:: daceml.pytorch
+.. py:module:: daceml.torch
 
 .. autoclass:: DaceModule
     :members:

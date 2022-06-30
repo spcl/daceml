@@ -19,7 +19,7 @@ There are two main ways to generate backward passes in DaCeML.
     .. testcode::
 
         import torch.nn.functional as F
-        from daceml.pytorch import dace_module
+        from daceml.torch import dace_module
 
         @dace_module(backward=True)
         class Net(nn.Module):

@@ -5,7 +5,7 @@ from torch import nn
 
 from daceml import onnx as donnx
 
-from daceml.pytorch import DaceModule
+from daceml.torch import DaceModule
 from daceml.testing import torch_tensors_close, copy_to_gpu
 
 

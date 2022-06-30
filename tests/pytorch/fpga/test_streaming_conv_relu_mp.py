@@ -10,7 +10,7 @@ import torch.nn.functional as F
 import numpy as np
 
 import dace
-from daceml.pytorch import DaceModule, dace_module
+from daceml.torch import DaceModule, dace_module
 
 from daceml.util import utils
 from dace.transformation.dataflow import streaming_memory as sm

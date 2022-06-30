@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from transformers import BertConfig, BertLayer
 
-from daceml.pytorch import DaceModule
+from daceml.torch import DaceModule
 from daceml.testing import copy_to_gpu, torch_tensors_close
 from daceml.transformation import parameter_to_transient
 
