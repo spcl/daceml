@@ -7,7 +7,7 @@ from dace.codegen.codeobject import CodeObject
 import dace.library
 from torch import nn
 
-from daceml.pytorch import dace_module, PyTorch
+from daceml.torch import dace_module, PyTorch
 from daceml.testing import copy_to_gpu, torch_tensors_close
 
 op_source = """

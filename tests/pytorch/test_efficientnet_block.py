@@ -8,7 +8,7 @@ from efficientnet_pytorch.model import MBConvBlock
 
 import daceml.onnx as donnx
 from daceml.onnx.op_implementations.cudnn_implementations import CudnnConvolution
-from daceml.pytorch import DaceModule
+from daceml.torch import DaceModule
 from daceml.testing import torch_tensors_close
 from daceml.transformation import PadConvFusion, ConstantDeviceCopyElimination
 

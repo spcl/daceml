@@ -8,7 +8,7 @@ import torch.nn.functional as F
 
 import numpy as np
 import pytest
-from daceml.pytorch import DaceModule, dace_module
+from daceml.torch import DaceModule, dace_module
 from daceml.util import utils
 from daceml.transformation import InputToConstant
 

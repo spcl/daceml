@@ -3,7 +3,7 @@ import ctypes
 import dace
 import numpy as np
 
-from daceml.pytorch.dlpack import array_to_torch_tensor
+from daceml.torch.dlpack import array_to_torch_tensor
 
 
 def test_desc_to_dlpack():

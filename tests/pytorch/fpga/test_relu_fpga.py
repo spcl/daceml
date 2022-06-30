@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from daceml.pytorch import DaceModule, dace_module
+from daceml.torch import DaceModule, dace_module
 import dace
 import argparse
 from daceml.util import utils

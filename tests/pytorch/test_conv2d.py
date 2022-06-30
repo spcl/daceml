@@ -7,7 +7,7 @@ import numpy as np
 
 import daceml.onnx as donnx
 from dace.library import change_default
-from daceml.pytorch import DaceModule, dace_module
+from daceml.torch import DaceModule, dace_module
 from daceml.testing import torch_tensors_close
 
 
