@@ -8,7 +8,7 @@ from dace.transformation.interstate import FPGATransformSDFG, InlineSDFG
 import torch
 import torch.nn as nn
 import numpy as np
-from daceml.pytorch import DaceModule, dace_module
+from daceml.torch import DaceModule, dace_module
 import pytest
 import dace
 import argparse

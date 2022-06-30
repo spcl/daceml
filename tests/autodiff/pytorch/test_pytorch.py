@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from dace.transformation.dataflow import MapFusion
 
 from daceml import onnx as donnx
-from daceml.pytorch import DaceModule
+from daceml.torch import DaceModule
 from daceml.testing import torch_tensors_close, copy_to_gpu
 from daceml.util import utils
 

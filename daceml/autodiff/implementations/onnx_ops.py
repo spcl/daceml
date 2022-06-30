@@ -1239,7 +1239,7 @@ class PyTorchConvBackward(BackwardImplementation):
                                      code_init=init_code,
                                      code_exit=finalize_code)
         tasklet.environments = {
-            daceml.pytorch.environments.PyTorch.full_class_path()
+            daceml.torch.environments.PyTorch.full_class_path()
         }
 
         nstate.add_edge(

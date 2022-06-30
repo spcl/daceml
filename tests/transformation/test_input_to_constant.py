@@ -5,7 +5,7 @@ import pytest
 
 import dace
 import daceml.onnx as donnx
-from daceml.pytorch import DaceModule
+from daceml.torch import DaceModule
 from daceml.transformation import InputToConstant
 
 

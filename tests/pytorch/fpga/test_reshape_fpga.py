@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from torch import onnx
 import numpy as np
 import pytest
-from daceml.pytorch import DaceModule, dace_module
+from daceml.torch import DaceModule, dace_module
 import dace
 import argparse
 from daceml.util import utils
