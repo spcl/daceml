@@ -4,6 +4,7 @@ exclude_lines =
     pragma: no cover
     raise .
     if __name__ == .__main__.:
+    @python_pure_op_implementation
 ignore_errors = True
 omit =
     tests/*

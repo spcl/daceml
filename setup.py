@@ -54,6 +54,6 @@ setup(
         ],
         'docs': [
             'sphinx', 'sphinx_rtd_theme', 'sphinx-autodoc-typehints',
-            'sphinx-gallery', 'matplotlib'
+            'sphinx-gallery', 'matplotlib', 'jinja2<3.1'
         ],
     })
