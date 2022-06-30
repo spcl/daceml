@@ -15,8 +15,8 @@ from dace.codegen.compiled_sdfg import CompiledSDFG
 
 from daceml.autodiff import BackwardResult
 from daceml.onnx.onnx_importer import create_output_array
-from daceml.pytorch.dispatchers import DaCeMLTorchFunction
-from daceml.pytorch.dispatchers.common import compile_and_init_sdfgs, \
+from daceml.torch.dispatchers import DaCeMLTorchFunction
+from daceml.torch.dispatchers.common import compile_and_init_sdfgs, \
     get_arglist
 from daceml.util import is_cuda
 
@@ -39,7 +39,7 @@ def init_remaining_parameters(module, fwd_arglist, input_names, output_names):
     return constants
 
 
-def callable_for_fwd_module(module: 'daceml.pytorch.DaceModule',
+def callable_for_fwd_module(module: 'daceml.torch.DaceModule',
                             forward_compiled: CompiledSDFG):
     assert forward_compiled._initialized
 
@@ -75,7 +75,7 @@ def callable_for_fwd_module(module: 'daceml.pytorch.DaceModule',
     return forward
 
 
-def callable_for_bwd_module(module: 'daceml.pytorch.DaceModule',
+def callable_for_bwd_module(module: 'daceml.torch.DaceModule',
                             forward_compiled: CompiledSDFG,
                             backward_compiled: CompiledSDFG,
                             backward_result: BackwardResult,
@@ -200,7 +200,7 @@ def callable_for_bwd_module(module: 'daceml.pytorch.DaceModule',
     return lambda *args: DifferentiableFunction.apply(*args)
 
 
-def get_ctypes_dispatcher(module: 'daceml.pytorch.DaceModule',
+def get_ctypes_dispatcher(module: 'daceml.torch.DaceModule',
                           dummy_inputs) -> DaCeMLTorchFunction:
     """
     Get a torch callable for the module. This will compile the sdfg and create a

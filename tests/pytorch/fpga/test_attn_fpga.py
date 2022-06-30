@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import pytest
 
-from daceml.pytorch import DaceModule
+from daceml.torch import DaceModule
 
 from dace.transformation.dataflow import RedundantSecondArray
 from daceml.transformation import ConstantFolding

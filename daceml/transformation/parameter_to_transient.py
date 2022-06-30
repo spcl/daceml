@@ -7,7 +7,7 @@ import dace
 from dace import dtypes, nodes
 
 from daceml.onnx.converters import clean_onnx_name
-from daceml.pytorch import DaceModule, dlpack
+from daceml.torch import DaceModule, dlpack
 
 log = logging.getLogger(__name__)
 

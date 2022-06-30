@@ -6,7 +6,7 @@ A PyTorch ``nn.Module`` can be imported using the :class:`~daceml.pytorch.DaceMo
 
     import torch
     import torch.nn.functional as F
-    from daceml.pytorch import DaceModule, dace_module
+    from daceml.torch import DaceModule, dace_module
     
     # Input and size definition
     B, H, P, SM, SN = 2, 16, 64, 512, 512
