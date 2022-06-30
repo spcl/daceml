@@ -310,7 +310,7 @@ softmax_compute = dict(
     keepdims=lambda node: node.axis != 0)
 
 
-@python_pure_op_implementation(compute=softmax_compute)
+@python_pure_op_implementation(**softmax_compute)
 def Softmax(input, output):
     maximum = np.maximum.reduce(input, axis=axis, keepdims=keepdims)
     exponent = np.exp(input - maximum)

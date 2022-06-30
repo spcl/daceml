@@ -38,7 +38,7 @@ setup(
     package_data={'': (['*.cpp'] + runtime_files)},
     install_requires=[
         'dace == 0.13.3',
-        'onnx == 1.8.0',  # we support opset v12
+        'onnx == 1.7.0',  # we support opset v12
         'torch',
         'protobuf == 3.19',
         'dataclasses; python_version < "3.7"',
