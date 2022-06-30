@@ -202,7 +202,8 @@ class PureConv2D(ONNXForward):
                                       or len(node.pads) != image_dims * 2):
             return False
 
-        if node.strides is not None and len(node.strides) != image_dims:
+        if node.strides is not None and (not all(s == 1 for s in node.strides)
+                                         or len(node.strides) != image_dims):
             return False
 
         if B is not None and B.shape[0] != num_filters:
@@ -223,12 +224,6 @@ class PureConv2D(ONNXForward):
             B = in_desc_with_name(node, state, sdfg, "B")
         except Exception as e:
             B = None
-
-        image_dims = len(X.shape) - 2
-        strides = node.strides if node.strides is not None else [
-            1 for _ in range(image_dims)
-        ]
-        stride_x, stride_y = strides
 
         if node.kernel_shape is not None:
             filter_hx, filter_hy = node.kernel_shape

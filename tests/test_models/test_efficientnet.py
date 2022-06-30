@@ -11,7 +11,8 @@ from daceml.onnx import ONNXModel
 from daceml.testing import get_data_file
 
 
-def test_efficientnet(sdfg_name, default_implementation):
+@pytest.mark.ort
+def test_efficientnet(sdfg_name):
     data_directory = os.path.join(os.path.dirname(__file__), "data")
 
     path = get_data_file(
