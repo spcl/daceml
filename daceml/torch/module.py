@@ -63,7 +63,7 @@ class DaceModule(nn.Module):
 
         :Example:
 
-            >>> from daceml.pytorch import DaceModule
+            >>> from daceml.torch import DaceModule
             >>> class MyModule(nn.Module):
             ...     def forward(self, x):
             ...        x = torch.log(x)
