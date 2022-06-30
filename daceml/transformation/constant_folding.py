@@ -224,7 +224,7 @@ def remove_node_and_computation(sdfg: dace.SDFG,
         dead_dataflow_elimination.DeadDataflowElimination()
     ]).apply_pass(sdfg, {})
 
-    # remove dangling nodes, this can happen iwth non-transients
+    # remove dangling nodes, this can happen with non-transients
     for node, parent in sdfg.all_nodes_recursive():
         if (isinstance(node, nd.AccessNode)
                 and parent.in_degree(node) + parent.out_degree(node) == 0):

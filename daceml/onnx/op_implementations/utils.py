@@ -146,22 +146,29 @@ def python_pure_op_implementation(func,
     function will be the name of the op that is being replaced.
 
     The compute parameter enables you to compute a variable given the node and
-    it's inputs/outputs. This variable will be namespaced when parsing the function.
+    its inputs/outputs. This variable will be namespaced when parsing the function.
 
-    To use this, the names of the functions can be either:
-    * 'node', in which case the argument will be passed the node we are expanding,
+    To use this, the argument names of the functions can be either:
+
+    * ``node``, in which case the argument will be passed the node we are expanding,
     * or, the name of any connector of the node, in which case the argument will be
       the data descriptor for that connector
 
-    for example, the following compute argument instantiation will
-    make variables 'axis' and 'shape' available when the function is parsed.
+    For example, the following compute argument instantiation will make
+    variables ``axis`` and ``shape`` available when the function is parsed.
+    
 
-    compute=dict(
-        # grabs the axis of a node
-        axis=lambda node: node.axis
-        # grabs the shape of the connector with name 'data'
-        shape=lambda data: data.shape
-    )
+    .. highlight:: python
+    .. code-block:: python
+
+        compute=dict(
+            # grabs the axis of a node
+            axis=lambda node: node.axis
+            # grabs the shape of the connector with name 'data'
+            shape=lambda data: data.shape
+        )
+
+    :param compute: a dictionary of functions that compute variables.
     """
     @op_implementation(op=func.__name__, name="pure")
     class PureImpl(ONNXForward):

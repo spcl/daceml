@@ -323,7 +323,7 @@ class ONNXModel:
 
         name = clean_onnx_name(unclean_name)
         if unclean_name in self.inputs:
-            # remove the tensor from inputs since this is a consant
+            # remove the tensor from inputs since this is a constant
             self.inputs.remove(unclean_name)
             # note: inputs already have data-descriptors created for them, so
             # we skip the below code
