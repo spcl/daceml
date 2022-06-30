@@ -18,10 +18,10 @@ from dace.codegen.prettycode import CodeIOStream
 from dace.codegen.targets.common import sym2cpp
 
 from daceml.autodiff import BackwardResult
-from daceml.pytorch.environments import PyTorch
+from daceml.torch.environments import PyTorch
 from daceml.util import is_cuda, platform_library_name
 
-from daceml.pytorch.dispatchers.common import DaCeMLTorchFunction, compile_and_init_sdfgs, get_arglist
+from daceml.torch.dispatchers.common import DaCeMLTorchFunction, compile_and_init_sdfgs, get_arglist
 
 log = logging.getLogger(__name__)
 
@@ -77,7 +77,7 @@ Tensor {name} = torch::{'zeros' if zeros else 'empty'}(
     """
 
 
-def initialize_outputs_code(module: 'daceml.pytorch.DaceModule',
+def initialize_outputs_code(module: 'daceml.torch.DaceModule',
                             output_names: List[str]) -> str:
     """ Generate the code that initializes the output tensors
 
@@ -274,7 +274,7 @@ def setup_grad_values(backward_result: BackwardResult, sdfg: dace.SDFG,
     return code
 
 
-def code_for_backward_function(module: 'daceml.pytorch.DaceModule',
+def code_for_backward_function(module: 'daceml.torch.DaceModule',
                                forward_sdfg: dace.SDFG,
                                backward_sdfg: dace.SDFG,
                                backward_result: BackwardResult,
@@ -395,7 +395,7 @@ m.impl("{sdfg_name}", {sdfg_name}_autograd);
 """
 
 
-def code_for_module(module: 'daceml.pytorch.DaceModule',
+def code_for_module(module: 'daceml.torch.DaceModule',
                     compiled_sdfg: CompiledSDFG) -> str:
     """ Generate the code for an operator that calls the sdfgs in the module.
 
@@ -457,7 +457,7 @@ TORCH_LIBRARY(daceml_{fwd_sdfg.name}, m) {{
 """
 
 
-def register_and_compile_torch_extension(module: 'daceml.pytorch.DaceModule',
+def register_and_compile_torch_extension(module: 'daceml.torch.DaceModule',
                                          dummy_inputs) -> DaCeMLTorchFunction:
     """ Get a torch callable for the module. This will compile the sdfg, compile a PyTorch C++ operator, register it
         with PyTorch and return the function that calls it.

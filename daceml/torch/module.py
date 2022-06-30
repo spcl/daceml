@@ -19,8 +19,8 @@ from dace import nodes, data
 from dace.codegen import compiled_sdfg
 
 from daceml.onnx.converters import clean_onnx_name
-from daceml.pytorch import dispatchers
-from daceml.autodiff.pytorch import make_backward_function
+from daceml.torch import dispatchers
+from daceml.autodiff.torch import make_backward_function
 from daceml.onnx import ONNXModel
 from daceml.util import utils, find_str_not_in_set
 
@@ -401,7 +401,7 @@ def dace_module(moduleclass,
 
         :Example:
 
-            >>> from daceml.pytorch import dace_module
+            >>> from daceml.torch import dace_module
             >>> @dace_module
             ... class MyDecoratedModule(nn.Module):
             ...     def forward(self, x):

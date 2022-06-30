@@ -2,7 +2,7 @@
 import numpy as np
 import argparse
 
-from daceml.pytorch import DaceModule
+from daceml.torch import DaceModule
 import daceml.onnx as donnx
 import time
 import torch
