@@ -31,8 +31,10 @@ The CI runs several tests using the ``Makefile``:
     Build the documentation.
 
 ``make check-formatting``
-    This runs the formatting checks. The DaCeML codebase is formatted using ``yapf``. Use ``check-formatting-names`` to
-    only print the names of the misformatted files.
+    This runs the formatting checks. The DaCeML codebase is formatted using ``yapf``. 
+
+``make format``
+    Interactively (with confirmation) format the codebase.
 
 Testing
 -------

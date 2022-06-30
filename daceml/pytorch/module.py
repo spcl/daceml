@@ -4,26 +4,41 @@ import logging
 import itertools
 import os
 import tempfile
-from functools import wraps
-from typing import Optional, Tuple, Callable, OrderedDict, Type, Dict, Union, List
+import functools
+from typing import Optional, Tuple, Callable, OrderedDict, Type, Dict, Union, List, Set
+
+import torch
+import torch.nn as nn
+from torch import Tensor
+from torch.onnx import TrainingMode
+
+import onnx
 
 import dace
 from dace import nodes, data
-import onnx
-import torch
-import torch.nn as nn
 from dace.codegen import compiled_sdfg
-from torch import Tensor
-from torch.onnx import TrainingMode
 
 from daceml.onnx.converters import clean_onnx_name
 from daceml.pytorch import dispatchers
 from daceml.autodiff.pytorch import make_backward_function
 from daceml.onnx import ONNXModel
-from daceml.onnx.shape_inference import infer_shapes
 from daceml.util import utils, find_str_not_in_set
 
 log = logging.getLogger(__name__)
+
+
+def _onnx_delete_initializers(model: onnx.ModelProto, names: Set[str]):
+    """
+    Delete the given initializers from the given onnx model.
+    Operates inplace
+    """
+    to_remove = []
+    for i, initializer in enumerate(model.graph.initializer):
+        if initializer.name in names:
+            to_remove.append(i)
+
+    for i in reversed(to_remove):
+        model.graph.initializer.pop(i)
 
 
 class DaceModule(nn.Module):
@@ -37,6 +52,7 @@ class DaceModule(nn.Module):
         :param backward: whether to enable the backward pass.
         :param inputs_to_skip: if provided, a list of inputs to skip computing gradients for. 
                                (only relevant when the backward pass is enabled)
+        :param onnx_simplify: whether to apply onnx simplification using onnxsim.
         :param simplify: whether to apply simplification transforms after conversion (this generally improves performance,
                          but can be slow).
         :param sdfg_name: the name to give to the sdfg (defaults to ``dace_model``).
@@ -67,6 +83,7 @@ class DaceModule(nn.Module):
                  training: bool = False,
                  backward=False,
                  inputs_to_skip: Optional[List[str]] = None,
+                 onnx_simplify: bool = True,
                  simplify: bool = True,
                  auto_optimize: bool = True,
                  debug_transients: bool = False,
@@ -83,6 +100,7 @@ class DaceModule(nn.Module):
         self.use_cuda = cuda
         self.sdfg_name = sdfg_name or type(module).__name__
         self.auto_optimize = auto_optimize
+        self.onnx_simplify = onnx_simplify
         self.simplify = simplify
         self.debug_transients = debug_transients
         self.compile_torch_extension = compile_torch_extension
@@ -265,15 +283,28 @@ class DaceModule(nn.Module):
                 do_constant_folding=False,
                 keep_initializers_as_inputs=True)
             self.load_state_dict(state)
+            onnx_model_exported = onnx.load(export_name)
 
-            onnx_model = infer_shapes(onnx.load(export_name))
-            self.onnx_model = onnx_model
+            # Remove buffers and parameters from initializers
+            # they should already be in the inputs (from the pytorch exporter)
+            # this prevents onnx tools from messing with parameters
+            input_names = set()
+            for name, _ in itertools.chain(self.named_parameters(),
+                                           self.named_buffers()):
+                # pytorch adds a "model." prefix here that isn't in the onnx export;
+                # remove it
+                if not name.startswith("model."):
+                    raise ValueError(
+                        "Expected parameter names to start with 'model.'")
+                input_names.add(name[6:])
 
+            _onnx_delete_initializers(onnx_model_exported, input_names)
+
+            # load using importer
             dace_model = ONNXModel(self.sdfg_name,
-                                   onnx_model,
-                                   infer_shapes=False,
+                                   onnx_model_exported,
+                                   onnx_simplify=self.onnx_simplify,
                                    cuda=self.use_cuda,
-                                   parent_pytorch_module=self.model,
                                    auto_optimize=self.auto_optimize)
             self.sdfg = dace_model.sdfg
             self.dace_model = dace_model
@@ -359,6 +390,7 @@ def dace_module(moduleclass,
                 training: bool = False,
                 backward=False,
                 inputs_to_skip: Optional[List[str]] = None,
+                onnx_simplify: bool = True,
                 simplify: bool = True,
                 auto_optimize: bool = True,
                 sdfg_name: Optional[str] = None,
@@ -388,6 +420,7 @@ def dace_module(moduleclass,
         :param backward: whether to enable the backward pass.
         :param inputs_to_skip: if provided, a list of inputs to skip computing gradients for. 
                                (only relevant when the backward pass is enabled)
+        :param onnx_simplify: whether to apply onnx simplification using onnxsim.
         :param simplify: whether to apply simplification transforms after conversion (this generally improves performance,
                              but can be slow).
         :param auto_optimize: whether to apply automatic optimizations.
@@ -396,7 +429,7 @@ def dace_module(moduleclass,
                                         Otherwise, a python ctypes implementation will be used.
         :param debug_transients: if True, the module will have all transients as outputs.
     """
-    @wraps(moduleclass)
+    @functools.wraps(moduleclass)
     def _create(*args, **kwargs):
         return DaceModule(moduleclass(*args, **kwargs),
                           dummy_inputs=dummy_inputs,
@@ -404,6 +437,7 @@ def dace_module(moduleclass,
                           training=training,
                           backward=backward,
                           inputs_to_skip=inputs_to_skip,
+                          onnx_simplify=onnx_simplify,
                           simplify=simplify,
                           auto_optimize=auto_optimize,
                           sdfg_name=sdfg_name,

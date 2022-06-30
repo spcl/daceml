@@ -75,20 +75,19 @@ check-formatting:
 	# check for sdfg.view()
 	! git grep '\.view()' -- tests/** daceml/**
 
-yapf:
-	$(ACTIVATE) $(YAPF) \
-		--parallel \
-		--recursive \
-		--in-place \
-		$(SOURCE_FILES) \
-		--exclude daceml/onnx/shape_inference/symbolic_shape_infer.py
-
-check-formatting-names:
-	$(ACTIVATE) $(YAPF) \
+format:
+	@$(ACTIVATE) \
+		DIFF=$$($(YAPF) \
 		--parallel \
 		--diff \
 		--recursive \
 		$(SOURCE_FILES) \
-		--exclude daceml/onnx/shape_inference/symbolic_shape_infer.py |  grep "+++" || echo "All good!"
-	# check for sdfg.view()
-	! git grep '\.view()' -- tests/** daceml/**
+		--exclude daceml/onnx/shape_inference/symbolic_shape_infer.py); \
+		if [ -z "$$DIFF" ]; then \
+			echo "All files formatted correctly"; \
+			exit 0; \
+		fi; \
+		FILES=$$(echo "$$DIFF" | grep -oP '\+\+\+\s+\K.*(?=\s+\(reformatted\))') \
+		&& echo "Going to format:\n$$FILES" && echo -n "Ok? [y/N]" \
+		&& read ans && [ $${ans:-N} = y ] && echo "Formatting..." \
+		&& echo "$$FILES" | xargs $(YAPF) --parallel --in-place

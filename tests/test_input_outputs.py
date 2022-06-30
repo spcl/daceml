@@ -38,10 +38,10 @@ class BreakOpChecker:
         ExecutableKernelContext.try_create_kernel = self.old_try_create
 
 
+@pytest.mark.ort
 @pytest.mark.parametrize("break_opchecker", [True, False])
 @pytest.mark.parametrize("simplify", [True, False])
-def test_squeeze(gpu, simplify, break_opchecker, default_implementation,
-                 sdfg_name):
+def test_squeeze(gpu, simplify, break_opchecker, sdfg_name):
 
     with BreakOpChecker() if break_opchecker else suppress():
         sdfg = dace.SDFG(sdfg_name)
@@ -87,10 +87,10 @@ def test_squeeze(gpu, simplify, break_opchecker, default_implementation,
         assert result[0] == X
 
 
+@pytest.mark.ort
 @pytest.mark.parametrize("simplify", [True, False])
 @pytest.mark.parametrize("break_opchecker", [True, False])
-def test_shape(gpu, simplify, break_opchecker, default_implementation,
-               sdfg_name):
+def test_shape(gpu, simplify, break_opchecker, sdfg_name):
     with BreakOpChecker() if break_opchecker else suppress():
         sdfg = dace.SDFG(sdfg_name)
 
@@ -125,10 +125,10 @@ def test_shape(gpu, simplify, break_opchecker, default_implementation,
         assert np.all(result == (2, 4))
 
 
+@pytest.mark.ort
 @pytest.mark.parametrize("simplify", [True, False])
 @pytest.mark.parametrize("break_opchecker", [True, False])
-def test_unsqueeze(gpu, simplify, break_opchecker, default_implementation,
-                   sdfg_name):
+def test_unsqueeze(gpu, simplify, break_opchecker, sdfg_name):
     with BreakOpChecker() if break_opchecker else suppress():
         sdfg = dace.SDFG(sdfg_name)
 
@@ -164,11 +164,11 @@ def test_unsqueeze(gpu, simplify, break_opchecker, default_implementation,
         assert X == result[0]
 
 
+@pytest.mark.ort
 @pytest.mark.parametrize("scalars", [True, False])
 @pytest.mark.parametrize("simplify", [True, False])
 @pytest.mark.parametrize("break_opchecker", [True, False])
-def test_add(gpu, scalars, simplify, break_opchecker, default_implementation,
-             sdfg_name):
+def test_add(gpu, scalars, simplify, break_opchecker, sdfg_name):
     with BreakOpChecker() if break_opchecker else suppress():
         sdfg = dace.SDFG(sdfg_name)
 

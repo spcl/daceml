@@ -2,6 +2,8 @@
 Batch Norm is the only op that has a shared name between inputs and outputs. Test that prepending "in_" and "out_" works
 """
 
+import pytest
+
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -13,6 +15,7 @@ from daceml.pytorch import DaceModule
 from daceml.testing.utils import torch_tensors_close
 
 
+@pytest.mark.ort
 def test_bn_standalone():
     @dace.program
     def test_bn_standalone(X: dace.float32[8, 3, 32, 32],
@@ -39,6 +42,7 @@ def test_bn_standalone():
     torch_tensors_close("output", pt_result, torch.from_numpy(dace_result))
 
 
+@pytest.mark.ort
 def test_bn_in_import():
     class Module(torch.nn.Module):
         def __init__(self):

@@ -22,6 +22,7 @@ from daceml.util import utils
 #+yapf: enable
 @pytest.mark.pure
 def test_matmul_expansion(a_shape, b_shape, sdfg_name):
+    blas.Gemm.default_implementation = "pure"
     sdfg = dace.SDFG(sdfg_name)
 
     X = np.random.rand(*a_shape).astype(np.float32)
@@ -302,6 +303,9 @@ def test_reshape(new_shape, sdfg_name):
 
     sdfg.expand_library_nodes()
 
+    # we don't need shape anymore
+    del sdfg.arrays["shape"]
+
     result = sdfg(X=X)
 
     assert np.allclose(numpy_result, result)
@@ -344,13 +348,17 @@ def test_flatten(sdfg_name):
 @pytest.mark.parametrize("axis", [0, -1])
 def test_softmax(axis, sdfg_name):
 
-    X = np.random.normal(scale=10, size=(2, 4, 10)).astype(np.float32)
-
-    torch_result = torch.nn.functional.softmax(torch.Tensor(X),
-                                               dim=axis).numpy()
+    X = np.random.normal(scale=10, size=(2, 10)).astype(np.float32)
+    if axis == 0:
+        torch_result = torch.nn.functional.softmax(torch.Tensor(X).flatten(),
+                                                   dim=0).numpy().reshape(
+                                                       2, 10)
+    else:
+        torch_result = torch.nn.functional.softmax(torch.Tensor(X),
+                                                   dim=axis).numpy()
     sdfg = dace.SDFG(sdfg_name)
 
-    sdfg.add_array("X", [2, 4, 10], dace.float32)
+    sdfg.add_array("X", [2, 10], dace.float32)
     sdfg.add_array("__return", torch_result.shape, dace.float32)
 
     state = sdfg.add_state()
@@ -525,4 +533,129 @@ def test_sum_arrays(input_desc, sdfg_name):
     np_result = (inputs[0] + inputs[1]) + inputs[2]
     result = prog(*inputs)
 
+    assert np.allclose(result, np_result)
+
+
+@pytest.mark.pure
+def test_shape(gpu):
+    @dace.program
+    def shape(inp: dace.float64[9, 5, 3]):
+        shp = dace.define_local([3], dace.int64)
+        donnx.ONNXShape(data=inp, shape=shp)
+        return shp
+
+    sdfg: dace.SDFG = shape.to_sdfg()
+    sdfg.expand_library_nodes()
+    sdfg.simplify()
+
+    inp = np.random.rand(9, 5, 3).astype(np.float64)
+    result = sdfg(inp=inp.copy())
+    assert np.allclose(result, [9, 5, 3]), result
+
+
+@pytest.mark.pure
+def test_gather_onnx_1(gpu):
+    # gather in ONNX operators.md
+    @dace.program
+    def gather(inp: dace.float64[3, 2], indices: dace.int64[2, 2]):
+        output = dace.define_local([2, 2, 2], dace.float64)
+        donnx.ONNXGather(data=inp, output=output, indices=indices, axis=0)
+        return output
+
+    sdfg: dace.SDFG = gather.to_sdfg()
+    sdfg.expand_library_nodes()
+    sdfg.simplify()
+
+    data = np.array([[1.0, 1.2], [2.3, 3.4], [4.5, 5.7]])
+    indices = np.array([[0, 1], [1, 2]])
+    result = sdfg(inp=data.copy(), indices=indices.copy())
+    assert np.allclose(result, data[indices])
+
+
+@pytest.mark.pure
+def test_gather_bert(gpu):
+    # gather found at start of bert model
+    @dace.program
+    def gather(embs: dace.float64[64, 8], input_ids: dace.int64[8, 16]):
+        output = dace.define_local([8, 16, 8], dace.float64)
+        donnx.ONNXGather(data=embs, output=output, indices=input_ids, axis=0)
+        return output
+
+    sdfg: dace.SDFG = gather.to_sdfg()
+    sdfg.expand_library_nodes()
+    sdfg.simplify()
+
+    embs = np.random.rand(64, 8).astype(np.float64)
+    input_ids = np.random.randint(low=0, high=64,
+                                  size=(8, 16)).astype(np.int64)
+    result = sdfg(embs=embs.copy(), input_ids=input_ids.copy())
+    assert np.allclose(result, embs[input_ids])
+
+
+@pytest.mark.pure
+def test_gather_scalar(gpu):
+    # gather test 2 in BERT model (third last op)
+    @dace.program
+    def gather(inp: dace.float64[1, 8, 32], indices: dace.int64):
+        output = dace.define_local([1, 32], dace.float64)
+        donnx.ONNXGather(data=inp, output=output, indices=indices, axis=1)
+        return output
+
+    sdfg: dace.SDFG = gather.to_sdfg()
+    sdfg.expand_library_nodes()
+    sdfg.simplify()
+
+    data = np.random.rand(1, 8, 32)
+    indices = np.int64(5)
+    result = sdfg(inp=data.copy(), indices=indices.copy())
+    np_result = np.take(data, indices, axis=1)
+
+    assert np.allclose(result, np_result)
+
+
+@pytest.mark.pure
+def test_gather_onnx_2(gpu):
+    # gather test 2 in ONNX operators.md
+    @dace.program
+    def gather(inp: dace.float64[3, 3], indices: dace.int64[1, 2]):
+        output = dace.define_local([3, 1, 2], dace.float64)
+        donnx.ONNXGather(data=inp, output=output, indices=indices, axis=1)
+        return output
+
+    sdfg: dace.SDFG = gather.to_sdfg()
+    sdfg.expand_library_nodes()
+    sdfg.simplify()
+
+    data = np.array([
+        [1.0, 1.2, 1.9],
+        [2.3, 3.4, 3.9],
+        [4.5, 5.7, 5.9],
+    ])
+    indices = np.array([[0, 2]])
+    result = sdfg(inp=data.copy(), indices=indices.copy())
+    np_result = np.take(data, indices, axis=1)
+
+    assert np.allclose(result, np_result)
+
+
+@pytest.mark.pure
+def test_unsqueeze(gpu):
+    @dace.program
+    def unsqueeze(inp: dace.float64[3, 3]):
+        output = dace.define_local([3, 1, 3, 1], dace.float64)
+        donnx.ONNXUnsqueeze(data=inp, expanded=output, axes=[1, 3])
+        return output
+
+    sdfg: dace.SDFG = unsqueeze.to_sdfg()
+
+    data = np.array([
+        [1.0, 1.2, 1.9],
+        [2.3, 3.4, 3.9],
+        [4.5, 5.7, 5.9],
+    ])
+
+    np_result = np.reshape(data, [3, 1, 3, 1])
+
+    result = sdfg(inp=data.copy())
+    assert result.shape == (3, 1, 3, 1)
     assert np.allclose(result, np_result)

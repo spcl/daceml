@@ -317,6 +317,13 @@ def emit_setup_code_for_ortvalue(node: nd.CodeNode, parameter_name: str,
 
 
 def expand_node(node, state, sdfg):
+    if not ONNXRuntime.is_installed():
+        raise RuntimeError(
+            "ONNXRuntime is not installed, cannot expand node "
+            "{}. You can either install ONNX Runtime as described in the "
+            "docs, or add a pure node implementation for the {} op.".format(
+                node, node.schema.name))
+
     inputs, outputs = _get_inputs_and_outputs(sdfg, state, node)
 
     unique_id = "{}_{}_{}_{}".format(clean_onnx_name(node.name), sdfg.sdfg_id,

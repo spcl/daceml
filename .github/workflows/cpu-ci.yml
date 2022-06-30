@@ -69,3 +69,37 @@ jobs:
 
     - name: Upload coverage
       run: make codecov
+
+  test-cpu-pure:
+    runs-on: ubuntu-latest
+    env:
+      VENV_PATH: ''
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+        submodules: 'recursive'
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: 3.7
+
+    - name: Install dependencies
+      run: |
+        sudo apt install -y libopenblas-dev liblapacke-dev
+        wget https://github.com/orausch/onnxruntime/releases/download/v2/onnxruntime-daceml-patched.tgz
+        tar -xzf onnxruntime-daceml-patched.tgz
+        make install
+
+    - name: Check OpenBLAS.is_installed()
+      run: pytest tests/test_openblas.py
+
+    - name: Test with pytest
+      env:
+        PYTEST_ARGS: --cov=daceml --cov-report=term --cov-report xml --cov-config=.coveragerc -m "not fpga and not xilinx and not gpu" --timeout=500 --skip-ort
+      run: make test
+
+    - name: Upload coverage
+      run: make codecov

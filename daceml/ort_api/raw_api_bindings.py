@@ -247,8 +247,8 @@ class ORTCAPIInterface:
 
     @staticmethod
     def _find_ort_header_path() -> str:
-        from daceml.onnx.environments.onnxruntime import INCLUDES
-        for include_directory in INCLUDES:
+        from daceml.onnx.environments.onnxruntime import ONNXRuntime
+        for include_directory in ONNXRuntime.cmake_includes():
             header_path = os.path.join(include_directory,
                                        "onnxruntime_c_api.h")
             if os.path.exists(header_path):

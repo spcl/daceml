@@ -55,6 +55,8 @@ Op Implementation Registration
 
 .. autofunction:: daceml.onnx.op_implementations.utils.op_implementation
 
+.. autofunction:: daceml.onnx.op_implementations.utils.python_pure_op_implementation
+
 .. _pure-ops:
 
 SDFG-based ONNX Implementations

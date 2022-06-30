@@ -5,7 +5,7 @@ import typing
 
 import dace
 import numpy as np
-from dace import SDFGState, SDFG, nodes, subsets
+from dace import SDFGState, SDFG, nodes, subsets, data
 from dace.frontend.common import create_einsum_sdfg
 from dace.sdfg.nodes import Node
 
@@ -16,7 +16,7 @@ from daceml.onnx.op_implementations.utils import op_implementation, program_for_
     python_pure_op_implementation
 from daceml.transformation import constant_folding
 from daceml.transformation.replacement import onnx_constant_or_none
-from daceml.util.utils import in_desc_with_name, out_desc_with_name, in_edge_with_name, iterables_equal
+from daceml.util.utils import in_desc_with_name, out_desc_with_name, in_edge_with_name, iterables_equal, prod
 
 log = logging.getLogger(__name__)
 
@@ -37,6 +37,11 @@ class PureLog(ONNXForward):
             output[:] = dace.elementwise(lambda x: log(x), input)
 
         return program_for_node(prog, sdfg, state, node)
+
+
+@python_pure_op_implementation
+def Exp(input, output):
+    output[:] = np.exp(input)
 
 
 @op_implementation(op="Sqrt", name="pure")
@@ -328,9 +333,8 @@ class PureExpand(ONNXForward):
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
                 sdfg: SDFG) -> typing.Union[Node, SDFG]:
 
-        node.remove_in_connector("shape")
-        shape_node = in_edge_with_name(node, state, "shape").src
-        constant_folding.remove_node_and_computation(sdfg, state, shape_node)
+        constant_folding.remove_node_and_computation(sdfg, state, node,
+                                                     "shape")
 
         def prog(input, output):
             output[:] = input
@@ -409,27 +413,17 @@ class PureReduceMin(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@op_implementation(op="Softmax", name="pure")
-class PureSoftmax(ONNXForward):
-    @staticmethod
-    def forward(node: onnx_op.ONNXOp, state: SDFGState,
-                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+softmax_compute = dict(
+    axis=lambda node, input: list(range(len(input.shape)))[node.axis:],
+    keepdims=lambda node: node.axis != 0)
 
-        axis = node.axis
 
-        reduced_shape = list(
-            copy.deepcopy(in_desc_with_name(node, state, sdfg, "input").shape))
-        reduced_shape[axis] = 1
-
-        def prog(input, output):
-            maximum = np.max(input, axis=axis)
-            max_keepdims = np.reshape(maximum, reduced_shape)
-            exp_arr = np.exp(input - max_keepdims)
-            sum = np.sum(exp_arr, axis=axis)
-            sum_keepdims = np.reshape(sum, reduced_shape)
-            output[:] = exp_arr / sum_keepdims
-
-        return program_for_node(prog, sdfg, state, node)
+@python_pure_op_implementation(compute=softmax_compute)
+def Softmax(input, output):
+    maximum = np.maximum.reduce(input, axis=axis, keepdims=keepdims)
+    exponent = np.exp(input - maximum)
+    sum = np.add.reduce(exponent, axis=axis, keepdims=keepdims)
+    output[:] = exponent / sum
 
 
 @op_implementation(op="Transpose", name="pure")
@@ -702,56 +696,18 @@ class PureLeakyRelu(ONNXForward):
         return program_for_node(prog, sdfg, state, node)
 
 
-@op_implementation(op="Reshape", name="pure")
-class PureReshape(ONNXForward):
-    '''
-        Reshape expansion: this relies on views
-    '''
-    @staticmethod
-    def forward(node: onnx_op.ONNXOp, state: SDFGState,
-                sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        input_name = "data"
-        output_name = "reshaped"
-        flatten = False
-
-        # if called from Flatten
-        if "input" in node._in_connectors.keys():
-            input_name = "input"
-            output_name = "output"
-            flatten = True
-
-        new_shape = out_desc_with_name(node, state, sdfg, output_name).shape
-
-        if not flatten:
-            node.remove_in_connector("shape")
-            shape_node = in_edge_with_name(node, state, "shape").src
-            constant_folding.remove_node_and_computation(
-                sdfg, state, shape_node)
-
-        if not flatten:
-
-            def prog(data, reshaped):
-                reshaped[:] = np.reshape(data, new_shape)
-        else:
-
-            def prog(input, output):
-                output[:] = np.reshape(input, new_shape)
-
-        return program_for_node(prog, sdfg, state, node)
+@python_pure_op_implementation(
+    compute=dict(shape=lambda reshaped: reshaped.shape))
+def Reshape(data, reshaped):
+    reshaped[:] = np.reshape(data, shape)
 
 
-@op_implementation(op="Flatten", name="pure")
-class PureFlatten(ONNXForward):
-    '''
-        Flatten Expansion, reuses Reshape implementation
-    '''
-    @staticmethod
-    def forward(node: onnx_op.ONNXOp, state: SDFGState,
-                sdfg: SDFG) -> typing.Union[Node, SDFG]:
-
-        # Reuse Reshape implementation
-        return PureReshape.forward(node, state, sdfg)
+@python_pure_op_implementation(compute=dict(
+    shape=lambda input, node:
+    [prod(input.shape[:node.axis]),
+     prod(input.shape[node.axis:])]))
+def Flatten(input, output):
+    output[:] = input.reshape(shape)
 
 
 @op_implementation(op="Sum", name="pure")
@@ -1056,6 +1012,13 @@ class PureSliceAllConstant(ONNXForward):
                                                     sdfg)
         steps = PureSliceAllConstant._get_constant('steps', node, state, sdfg)
 
+        constant_folding.remove_node_and_computation(sdfg, state, node, "axes")
+        constant_folding.remove_node_and_computation(sdfg, state, node, "ends")
+        constant_folding.remove_node_and_computation(sdfg, state, node,
+                                                     "starts")
+        constant_folding.remove_node_and_computation(sdfg, state, node,
+                                                     "steps")
+
         nsdfg = dace.SDFG(node.label + "_expansion")
         nstate = nsdfg.add_state()
 
@@ -1092,3 +1055,125 @@ class PureSliceAllConstant(ONNXForward):
             dace.Memlet(data="data", subset=sbs, other_subset=osbs))
 
         return nsdfg
+
+
+@op_implementation(op="Shape", name="pure")
+class PureShape(ONNXForward):
+    @staticmethod
+    def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
+        data_desc = in_desc_with_name(node, state, sdfg, "data")
+
+        try:
+            np.array(data_desc.shape, np.int64)
+        except Exception:
+            # this happens if the shape is symbolic, for example
+            return False
+
+        return True
+
+    @staticmethod
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+
+        data_desc = in_desc_with_name(node, state, sdfg, "data")
+        shape_val = np.array(data_desc.shape, np.int64)
+
+        nsdfg = dace.SDFG(node.label + "_expansion")
+        nstate = nsdfg.add_state()
+        nsdfg.add_datadesc(
+            "data",
+            copy.deepcopy(data_desc),
+        )
+        nsdfg.arrays["data"].transient = False
+        nsdfg.add_array("shape", shape_val.shape, dtype=dace.int64)
+        s = nstate.add_write("shape")
+
+        for i, v in enumerate(shape_val):
+            tasklet = nstate.add_tasklet("write_shape", {},
+                                         {'shape_scalar': dace.int64},
+                                         f"shape_scalar = {v}")
+            nstate.add_edge(tasklet, "shape_scalar", s, None,
+                            dace.Memlet("shape[{}]".format(i)))
+
+        return nsdfg
+
+
+@op_implementation(op="Gather", name="pure")
+class PureGather(ONNXForward):
+    @staticmethod
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+        # To understand this operator, read the docs for np.take.
+        # The ONNX docs are not easy to understand (and are incorrect in opset 11)
+
+        nsdfg, nstate, _, _ = empty_sdfg_for_node(sdfg,
+                                                  state,
+                                                  node,
+                                                  add_access_nodes=False)
+        out_shape = out_desc_with_name(node, state, sdfg, "output").shape
+        idx_desc = in_desc_with_name(node, state, sdfg, "indices")
+        idx_shape = idx_desc.shape
+        data_shape = in_desc_with_name(node, state, sdfg, "data").shape
+
+        # FIXME: we can sometimes generate views
+
+        # Generate a copy kernel that loops over every element in the output
+        # and read the correct element according to the indices
+
+        axis = node.axis
+
+        map_ranges = [(f"i{i}", f"0:{s}") for i, s in enumerate(out_shape)]
+        # the map ranges can be partitioned into two parts.
+        # the first part is the range over the indices, the second part is the
+        # range over the data
+        if isinstance(idx_desc, data.Scalar):
+            # handle the edgecase here because the shape of a scalar in dace is
+            # (1,) not ()
+            idx_len = 0
+        else:
+            idx_len = len(idx_shape)
+        map_ranges_indices = map_ranges[axis:axis + idx_len]
+        map_ranges_data = map_ranges[:axis] + map_ranges[axis + idx_len:]
+
+        # compute the indexing expressions
+        fst = lambda x: x[0]
+        output_idx_str = 'output[' + ', '.join(map(fst, map_ranges)) + ']'
+        # the memlet string used to read data, which reads the whole axis
+        data_memlet_elems = list(map(fst, map_ranges_data))
+        data_memlet_elems.insert(axis, f'0:{data_shape[axis]}')
+
+        data_memlet_str = 'data[' + ', '.join(data_memlet_elems) + ']'
+
+        indices_idx_str = 'indices'
+        if map_ranges_indices:
+            indices_idx_str += '[' + ', '.join(map(fst,
+                                                   map_ranges_indices)) + ']'
+        else:
+            indices_idx_str += '[0]'
+
+        tasklet, me, mx = nstate.add_mapped_tasklet(
+            node.label + "_tasklet",
+            map_ranges=map_ranges,
+            inputs={
+                "__data": dace.Memlet(data_memlet_str),
+                "idx": dace.Memlet(indices_idx_str),
+            },
+            code=f"__output = __data[idx]",
+            outputs={"__output": dace.Memlet(output_idx_str)},
+            external_edges=True)
+
+        return nsdfg
+
+
+def insert_at_indices(v, xs, idx):
+    xs = list(copy.deepcopy(xs))
+    for i in idx:
+        xs.insert(i, v)
+    return xs
+
+
+@python_pure_op_implementation(compute=dict(
+    shape=lambda node, data: insert_at_indices(1, data.shape, node.axes)))
+def Unsqueeze(data, expanded):
+    expanded[:] = np.reshape(data, shape)

@@ -10,8 +10,7 @@ from daceml.testing import copy_to_gpu, torch_tensors_close
 from daceml.transformation import ConstantFolding
 
 
-@pytest.mark.ort
-def test_attn(gpu, sdfg_name, use_cpp_dispatcher):
+def test_attn(gpu, sdfg_name, use_cpp_dispatcher, default_implementation):
     B = 2
     H = 16
     P = 64

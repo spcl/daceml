@@ -6,6 +6,7 @@ import numpy as np
 from daceml.ort_api import ORTCAPIInterface, OrtCUDAProviderOptions
 
 
+@pytest.mark.ort
 def test_basic():
     with ORTCAPIInterface() as api:
         env = ctypes.c_void_p()
@@ -21,6 +22,7 @@ def test_basic():
         api.ReleaseEnv(env)
 
 
+@pytest.mark.ort
 @pytest.mark.gpu
 def test_basic_gpu():
     with ORTCAPIInterface() as api:
