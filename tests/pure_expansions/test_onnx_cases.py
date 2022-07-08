@@ -102,5 +102,7 @@ for test in EXCLUDED:
 
 cases = backend_test.test_cases['OnnxBackendNodeModelTest']
 for name, func in inspect.getmembers(cases):
+    if name.startswith("test"):
+        setattr(cases, name, pytest.mark.onnx(func))
     if name.endswith("cuda"):
         setattr(cases, name, pytest.mark.gpu(func))
