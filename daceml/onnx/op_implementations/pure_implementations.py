@@ -31,6 +31,7 @@ def Exp(input, output):
     output[:] = np.exp(input)
 
 
+@python_pure_op_implementation
 def Sqrt(X, Y):
     Y[:] = dace.elementwise(lambda x: sqrt(x), X)
 
