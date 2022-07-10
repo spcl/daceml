@@ -47,6 +47,7 @@ def compile_and_init_sdfgs(
     compiled: CompiledSDFG = module.dace_model.compile_and_init()
     # construct the arguments and initialize the SDFG
     args = tuple(dummy_inputs) + module._call_params()
+    args = tuple(a.detach() for a in args)
     inputs, symbols, outputs = module.dace_model._call_args(args=args,
                                                             kwargs={})
 
