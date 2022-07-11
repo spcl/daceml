@@ -37,7 +37,7 @@ setup(
         exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
     package_data={'': (['*.cpp'] + runtime_files)},
     install_requires=[
-        'dace == 0.13.3',
+        'dace@git+https://github.com/spcl/dace.git@e538068',
         'onnx == 1.7.0',  # we support opset v12
         'torch',
         'protobuf == 3.19',
