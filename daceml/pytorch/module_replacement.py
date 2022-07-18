@@ -36,7 +36,6 @@ def create_placeholder_function_class(name, module_id, dtype, shape_fn):
     def forward(ctx, *inputs):
         return torch.zeros(shape_fn(*inputs), dtype=dtype)
 
-    # TODO: How to handle kwargs?
     @staticmethod
     def symbolic(g: torch._C.Graph, *inputs):
         return g.op(f'daceml::{name}', *inputs, module_id_i=module_id)
