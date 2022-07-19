@@ -37,7 +37,7 @@ class GCNConv(ONNXForward):
 
             vals = np.ones((num_entries,), dtype=dtype)
             if do_normalize:
-                degrees = np.zeros((N,))
+                degrees = np.zeros((N,), dtype=dtype)
                 # The following loop is not the best.
                 for entry_idx in dace.map[0:num_entries]:
                     with dace.tasklet:
@@ -48,7 +48,6 @@ class GCNConv(ONNXForward):
 
                 norm = 1 / np.sqrt(degrees)
                 norm[degrees == 0] = 0  # Get rid of nans.
-
                 for l in dace.map[0:N]:
                     rstart = input_1[l]
                     rend = input_1[l + 1]

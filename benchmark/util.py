@@ -21,8 +21,7 @@ def _specialize_memory(sdfg):
                 continue
             arr = sdfg.arrays[dnode.data]
             if (arr.transient and not isinstance(arr, dace.data.View)
-                    and arr.storage != dace.StorageType.Register
-                    and dnode.data != 'features'):
+                    and arr.storage != dace.StorageType.Register):
                 print(dnode.data)
                 arr.lifetime = dace.AllocationLifetime.Persistent
 

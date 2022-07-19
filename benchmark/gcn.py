@@ -12,6 +12,7 @@ from torch import nn
 from torch_geometric.datasets import Planetoid
 from torch_geometric.nn import GCNConv
 from torch_geometric.utils import add_self_loops
+from torch_geometric.data import Data
 from torch_sparse import SparseTensor
 
 from benchmark.util import specialize_mem_onnx, apply_dace_auto_optimize
@@ -44,7 +45,6 @@ class GCN(torch.nn.Module):
 
     def forward(self, x, *edge_info):
         x = self.conv1(x, *edge_info)
-        # return x
         x = self.act(x)
         x = self.conv2(x, *edge_info)
 
@@ -81,16 +81,18 @@ if __name__ == '__main__':
     if not args.small:
         dataset = Planetoid(root='/tmp/Cora', name='Cora')
         data = dataset[0].to(device)
-        x = data.x
-        edge_index = data.edge_index
         num_node_features = dataset.num_node_features
         num_classes = dataset.num_classes
     else:
-        x = torch.tensor([[0., 1], [1, 1], [-1, 0]]).to(device)
-        edge_index = torch.tensor(
+        _x = torch.tensor([[0., 1], [1, 1], [-1, 0]]).to(device)
+        _edge_index = torch.tensor(
             [[0, 0, 0, 2, 2], [0, 1, 2, 0, 2]]).to(device)
-        num_node_features = x.shape[1]
+        data = Data(x=_x, edge_index=_edge_index)
+        num_node_features = _x.shape[1]
         num_classes = 2
+
+    x = data.x
+    edge_index = data.edge_index
 
     print("Num node features: ", num_node_features)
     print("Num classes: ", num_classes)
