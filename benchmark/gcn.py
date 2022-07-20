@@ -124,6 +124,6 @@ if __name__ == '__main__':
     if np.allclose(dace_pred_cpu, torch_pred_cpu, atol=1.0e-5):
         print("\n==== Results correct.  ☆ ╰(o＾◡＾o)╯ ☆ ====")
     else:
-        print("\n****** INCORRECT RESULTS! (ಥ﹏ಥ) ******")
+        print("\n****** INCORRECT RESULTS! (ノಥ﹏ಥ)ノ彡┻━┻ ******")
         print("Max abs error: ", abs((dace_pred_cpu - torch_pred_cpu)).max())
         print(dace_pred_cpu - torch_pred_cpu)

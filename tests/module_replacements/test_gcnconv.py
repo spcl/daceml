@@ -3,9 +3,7 @@ import pytest
 import torch
 from torch import nn
 from torch_geometric.nn import GCNConv
-from torch_geometric.utils import to_dense_adj
 from torch_sparse import SparseTensor
-from torch_geometric.datasets import Planetoid
 
 from daceml.pytorch.module import dace_module, DaceModule
 
@@ -67,15 +65,6 @@ def test_gcnconv_full_model(seed):
     num_hidden_features = 3 * size
     num_classes = 8
 
-    # dataset = Planetoid(root='/tmp/Cora', name='Cora')
-    # data = dataset[0]
-    # x = data.x
-    # edges = to_dense_adj(data.edge_index)[0]
-    # num_in_features = x.shape[1]
-    # num_classes = dataset.num_classes
-    # num_hidden_features = 16
-    # num_nodes = x.shape[0]
-
     weights_values_1 = torch.randn((num_hidden_features, num_in_features), generator=rng)
     bias_values_1 = torch.randn((num_hidden_features,), generator=rng)
     weights_values_2 = torch.randn((num_classes, num_hidden_features), generator=rng)
@@ -106,9 +95,9 @@ def test_gcnconv_full_model(seed):
     dace_model = DaceModule(GCN(), sdfg_name=f'GCN_{seed}')
 
     adj_matrix = SparseTensor.from_dense(edges)
-    rowptr, col, vals = adj_matrix.csr()
+    rowptr, col, _ = adj_matrix.csr()
 
-    pred = dace_model(x, rowptr, col, vals)
+    pred = dace_model(x, rowptr, col, torch.ones_like(col, dtype=torch.float32))
 
     # PyG requires that the adj matrix is transposed when using SparseTensor.
     expected_pred = torch_model(x, adj_matrix.t()).detach().numpy()
