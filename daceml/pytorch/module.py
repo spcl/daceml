@@ -244,7 +244,8 @@ class DaceModule(nn.Module):
 
         # TODO change to StringIO if not too big
         with tempfile.TemporaryDirectory() as dir_name:
-            export_name = os.path.join(dir_name, "export.onnx")
+            # export_name = os.path.join(dir_name, "export.onnx")
+            export_name = f"export_{self.sdfg_name}.onnx"
 
             placeholder_id_to_module = replace_modules(self.model)
 

@@ -90,3 +90,83 @@ class GCNConv(ONNXForward):
             return program_for_node(bias_prog, sdfg, state, node)
         else:
             return program_for_node(prog_sparse, sdfg, state, node)
+
+
+@op_implementation(op="torch_geometric.nn.conv.gat_conv.GATConv",
+                   name="pure")
+class GATConv(ONNXForward):
+    # TODO: check for bipartite, edge_dim
+
+    @staticmethod
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[nodes.Node, SDFG]:
+        assert not node.module.add_self_loops, "Adding self loops is not supported. Add self-loops in preprocessing."
+
+        features_desc = in_desc_with_name(node, state, sdfg, "input_0")
+        N, num_in_features = features_desc.shape
+        dtype = features_desc.dtype
+
+        col_desc = in_desc_with_name(node, state, sdfg, "input_2")
+        num_entries, = col_desc.shape
+
+        heads = node.module.heads
+        num_out_features = node.module.out_channels
+        negative_slope = node.module.negative_slope
+
+        def prog_sparse(input_0, input_1, input_2, lin_srcDOTweight, att_src, att_dst, output_0):
+            # input_0: input features, N x F
+            # input_1: rowptr, N+1
+            # input_2: col, num_entries
+            # lin_srcDOTweight: H * F' x F
+            # att_srcDOT_weight: H x F
+            # output_0: N x H * F'
+
+            # Transform input features.
+            features = dace.define_local((N, heads, num_out_features), dtype=dtype)
+            features[:] = np.reshape(np.einsum(
+                'ij,kj->ik', input_0, lin_srcDOTweight), (N, heads, num_out_features))
+
+            # # compute node attention coefficients.
+            alpha_src = np.sum(features * att_src, axis=-1)  # shape: N x H
+            alpha_dst = np.sum(features * att_dst, axis=-1)  # N x H
+
+            e = np.zeros((num_entries, heads), dtype=dtype)
+            softmax_sum = np.zeros((N, heads), dtype=dtype)
+            for l in dace.map[0:N]:
+                rstart = input_1[l]
+                rend = input_1[l + 1]
+                for v in dace.map[rstart:rend]:
+                    colv = input_2[v]
+                    e_tmp = alpha_src[l] + alpha_dst[colv]
+                    # e_negative = e_tmp < 0
+                    e_tmp = np.maximum(0, e_tmp)  # ReLU
+                    # TODO: Leaky Relu not working
+                    # e_tmp[e_negative] *= negative_slope
+                    e_tmp = np.exp(e_tmp)
+                    e[v] = e_tmp
+                    softmax_sum[l] += e_tmp
+
+            for l in dace.map[0:N]:
+                rstart = input_1[l]
+                rend = input_1[l + 1]
+                for v in dace.map[rstart:rend]:
+                    colv = input_2[v]
+                    e[v] = e[v] / softmax_sum[l]  # np.sum(e[rstart:rend], axis=0)
+
+            # output_0[:] = features.reshape((N, heads * num_out_features))
+            output_0[:] = 0
+            for l in dace.map[0:N]:
+                rstart = input_1[l]
+                rend = input_1[l + 1]
+                for v in dace.map[rstart:rend]:
+                    colv = input_2[v]
+                    output_0[l] += np.reshape(e[v] * features[colv], (heads * num_out_features,))
+
+        if 'bias' in [inp.name for inp in node.schema.inputs]:
+            def bias_prog(input_0, input_1, input_2, lin_srcDOTweight, att_src, att_dst, bias, output_0):
+                prog_sparse(input_0, input_1, input_2, lin_srcDOTweight, att_src, att_dst, output_0)
+                output_0[:] = output_0 + bias
+
+            return program_for_node(bias_prog, sdfg, state, node)
+        else:
+            return program_for_node(prog_sparse, sdfg, state, node)
