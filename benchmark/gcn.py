@@ -33,11 +33,12 @@ if __name__ == '__main__':
     parser.add_argument('--persistent-mem', action='store_true')
     parser.add_argument('--opt', action='store_true')
     parser.add_argument('--model', choices=['gcn', 'gat', 'linear'])
-    parser.add_argument('--hidden', type=int, default=512)
+    parser.add_argument('--hidden', type=int, default=None)
     args = parser.parse_args()
     models = {'gcn': GCN, 'linear': LinearModel, 'gat': GAT}
     model_class = models[args.model]
     num_hidden_features = args.hidden
+    args.hidden = args.hidden or (8 if args.model == 'gat' else 512)
 
     log = logging.getLogger(__name__)
     log.setLevel(logging.INFO)
@@ -61,8 +62,9 @@ if __name__ == '__main__':
     normalize = not args.no_normalize
     print("Normalize: ", normalize)
 
-    gcn_norm = GCNNorm(add_self_loops=True)
-    data = gcn_norm(data)
+    if args.model == 'gcn':
+        gcn_norm = GCNNorm(add_self_loops=True)
+        data = gcn_norm(data)
     x = data.x
     sparse_edge_index = SparseTensor.from_edge_index(data.edge_index, edge_attr=data.edge_weight)
     edge_rowptr, edge_col, edge_weights = sparse_edge_index.csr()
@@ -87,7 +89,7 @@ if __name__ == '__main__':
     torch_sparse_args = (x,) if args.model == 'linear' else (x, sparse_edge_index.t())
     torch_dense_args = (x,) if args.model == 'linear' else (x, data.edge_index)
 
-    if edge_weights is not None and args.model != 'linear':
+    if edge_weights is not None and args.model == 'gcn':
         dace_args += (edge_weights,)
         torch_dense_args += (data.edge_weight,)
 
@@ -114,7 +116,9 @@ if __name__ == '__main__':
                            func_names=func_names,
                            warmups=10,
                            num_iters=100)
+        print(f"\n------ {args.model.upper()} ------")
         print_time_statistics(times, func_names)
+        print()
 
     dace_pred = dace_model(*dace_args)
     torch_pred = torch_model(*torch_dense_args)

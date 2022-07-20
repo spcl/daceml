@@ -34,12 +34,12 @@ class LinearModel(torch.nn.Module):
 
 
 class GAT(torch.nn.Module):
-    def __init__(self, num_node_features, num_classes, num_heads=8, features_per_head=8):
+    def __init__(self, num_node_features, features_per_head, num_classes, _unsued, num_heads=8):
         super().__init__()
         self.conv1 = GATConv(num_node_features, features_per_head,
-                             heads=num_heads, add_self_loops=False, bias=False)
+                             heads=num_heads, add_self_loops=False, bias=True)
         self.conv2 = GATConv(features_per_head * num_heads, num_classes,
-                             heads=1, add_self_loops=False, bias=False)
+                             heads=1, add_self_loops=False, bias=True)
 
         self.act = nn.ELU()
         self.log_softmax = nn.LogSoftmax(dim=1)
