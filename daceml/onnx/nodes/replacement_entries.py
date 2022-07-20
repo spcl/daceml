@@ -29,7 +29,7 @@ def gcnconv_shape(module):
 
 
 register_replacement('torch_geometric.nn.conv.gcn_conv.GCNConv',
-                     inputs=['float32', 'int64', 'int64'],
+                     inputs=['float32', 'int64', 'int64', 'float32'],
                      outputs=['float32'],
                      shape_infer=inferGCNConv,
                      shape_from_module=gcnconv_shape)

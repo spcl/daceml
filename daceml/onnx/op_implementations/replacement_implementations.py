@@ -19,7 +19,7 @@ class GCNConv(ONNXForward):
         assert not node.module.add_self_loops, "Adding self loops is not supported. Add self-loops in preprocessing."
 
         features_desc = in_desc_with_name(node, state, sdfg, "input_0")
-        N, M = features_desc.shape
+        N, num_in_features = features_desc.shape
         dtype = features_desc.dtype
 
         col_desc = in_desc_with_name(node, state, sdfg, "input_2")
@@ -28,14 +28,15 @@ class GCNConv(ONNXForward):
         num_out_features = weights_desc.shape[0]
         do_normalize = node.module.normalize
 
-        def prog_sparse(input_0, input_1, input_2, linDOTweight, output_0):
+        def prog_sparse(input_0, input_1, input_2, input_3, linDOTweight, output_0):
             # input_0: input features, N x M
             # input_1: rowptr, N+1
             # input_2: col, num_entries
+            # input_3: values, num_entries
             # linDOTweight: F x M
             # output_0: N x F
 
-            vals = np.ones((num_entries,), dtype=dtype)
+            vals = input_3
             if do_normalize:
                 degrees = np.zeros((N,), dtype=dtype)
                 # The following loop is not the best.
@@ -70,9 +71,20 @@ class GCNConv(ONNXForward):
                     inp2j = input_2[j]
                     output_0[inp2j, k] += features[i, k] * vals[j]
 
+            # This is ~35% slower (0.56 vs 0.41)
+            # tmp = dace.define_local((N, num_in_features), dtype=dtype)
+            # tmp[:] = 0
+            # for i, k in dace.map[0:N, 0:num_in_features]:
+            #     for j in dace.map[input_1[i]:input_1[i + 1]]:
+            #         inp2j = input_2[j]
+            #         tmp[inp2j, k] += input_0[i, k] * vals[j]
+            #
+            # output_0[:] = np.einsum('ij,kj->ik', tmp, linDOTweight)
+
+
         if 'bias' in [inp.name for inp in node.schema.inputs]:
-            def bias_prog(input_0, input_1, input_2, linDOTweight, bias, output_0):
-                prog_sparse(input_0, input_1, input_2, linDOTweight, output_0)
+            def bias_prog(input_0, input_1, input_2, input_3, linDOTweight, bias, output_0):
+                prog_sparse(input_0, input_1, input_2, input_3, linDOTweight, output_0)
                 output_0[:] = output_0 + bias
 
             return program_for_node(bias_prog, sdfg, state, node)
