@@ -43,40 +43,12 @@ def apply_dace_auto_optimize(module):
                        device=dace.dtypes.DeviceType.GPU if torch.cuda.is_available() else dace.dtypes.DeviceType.CPU)
 
 
-def opitmize(model):
-    # reset the compiled sdfg
-    model.reset_sdfg()
-
-    # expand the onnx nodes, and apply automatic transformations like inlining
-    def expand_and_strict_transforms(module):
-        # use the pure expansions of operators
-        with change_default(donnx, "pure"):
-            utils.auto_optimize(module.sdfg, cuda=True)
-
-    model.append_post_onnx_hook("auto_optimize", expand_and_strict_transforms)
-
-    # # apply subgraph fusion
-    def fuse_sg(module):
-        sdfg = module.sdfg
-        sdfg.apply_transformations_repeated(TrivialMapRangeElimination)
-        sdfg.apply_transformations_repeated(MapFusion)
-        # SubgraphFusion.apply_to(sdfg, *sdfg.node(0).nodes())
-
-    model.append_post_onnx_hook("subgraph_fusion", fuse_sg)
-    #
-    # apply tasklet fusion
-    model.append_post_onnx_hook("fuse_tasklets", lambda x:
-    x.dace_model.sdfg.apply_transformations_repeated(TaskletFusion))
-    #
-    # # apply vectorization    # def set_transients_to_persistent(module):
-    #     sdfg = module.sdfg
-    #     for _, name, desc in sdfg.arrays_recursive():
-    #         if isinstance(desc, dace.data.Array) and desc.transient:
-    #             print(name, desc.shape, desc.lifetime)
-    #             desc.lifetime = dace.AllocationLifetime.Persistent
-    #
-    # dace_model.append_post_onnx_hook("set_transients_to_persistent", set_transients_to_persistent)
-    # def vectorize(module):
-    #     module.sdfg.apply_transformations(Vectorization)
-    #
-    # model.append_post_onnx_hook("vectorize", vectorize)
+def make_maps_dynamic(module):
+    sdfg = module.sdfg
+    for node in sdfg.all_nodes_recursive():
+        if isinstance(node[0], dace.sdfg.nodes.MapEntry) \
+                and node[0].schedule == dace.dtypes.ScheduleType.Sequential\
+                and len(node[0].map.params) == 1\
+                and node[0].label in ['assign_167_16_map', 'daceml_onnx_op_implementations_replacement_implementations_prog_sparse_161_4_162']:
+            print("Changing schdeule to TB dynamic: ", node[0].map)
+            node[0].schedule = dace.dtypes.ScheduleType.GPU_ThreadBlock_Dynamic

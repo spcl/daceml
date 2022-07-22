@@ -81,11 +81,12 @@ class GCNConv(ONNXForward):
             #
             # output_0[:] = np.einsum('ij,kj->ik', tmp, linDOTweight)
 
-
         if 'bias' in [inp.name for inp in node.schema.inputs]:
             def bias_prog(input_0, input_1, input_2, input_3, linDOTweight, bias, output_0):
-                prog_sparse(input_0, input_1, input_2, input_3, linDOTweight, output_0)
-                output_0[:] = output_0 + bias
+                prog_sparse(input_0, input_1, input_2,
+                            input_3, linDOTweight, output_0)
+                for i, j in dace.map[0:N, 0:num_out_features]:
+                    output_0[i, j] += bias[j]
 
             return program_for_node(bias_prog, sdfg, state, node)
         else:
@@ -113,6 +114,7 @@ class GATConv(ONNXForward):
         num_out_features = node.module.out_channels
         negative_slope = node.module.negative_slope
         assert negative_slope < 1.0
+
         def prog_sparse(input_0, input_1, input_2, lin_srcDOTweight, att_src, att_dst, output_0):
             # input_0: input features, N x F
             # input_1: rowptr, N+1
@@ -122,7 +124,8 @@ class GATConv(ONNXForward):
             # output_0: N x H * F'
 
             # Transform input features.
-            features = dace.define_local((N, heads, num_out_features), dtype=dtype)
+            features = dace.define_local(
+                (N, heads, num_out_features), dtype=dtype)
             features[:] = np.reshape(np.einsum(
                 'ij,kj->ik', input_0, lin_srcDOTweight), (N, heads, num_out_features))
             # compute node attention coefficients.
@@ -132,29 +135,24 @@ class GATConv(ONNXForward):
             e = np.zeros((num_entries, heads), dtype=dtype)
             softmax_sum = np.zeros((N, heads), dtype=dtype)
             for l in dace.map[0:N]:
-                rstart = input_1[l]
-                rend = input_1[l + 1]
-                for v in dace.map[rstart:rend]:
+                for v in dace.map[input_1[l]:input_1[l + 1]]:
                     # Calculating e_l->colv
                     colv = input_2[v]
                     e_tmp = alpha_src[l] + alpha_dst[colv]
-                    e_tmp = np.maximum(negative_slope * e_tmp, e_tmp)  # LeakyReLU
+                    e_tmp = np.maximum(
+                        negative_slope * e_tmp, e_tmp)  # LeakyReLU
                     e_tmp = np.exp(e_tmp)
                     e[v] = e_tmp
                     softmax_sum[colv] += e_tmp
 
             for l in dace.map[0:N]:
-                rstart = input_1[l]
-                rend = input_1[l + 1]
-                for v in dace.map[rstart:rend]:
+                for v in dace.map[input_1[l]:input_1[l + 1]]:
                     colv = input_2[v]
-                    e[v] = e[v] / softmax_sum[colv]  # np.sum(e[rstart:rend], axis=0)
+                    e[v] = e[v] / softmax_sum[colv]
 
             output_0[:] = 0
             for l in dace.map[0:N]:
-                rstart = input_1[l]
-                rend = input_1[l + 1]
-                for v in dace.map[rstart:rend]:
+                for v in dace.map[input_1[l]:input_1[l + 1]]:
                     colv = input_2[v]
                     if heads == 1:
                         output_0[colv] += e[v] * features[l]
@@ -163,8 +161,10 @@ class GATConv(ONNXForward):
 
         if 'bias' in [inp.name for inp in node.schema.inputs]:
             def bias_prog(input_0, input_1, input_2, lin_srcDOTweight, att_src, att_dst, bias, output_0):
-                prog_sparse(input_0, input_1, input_2, lin_srcDOTweight, att_src, att_dst, output_0)
-                output_0[:] = output_0 + bias
+                prog_sparse(input_0, input_1, input_2,
+                            lin_srcDOTweight, att_src, att_dst, output_0)
+                for i, j in dace.map[0:N, 0:num_out_features]:
+                    output_0[i, j] += bias[j]
 
             return program_for_node(bias_prog, sdfg, state, node)
         else:

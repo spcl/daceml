@@ -11,7 +11,7 @@ from torch_geometric.data import Data
 from torch_sparse import SparseTensor
 
 from benchmark.models import LinearModel, GCN, GAT
-from benchmark.util import specialize_mem_onnx, apply_dace_auto_optimize
+from benchmark.util import specialize_mem_onnx, apply_dace_auto_optimize, make_maps_dynamic
 from daceml import onnx as donnx
 from daceml.pytorch.module import dace_module
 
@@ -32,8 +32,9 @@ if __name__ == '__main__':
     parser.add_argument('--no-normalize', action='store_true')
     parser.add_argument('--persistent-mem', action='store_true')
     parser.add_argument('--opt', action='store_true')
+    parser.add_argument('--threadblock_dynamic', action='store_true')
     parser.add_argument('--model', choices=['gcn', 'gat', 'linear'])
-    parser.add_argument('--hidden', type=int, default=None)
+    parser.add_argument('--hidden', type=int, default=None, required=True)
     args = parser.parse_args()
     models = {'gcn': GCN, 'linear': LinearModel, 'gat': GAT}
     model_class = models[args.model]
@@ -78,10 +79,16 @@ if __name__ == '__main__':
     torch_model.eval()
 
     if args.opt:
+        print("---> Adding auto-opt hook.")
         dace_model.append_post_onnx_hook("dace_auto_optimize", apply_dace_auto_optimize)
 
     if args.persistent_mem:
+        print("---> Adding persistent memory hook.")
         specialize_mem_onnx(dace_model)
+
+    if args.threadblock_dynamic:
+        print("---> Adding threadblock dynamic maps hook.")
+        dace_model.append_post_onnx_hook("apply_threadblock_dynamic_maps", make_maps_dynamic)
 
     dace_args = (x,) if args.model == 'linear' else (
         x, edge_rowptr, edge_col)
