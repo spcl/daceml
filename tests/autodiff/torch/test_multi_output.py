@@ -46,12 +46,12 @@ def test_multi_output(sdfg_name, gpu, use_cpp_dispatcher):
         module,
         backward=True,
         sdfg_name=sdfg_name,
-        compile_torch_extension=True,
+        compile_torch_extension=use_cpp_dispatcher,
     )
 
     dace_y1, dace_y2 = dace_module(dace_input)
 
-    dace_y1.backward(dace_dy)
+    dace_y1.backward(dace_dy, retain_graph=True)
     dace_y2.backward(dace_dy)
 
     torch_tensors_close("grad", pytorch_input.grad, dace_input.grad)

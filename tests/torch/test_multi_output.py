@@ -23,7 +23,10 @@ def test_multiple_outputs(sdfg_name, use_cpp_dispatcher):
 
     torch_outputs = ptmodel(torch.clone(x))
 
-    dace_model = DaceModule(ptmodel, auto_optimize=False, sdfg_name=sdfg_name)
+    dace_model = DaceModule(ptmodel,
+                            auto_optimize=False,
+                            sdfg_name=sdfg_name,
+                            compile_torch_extension=use_cpp_dispatcher)
 
     dace_outputs = dace_model(x)
 
