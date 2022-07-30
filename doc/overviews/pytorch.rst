@@ -1,6 +1,6 @@
 PyTorch Integration
 ===================
-A PyTorch ``nn.Module`` can be imported using the :class:`~daceml.pytorch.DaceModule` wrapper or :class:`~daceml.pytorch.dace_module` decorator.
+A PyTorch ``nn.Module`` can be imported using the :class:`~daceml.torch.DaceModule` wrapper or :class:`~daceml.torch.dace_module` decorator.
 
 .. testcode::
 
