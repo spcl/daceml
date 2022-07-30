@@ -15,9 +15,9 @@ import onnxsim
 
 import dace
 from dace import data as dt, dtypes, nodes, SDFG, SDFGState
+from dace.sdfg import utils as sdfg_utils
 from dace.frontend.python import parser
 from dace.symbolic import pystr_to_symbolic
-from dace.transformation import dataflow, interstate
 from dace.codegen import compiled_sdfg
 
 from daceml import transformation
@@ -322,10 +322,9 @@ class ONNXModel:
                                     None,
                                     self.sdfg.make_array_memlet(clean_name))
 
-        # finally, rename outputs
+        # finally, rename outputs, and fuse states
         self.outputs = new_output_names
-
-        self.sdfg.apply_transformations_repeated(interstate.StateFusion)
+        sdfg_utils.fuse_states(self.sdfg)
 
         if self.cuda:
             self.sdfg.apply_gpu_transformations()
