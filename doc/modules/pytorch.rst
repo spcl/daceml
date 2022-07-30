@@ -1,6 +1,6 @@
 .. _mod_pytorch:
 
-daceml.pytorch
+daceml.torch
 ==============
 
 .. py:module:: daceml.torch
