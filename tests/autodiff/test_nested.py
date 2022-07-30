@@ -42,7 +42,7 @@ def test_nested():
         W = torch.log(inter)
         Z = torch.sum(W)
         Z.backward()
-        return dict(Y_gradient=Y.grad)
+        return dict(gradient_Y=Y.grad)
 
     return (SDFGBackwardRunner(sdfg, "__return", simplify=False), torch_func,
             dict(Y=np.random.rand(3, 3).astype(np.float32)))
@@ -70,7 +70,7 @@ def test_nested_forwarding():
         W = torch.log(inter2)
         Z = torch.sum(W)
         Z.backward()
-        return dict(Y_gradient=Y.grad)
+        return dict(gradient_Y=Y.grad)
 
     return (SDFGBackwardRunner(sdfg, "__return", simplify=False), torch_func,
             dict(Y=np.random.rand(3, 3).astype(np.float32)))
@@ -108,7 +108,7 @@ def test_triple_nested_forwarding():
         W = torch.log(inter3)
         Z = torch.sum(W)
         Z.backward()
-        return dict(Y_gradient=Y.grad)
+        return dict(gradient_Y=Y.grad)
 
     return (SDFGBackwardRunner(sdfg, "__return", simplify=False), torch_func,
             dict(Y=np.random.rand(3, 3).astype(np.float32)))
@@ -159,7 +159,7 @@ def test_view_forwarding():
         S = Zl.sum() + 1
 
         S.backward()
-        return dict(inp1_gradient=inp1.grad, bias_gradient=bias.grad)
+        return dict(gradient_inp1=inp1.grad, gradient_bias=bias.grad)
 
     return (SDFGBackwardRunner(outer_sdfg, "__return",
                                simplify=False), torch_func,
@@ -189,7 +189,7 @@ def test_nested_forwarding():
         W = torch.log(inter2)
         Z = torch.sum(W)
         Z.backward()
-        return dict(Y_gradient=Y.grad)
+        return dict(gradient_Y=Y.grad)
 
     return (SDFGBackwardRunner(sdfg, "__return", simplify=False), torch_func,
             dict(Y=np.random.rand(3, 3).astype(np.float32)))
@@ -227,7 +227,7 @@ def test_triple_nested_forwarding():
         W = torch.log(inter3)
         Z = torch.sum(W)
         Z.backward()
-        return dict(Y_gradient=Y.grad)
+        return dict(gradient_Y=Y.grad)
 
     return (SDFGBackwardRunner(sdfg, "__return", simplify=False), torch_func,
             dict(Y=np.random.rand(3, 3).astype(np.float32)))
