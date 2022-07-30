@@ -62,14 +62,15 @@ def compile_and_init_sdfgs(
     else:
         forwarded_transients = {}
 
-    _, initargtuple = compiled._construct_args({
+    all_kwargs = {
         **inputs,
         **outputs,
         **symbols,
         **forwarded_transients,
         **module.dace_model.initialized_parameters
-    })
-    compiled.initialize(*initargtuple)
+    }
+
+    compiled.initialize(**all_kwargs)
     for _, hook in module.post_compile_hooks.items():
         hook(compiled)
     handle_ptr = torch.tensor([compiled._libhandle.value]).squeeze(0)
@@ -93,12 +94,8 @@ def compile_and_init_sdfgs(
             for _, bwd_name in module._ad_result.given_grad_names.items()
         }
 
-        _, initargtuple = compiled_bwd._construct_args({
-            **required_grads,
-            **given_grads,
-            **forwarded_transients
-        })
-        compiled_bwd.initialize(*initargtuple)
+        compiled_bwd.initialize(**required_grads, **given_grads,
+                                **forwarded_transients)
         bwd_handle_ptr = torch.tensor([compiled_bwd._libhandle.value
                                        ]).squeeze(0)
         return compiled, handle_ptr, compiled_bwd, bwd_handle_ptr

@@ -2,6 +2,7 @@ import collections
 import logging
 from itertools import chain, repeat
 from typing import Dict, Union, Tuple, Any, List, Optional, OrderedDict, Callable
+import copy
 
 import numpy as np
 import torch
@@ -16,7 +17,7 @@ import dace
 from dace import data as dt, dtypes, nodes, SDFG, SDFGState
 from dace.frontend.python import parser
 from dace.symbolic import pystr_to_symbolic
-from dace.transformation import dataflow
+from dace.transformation import dataflow, interstate
 from dace.codegen import compiled_sdfg
 
 from daceml import transformation
@@ -177,6 +178,8 @@ class ONNXModel:
             storage = storage
             self._add_value_info(value, storage=storage)
 
+        self.sdfg.arg_names = [clean_onnx_name(i) for i in self.inputs]
+
         for value in graph.value_info:
             if not value.HasField("name"):
                 raise ValueError("Got input or output without name")
@@ -298,6 +301,32 @@ class ONNXModel:
                         dace.Memlet.from_array(clean_onnx_name(name),
                                                data_desc))
 
+        # insert copies from outputs to __return arrays
+        copy_out_state = self.sdfg.add_state_after(self.state,
+                                                   label='copy_out')
+        new_output_names = []
+        for i, output in enumerate(self.outputs):
+            clean_name = clean_onnx_name(output)
+            new_output_name = '__return'
+            if len(self.outputs) > 1:
+                new_output_name += '_' + str(i)
+            new_output_names.append(new_output_name)
+
+            # insert new descriptor
+            self.sdfg.arrays[new_output_name] = copy.deepcopy(
+                self.sdfg.arrays[clean_name])
+            self.sdfg.arrays[new_output_name].transient = False
+
+            copy_out_state.add_edge(copy_out_state.add_read(clean_name), None,
+                                    copy_out_state.add_write(new_output_name),
+                                    None,
+                                    self.sdfg.make_array_memlet(clean_name))
+
+        # finally, rename outputs
+        self.outputs = new_output_names
+
+        self.sdfg.apply_transformations_repeated(interstate.StateFusion)
+
         if self.cuda:
             self.sdfg.apply_gpu_transformations()
 
@@ -391,7 +420,7 @@ class ONNXModel:
                     "Value '{}' does not have a shape in this graph."
                     " Please run shape inference before importing.".format(
                         name))
-        transient = name not in self.inputs and name not in self.outputs
+        transient = name not in self.inputs
         if len(shape) == 0:
             self.sdfg.add_scalar(clean_onnx_name(name),
                                  dtype=onnx_tensor_type_to_typeclass(
@@ -542,8 +571,8 @@ class ONNXModel:
 
         outputs = collections.OrderedDict()
         # create numpy arrays for the outputs
-        for output in self.outputs:
-            clean_name = clean_onnx_name(output)
+        for name in self.outputs:
+            clean_name = clean_onnx_name(name)
             outputs[clean_name] = create_output_array(
                 inferred_symbols,
                 self.sdfg.arrays[clean_name],

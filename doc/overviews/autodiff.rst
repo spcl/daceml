@@ -12,7 +12,7 @@ Using Autodiff
 --------------
 There are two main ways to generate backward passes in DaCeML.
 
-:class:`~daceml.pytorch.DaceModule`
+:class:`~daceml.torch.DaceModule`
     This class includes a ``backward`` parameter. If ``True``, the autodiff engine will be used to add a backward pass
     to the PyTorch module, and the resulting module can be seamlessly used with other PyTorch code. For example:
 

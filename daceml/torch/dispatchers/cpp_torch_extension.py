@@ -236,7 +236,7 @@ def constant_initializer_code(name: str, desc: data.Data, value) -> str:
 
 
 def return_type_str(outputs: List[str]) -> str:
-    return f"""{"Tensor" if len(outputs) == 1 else f"std::tuple<{', '.join(['Tensor'] * len(outputs))}>"}"""
+    return f"""{"Tensor" if len(outputs) == 1 else f"variable_list"}"""
 
 
 def save_non_inputs_outputs(names: List[str]):
@@ -448,11 +448,11 @@ def get_header(fwd_sdfg: dace.SDFG, bwd_sdfg: Optional[dace.SDFG], inputs,
 using torch::Tensor;
 using torch::DeviceType;
 using torch::autograd::tensor_list;
+using torch::autograd::variable_list;
 using torch::autograd::AutogradContext;
 
 TORCH_LIBRARY(daceml_{fwd_sdfg.name}, m) {{
-    m.def("{fwd_sdfg.name}(int handle_ptr,{"int bwd_handle_ptr," if bwd_sdfg else ""} {", ".join('Tensor ' + arg for arg in inputs)}) -> {'Tensor' if len(outputs) == 1
-    else "(" + ", ".join(['Tensor'] * len(outputs)) + ")"}");
+    m.def("{fwd_sdfg.name}(int handle_ptr,{"int bwd_handle_ptr," if bwd_sdfg else ""} {", ".join('Tensor ' + arg for arg in inputs)}) -> {'Tensor' if len(outputs) == 1 else 'Tensor[]'}");
 }}
 """
 
