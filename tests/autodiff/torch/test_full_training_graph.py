@@ -11,8 +11,7 @@ from daceml.testing import torch_tensors_close, copy_to_gpu, tensors_close
 
 
 @pytest.mark.pure
-def test_parse_forward_simple():
-    gpu = False
+def test_parse_forward_simple(gpu):
     torch_module = copy_to_gpu(
         gpu,
         torch.nn.Sequential(torch.nn.Linear(12, 24), torch.nn.Linear(24, 2)))
@@ -36,13 +35,15 @@ def test_parse_forward_simple():
 
 
 @pytest.mark.pure
-def test_parse_forward_nested():
+def test_parse_forward_nested(gpu):
 
-    torch_module = torch.nn.Sequential(
-        torch.nn.Sequential(torch.nn.Linear(12, 24), torch.nn.Linear(24, 2)),
-        nn.Softmax(dim=1))
+    torch_module = copy_to_gpu(
+        gpu,
+        torch.nn.Sequential(
+            torch.nn.Sequential(torch.nn.Linear(12, 24),
+                                torch.nn.Linear(24, 2)), nn.Softmax(dim=1)))
     dace_module2 = DaceModule(torch_module)
-    x = torch.randn(2, 12)
+    x = copy_to_gpu(gpu, torch.randn(2, 12))
     expected = torch_module(x)
     result = dace_module2(x)
 
@@ -50,8 +51,10 @@ def test_parse_forward_nested():
 
     @dace
     def train_step(y):
-        scalar = dace_module2(y)
-        return scalar
+        output = dace_module2(y)
+        cpu = np.empty_like(output)
+        cpu[:] = output
+        return cpu.sum()
 
     result = train_step(x)
-    tensors_close('parsed', expected, result)
+    tensors_close('parsed', expected.sum(), result)
