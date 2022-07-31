@@ -301,6 +301,10 @@ class ONNXModel:
                         dace.Memlet.from_array(clean_onnx_name(name),
                                                data_desc))
 
+        # scalars need to be promoted to arrays so that we can return them from the dace program
+        # however, this is only for CPU: on GPU, scalars are already pointers
+        self._promoted_scalars = set()
+
         # insert copies from outputs to __return arrays
         copy_out_state = self.sdfg.add_state_after(self.state,
                                                    label='copy_out')
@@ -312,10 +316,14 @@ class ONNXModel:
                 new_output_name += '_' + str(i)
             new_output_names.append(new_output_name)
 
+            desc = copy.deepcopy(self.sdfg.arrays[clean_name])
+            if isinstance(desc, dt.Scalar) and not self.cuda:
+                desc = dt.Array(desc.dtype, (1, ))
+                self._promoted_scalars.add(new_output_name)
+
             # insert new descriptor
-            self.sdfg.arrays[new_output_name] = copy.deepcopy(
-                self.sdfg.arrays[clean_name])
-            self.sdfg.arrays[new_output_name].transient = False
+            self.sdfg.arrays[new_output_name] = desc
+            desc.transient = False
 
             copy_out_state.add_edge(copy_out_state.add_read(clean_name), None,
                                     copy_out_state.add_write(new_output_name),
@@ -496,6 +504,10 @@ class ONNXModel:
 
         compiled(**inputs, **outputs, **self.initialized_parameters, **symbols,
                  **transient_kwargs)
+
+        # demote scalars we promoted above
+        for scalar in self._promoted_scalars:
+            outputs[scalar] = outputs[scalar].reshape(())
 
         if len(outputs) == 1:
             return next(iter(outputs.values()))
