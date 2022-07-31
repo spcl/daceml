@@ -6,7 +6,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from dace.transformation.dataflow import MapFusion
 
-from daceml import onnx as donnx
 from daceml.torch import DaceModule
 from daceml.testing import torch_tensors_close, copy_to_gpu
 from daceml.util import utils
@@ -23,7 +22,6 @@ def run_pytorch_module(
     atol=1e-3,
     post_onnx_hooks=None,
 ):
-    donnx.default_implementation = "pure"
     shape = shape or (3, 5)
 
     module = copy_to_gpu(gpu, module)

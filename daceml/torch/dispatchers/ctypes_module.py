@@ -66,11 +66,7 @@ def callable_for_fwd_module(module: 'daceml.torch.DaceModule',
                                                zeros=False)
 
         # call the SDFG
-        forward_compiled(**kwargs, **constants)
-
-        if len(output_names) == 1:
-            return kwargs[output_names[0]]
-        return tuple(kwargs[name] for name in output_names)
+        return forward_compiled(**kwargs, **constants)
 
     return forward
 
@@ -149,7 +145,7 @@ def callable_for_bwd_module(module: 'daceml.torch.DaceModule',
                                                    zeros=False)
 
             # call the SDFG
-            forward_compiled(**kwargs, **constants)
+            outputs = forward_compiled(**kwargs, **constants)
 
             # save inputs/outputs for backward
             ctx.save_for_backward(*(kwargs[name]
@@ -159,9 +155,7 @@ def callable_for_bwd_module(module: 'daceml.torch.DaceModule',
             for name in forwarded_non_io_names:
                 setattr(ctx, f"daceml_saved_{name}", kwargs[name])
 
-            if len(output_names) == 1:
-                return kwargs[output_names[0]]
-            return tuple(kwargs[name] for name in output_names)
+            return outputs
 
         @staticmethod
         def backward(ctx, *grad_outputs):

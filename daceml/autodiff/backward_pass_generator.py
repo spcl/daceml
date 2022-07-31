@@ -590,7 +590,7 @@ class BackwardPassGenerator:
         """ Return the gradient name of a name from the forward pass """
         if forward_name not in self.array_grad_map:
             self.array_grad_map[forward_name] = \
-                find_str_not_in_set(set(self.backward_sdfg.arrays), forward_name + "_gradient")
+                find_str_not_in_set(set(self.backward_sdfg.arrays), "gradient_" + forward_name)
 
         return self.array_grad_map[forward_name]
 

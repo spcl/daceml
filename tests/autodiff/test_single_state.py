@@ -71,11 +71,11 @@ class SDFGBackwardRunner:
         intermediate_arrs = {
             name: np.zeros(arr.shape, dtype=getattr(np, arr.dtype.to_string()))
             for name, arr in self.sdfg.arrays.items()
-            if name != self.target + "_gradient" if not name.startswith("__")
+            if name != "gradient_" + self.target if not name.startswith("__")
             if name not in inputs if not arr.transient
         }
         inputs.update(intermediate_arrs)
-        inputs[self.target + "_gradient"] = np.ones(
+        inputs["gradient_" + self.target] = np.ones(
             (1, ),
             dtype=getattr(np, self.sdfg.arrays[self.target].dtype.to_string()))
 
@@ -109,7 +109,7 @@ def test_gemm():
         Z = X @ Y
         S = Z.sum()
         S.backward()
-        return dict(X_gradient=X.grad, Y_gradient=Y.grad)
+        return dict(gradient_X=X.grad, gradient_Y=Y.grad)
 
     @dace.program
     def dace_gemm(
@@ -146,7 +146,7 @@ def test_sum():
         Z = Z * Z
         S = Z.sum()
         S.backward()
-        return dict(X_gradient=X.grad, Y_gradient=Y.grad)
+        return dict(gradient_X=X.grad, gradient_Y=Y.grad)
 
     @dace.program
     def dace_sum(
@@ -184,7 +184,7 @@ def test_complex_tasklet():
         Z = Z * Z
         S = Z.sum()
         S.backward()
-        return dict(X_gradient=X.grad, Y_gradient=Y.grad)
+        return dict(gradient_X=X.grad, gradient_Y=Y.grad)
 
     @dace.program
     def dace_sum_complex(
@@ -318,7 +318,7 @@ def test_tasklets_direct_scalar_edges():
         tmp_c = torch.sin(tmp_b)
 
         tmp_c.backward()
-        return dict(A_gradient=A.grad)
+        return dict(gradient_A=A.grad)
 
     sdfg = dace.SDFG("tasklets_direct_scalar_edges")
     state = sdfg.add_state()
@@ -369,7 +369,7 @@ def test_tasklets_only_reuse():
         C = tmp_a * tmp_b
 
         C.backward()
-        return dict(A_gradient=A.grad)
+        return dict(gradient_A=A.grad)
 
     @dace.program
     def tasklets_only_reuse(A: dace.float32[1], C: dace.float32[1]):
@@ -413,7 +413,7 @@ def test_tasklets_multioutput():
         C = tmp_a * tmp_b * B
 
         C.backward()
-        return dict(A_gradient=A.grad, B_gradient=B.grad)
+        return dict(gradient_A=A.grad, gradient_B=B.grad)
 
     @dace.program
     def tasklets_multioutput(A: dace.float32[1], B: dace.float32[1],
@@ -465,7 +465,7 @@ def test_tasklets_only():
         C = tmp_a * tmp_b
 
         C.backward()
-        return dict(A_gradient=A.grad, B_gradient=B.grad)
+        return dict(gradient_A=A.grad, gradient_B=B.grad)
 
     @dace.program
     def tasklets_only(A: dace.float32[1], B: dace.float32[1],
@@ -515,7 +515,7 @@ def test_add_mmul_transpose_log():
 
         S = Zl.sum()
         S.backward()
-        return dict(X_gradient=X.grad, Y_gradient=Y.grad, W_gradient=W.grad)
+        return dict(gradient_X=X.grad, gradient_Y=Y.grad, gradient_W=W.grad)
 
     @dace.program
     def add_mmul_transpose_log(
@@ -559,7 +559,7 @@ def test_reduce_node_1_axis_and_none_axis():
 
         S = Zl.sum()
         S.backward()
-        return dict(X_gradient=X.grad, Y_gradient=Y.grad, W_gradient=W.grad)
+        return dict(gradient_X=X.grad, gradient_Y=Y.grad, gradient_W=W.grad)
 
     @dace.program
     def reduce_node_1_axis_and_none_axis(X: dace.float32[4, 5],
@@ -595,7 +595,7 @@ def test_reduce_max_simple():
         Z = torch.max(W, dim=1)
         S = Z.values.sum()
         S.backward()
-        return dict(W_gradient=W.grad)
+        return dict(gradient_W=W.grad)
 
     @dace.program
     def reduce_max_simple(W: dace.float32[4, 5]):
@@ -625,7 +625,7 @@ def test_reduce_max_node_1_axis():
 
         S = Zl.sum()
         S.backward()
-        return dict(X_gradient=X.grad, Y_gradient=Y.grad, W_gradient=W.grad)
+        return dict(gradient_X=X.grad, gradient_Y=Y.grad, gradient_W=W.grad)
 
     @dace.program
     def dace_func(X: dace.float64[4, 5], Y: dace.float64[4, 3],
@@ -676,7 +676,7 @@ def test_reshape():
         S = Zl.sum()
 
         S.backward()
-        return dict(inp_gradient=inp.grad, bias_gradient=bias.grad)
+        return dict(gradient_inp=inp.grad, gradient_bias=bias.grad)
 
     return (
         SDFGBackwardRunner(sdfg, "__return", simplify=False),
@@ -719,7 +719,7 @@ def test_reshape_on_memlet_path():
         S = Zl.sum()
 
         S.backward()
-        return dict(inp1_gradient=inp1.grad, bias_gradient=bias.grad)
+        return dict(gradient_inp1=inp1.grad, gradient_bias=bias.grad)
 
     return (
         SDFGBackwardRunner(sdfg, "__return", simplify=False),
@@ -760,7 +760,7 @@ def test_reshape_reuse_in_same_state():
         S = Zl.sum()
 
         S.backward()
-        return dict(inp_gradient=inp.grad)
+        return dict(gradient_inp=inp.grad)
 
     return (
         SDFGBackwardRunner(sdfg, "__return", simplify=False),

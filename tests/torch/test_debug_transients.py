@@ -17,7 +17,9 @@ def test_debug_transients():
     module = Module()
 
     x = torch.rand(5, 5)
-    output, y = module(x)
+    outputs = module(x)
+    output, y, y2 = outputs
 
     torch_tensors_close("output", (x + 3) * 5, output)
+    torch_tensors_close("y2", (x + 3) * 5, y2)
     torch_tensors_close("y", x + 3, y)
