@@ -32,10 +32,32 @@ def get_data_file(url, directory_name=None) -> str:
     return file_path
 
 
+def tensors_close(name, expected, result, rtol=1e-5, atol=1e-5):
+    def to_numpy(x):
+        if hasattr(x, 'detach'):
+            x = x.detach()
+        if hasattr(x, 'cpu'):
+            x = x.cpu()
+        if hasattr(x, 'numpy'):
+            x = x.numpy()
+        return x
+
+    expected = to_numpy(expected)
+    result = to_numpy(result)
+    np.testing.assert_allclose(expected,
+                               result,
+                               rtol=rtol,
+                               atol=atol,
+                               err_msg=f'{name} not close')
+
+
 def torch_tensors_close(name, torch_v, dace_v, rtol=1e-5, atol=1e-4):
     """
     Assert that the two torch tensors are close. Prints a nice error string if not.
     """
+    # check that the device is correct
+    assert torch_v.device == dace_v.device, "Tensors are on different devices"
+
     torch_v = torch_v.detach().cpu().numpy()
     dace_v = dace_v.detach().cpu().numpy()
     np.testing.assert_allclose(torch_v,

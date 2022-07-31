@@ -5,7 +5,7 @@ import itertools
 import os
 import tempfile
 import functools
-from typing import Optional, Tuple, Callable, OrderedDict, Type, Dict, Union, List, Set
+from typing import Optional, Tuple, Callable, OrderedDict, Type, Dict, Union, List, Set, Any
 
 import torch
 import torch.nn as nn
@@ -17,6 +17,7 @@ import onnx
 import dace
 from dace import nodes, data
 from dace.codegen import compiled_sdfg
+from dace.frontend.python import common as frontend_common
 
 from daceml.onnx.converters import clean_onnx_name
 from daceml.torch import dispatchers
@@ -41,7 +42,7 @@ def _onnx_delete_initializers(model: onnx.ModelProto, names: Set[str]):
         model.graph.initializer.pop(i)
 
 
-class DaceModule(nn.Module):
+class DaceModule(nn.Module, frontend_common.SDFGConvertible):
     """ A wrapper that converts a PyTorch ``nn.Module`` to a PyTorch compatible data-centric ``nn.Module``.
 
         :param module: the model to wrap.
@@ -298,6 +299,11 @@ class DaceModule(nn.Module):
                         "Expected parameter names to start with 'model.'")
                 input_names.add(name[6:])
 
+            # save the parameters as they are now for later access
+            self._exported_parameters = dict(
+                (n, p) for n, p in itertools.chain(
+                    self.model.named_parameters(), self.model.named_buffers()))
+
             _onnx_delete_initializers(onnx_model_exported, input_names)
 
             # load using importer
@@ -357,11 +363,8 @@ class DaceModule(nn.Module):
 
             return forward
 
-    def _call_params(self) -> Tuple[Union[Tensor, nn.Parameter]]:
+    def _call_params(self) -> Tuple[Union[Tensor, nn.parameter.Parameter]]:
         """ Get the parameters that we need to pass to the model, in the correct order. """
-
-        named_params = dict((n, p) for n, p in itertools.chain(
-            self.model.named_parameters(), self.model.named_buffers()))
 
         # self.dace_model.inputs contains the buffers, parameters and the inputs.
         # We only want the parameters and buffers
@@ -369,11 +372,12 @@ class DaceModule(nn.Module):
 
         # find the index of the first input that is a parameter or buffer
         start_idx = 0
-        while start_idx < len(
-                model_inputs) and model_inputs[start_idx] not in named_params:
+        while start_idx < len(model_inputs) and model_inputs[
+                start_idx] not in self._exported_parameters:
             start_idx += 1
 
-        return tuple(named_params[i] for i in model_inputs[start_idx:])
+        return tuple(self._exported_parameters[i]
+                     for i in model_inputs[start_idx:])
 
     def forward(self, *actual_inputs):
         """ Execute the forward pass using the traced ``module``."""
@@ -381,6 +385,56 @@ class DaceModule(nn.Module):
             self.function = self._initialize_sdfg(actual_inputs)
 
         return self.function(*actual_inputs)
+
+    # SDFGConvertible methods:
+    # used when the model is called in a DaceProgram.
+    #################################################
+
+    def __sdfg__(self, *args):
+        if self.sdfg is None:
+            raise ValueError("""
+            Using a PyTorch model in a DaceProgram requires that the model is initialized first.
+            Either call this model using some inputs, or pass 'dummy_inputs' to the constructor.
+            """)
+        return self.sdfg
+
+    def __sdfg_signature__(self):
+        if self.dace_model is None:
+            raise ValueError(
+                "Can't determine signature before SDFG is generated.")
+        inputs = [clean_onnx_name(name) for name in self.dace_model.inputs]
+        return inputs, []
+
+    def __sdfg_closure__(
+            self,
+            reevaluate: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+
+        result = dict((clean_onnx_name(n), p.data) for n, p in itertools.chain(
+            self.model.named_parameters(), self.model.named_buffers()))
+        return result
+
+    def closure_resolver(
+        self,
+        constant_args: Dict[str, Any],
+        given_args: Set[str],
+        parent_closure: Optional[frontend_common.SDFGClosure] = None
+    ) -> frontend_common.SDFGClosure:
+        result = frontend_common.SDFGClosure()
+        for name, param in self._exported_parameters.items():
+            onnx_name = clean_onnx_name(name)
+
+            class ParameterClosure:
+                def __init__(self, param):
+                    self.param = param
+
+                def __call__(self):
+                    return self.param
+
+            result.closure_arrays[onnx_name] = (name,
+                                                self.sdfg.arrays[onnx_name],
+                                                ParameterClosure(param.data),
+                                                False)
+        return result
 
 
 @dace.dtypes.paramdec
