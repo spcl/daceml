@@ -34,7 +34,7 @@ def test_multi_output(sdfg_name, gpu, use_cpp_dispatcher):
     pytorch_input.requires_grad = True
     dace_input.requires_grad = True
 
-    torch_dy = torch.randn(5, 10, dtype=torch.float32)
+    torch_dy = copy_to_gpu(gpu, torch.randn(5, 10, dtype=torch.float32))
     dace_dy = torch_dy.clone()
 
     pytorch_y1, pytorch_y2 = module(pytorch_input)
