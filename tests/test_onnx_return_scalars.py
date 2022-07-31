@@ -1,3 +1,5 @@
+import pytest
+
 import torch
 
 from onnx import helper, checker
@@ -7,6 +9,7 @@ from daceml import onnx as donnx
 from daceml.testing import copy_to_gpu
 
 
+@pytest.mark.pure
 def test_onnx_return_scalars(gpu, sdfg_name):
     # Dace programs can't return scalars.
     # this test checks that we correctly copy out the scalars using a size [1] array
