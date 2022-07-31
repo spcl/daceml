@@ -43,17 +43,14 @@ class PureSoftmaxCrossEntropyLoss(ONNXForward):
                 sdfg: SDFG) -> Union[nd.Node, SDFG]:
 
         if node.reduction == 'mean':
-
             @dace.program
             def reduction(x):
                 return np.mean(x)
         elif node.reduction == 'none':
-
             @dace.program
             def reduction(x):
                 return x
         elif node.reduction == 'sum':
-
             @dace.program
             def reduction(x):
                 return np.sum(x)
