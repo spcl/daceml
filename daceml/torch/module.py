@@ -79,7 +79,7 @@ class DaceModule(nn.Module, frontend_common.SDFGConvertible):
     """
     def __init__(self,
                  module: nn.Module,
-                 dummy_inputs: Optional[Tuple[torch.Tensor]] = None,
+                 dummy_inputs: Optional[Tuple[torch.Tensor, ...]] = None,
                  cuda: Optional[bool] = None,
                  training: bool = False,
                  backward=False,

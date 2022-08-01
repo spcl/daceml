@@ -259,6 +259,8 @@ class BackwardPassGenerator:
                                before calling this method).
         :param zero_non_transients: Whether non-transient gradient buffers should be zero initialized in the backward
                                     SDFG.
+        :param array_grad_map: A mapping from array name to the gradient array name. May be passed when certain
+                               mappings already exist.
     """
     def __init__(
             self,
@@ -269,7 +271,8 @@ class BackwardPassGenerator:
             required_gradients: List[Union[nd.AccessNode, str]],
             backward_sdfg: SDFG,  # this can be the same as SDFG
             backward_state: SDFGState,
-            zero_non_transients: bool):
+            zero_non_transients: bool,
+            array_grad_map: Optional[Dict[str, str]] = None):
 
         if backward_state not in backward_sdfg.nodes():
             raise AutoDiffException(
@@ -328,7 +331,7 @@ class BackwardPassGenerator:
         self.result_map: Dict[nd.Node, BackwardResult] = {}
 
         #: mapping from forward name to gradient name for arrays
-        self.array_grad_map: Dict[str, str] = {}
+        self.array_grad_map: Dict[str, str] = array_grad_map or {}
 
         # checks if backward has already been applied
         self._applied = False
