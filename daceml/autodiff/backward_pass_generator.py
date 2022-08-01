@@ -8,7 +8,7 @@ import collections
 import copy
 import logging
 import numbers
-from typing import List, Tuple, Set, Dict, Union, Deque, cast, Optional, Callable
+from typing import List, Tuple, Set, Dict, Union, Deque, cast, Optional, Callable, Sequence
 
 import dace
 import dace.sdfg.nodes as nd
@@ -267,8 +267,8 @@ class BackwardPassGenerator:
             *,
             sdfg: SDFG,
             state: SDFGState,
-            given_gradients: List[Union[nd.AccessNode, str]],
-            required_gradients: List[Union[nd.AccessNode, str]],
+            given_gradients: Sequence[Union[nd.AccessNode, str]],
+            required_gradients: Sequence[Union[nd.AccessNode, str]],
             backward_sdfg: SDFG,  # this can be the same as SDFG
             backward_state: SDFGState,
             zero_non_transients: bool,

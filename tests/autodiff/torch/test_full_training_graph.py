@@ -123,6 +123,45 @@ def test_parse_backward_with_forwarding():
     tensors_close('x.grad', expected, result)
 
 
+@pytest.mark.pure
+def test_two_backward_passes():
+    @dace.program
+    def train_step(x1: dace.float32[10, 5], x2: dace.float32[5],
+                   dy: dace.float32[10]):
+        z1 = x1 + 1
+        y1 = np.log(z1)
+        l1 = np.add.reduce(y1, axis=1)
+
+        z2 = x2 * 2
+        y2 = np.log(z2)
+        l2 = y2.sum()
+
+        torch.autograd.backward(l2)
+        torch.autograd.backward(l1, dy)
+        return x1.grad, x2.grad
+
+    def torch_fn(x1, x2, dy):
+        x1.requires_grad = True
+        x2.requires_grad = True
+        z1 = x1 + 1
+        y1 = torch.log(z1).sum(axis=1)
+
+        z2 = x2 * 2
+        y2 = torch.log(z2).sum()
+        y2.backward()
+        y1.backward(dy)
+        return x1.grad, x2.grad
+
+    x1 = torch.randn(10, 5)
+    x2 = torch.randn(5)
+    dy = torch.randn(10)
+
+    r1, r2 = train_step(x1.clone(), x2.clone(), dy.clone())
+    ex_1, ex_2 = torch_fn(x1.clone(), x2.clone(), dy.clone())
+    tensors_close('x2.grad', ex_2, r2)
+    tensors_close('x1.grad', ex_1, r1)
+
+
 # FIXME Cases to support
 # two independent trees of .backward
 # two .backward with a shared gradient buffer

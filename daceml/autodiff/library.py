@@ -19,7 +19,7 @@ from dace.frontend.python import common
 from dace.frontend.common import op_repository
 from dace.frontend.python import newast
 
-from daceml.autodiff import backward_pass_generator as engine
+from daceml.autodiff import backward_pass_generator as engine, analysis
 from daceml.util.utils import find_str_not_in_set, in_edge_with_name, all_equal
 
 
@@ -39,9 +39,38 @@ class ExpandBackwardPass(pm.ExpandTransformation):
 
         array_grad_map = {}
 
-        given_gradients = list(
-            map(in_array_name, node.given_gradients.values()))
-        required_gradients = list(node.required_gradients.keys())
+        given_gradients = set(map(in_array_name,
+                                  node.given_gradients.values()))
+
+        # determine what the forward pass state is
+        # when there are multiple Backward Passes parsed in the python frontend, there may be multiple data flow states
+        # in the SDFG.
+        # we need to find the state that where all given_gradients are written.
+
+        candidate_states = []
+        for cand in sdfg.states():
+            _, write_set = cand.read_and_write_sets()
+            if given_gradients.issubset(write_set):
+                candidate_states.append(cand)
+
+        if len(candidate_states) != 1:
+            raise ValueError(
+                "Could not find a state where all outputs are written. The "
+                "DaCeML autodiff currently only supports differentiating single dataflow states."
+            )
+        forward_state = candidate_states[0]
+
+        # Every .grad call is connected to every BackwardPass initially to introduce control dependencies
+        # We now need to check whether our input subtree actually includes the
+        # node that we should compute a gradient for
+        dependencies = analysis.dependency_analysis(sdfg)
+        for grad in list(node.required_gradients.keys()):
+            if not any(grad in dependencies[g] for g in given_gradients):
+                node.remove_out_connector(node.required_gradients[grad])
+                for edge in state.out_edges_by_connector(
+                        node, node.required_gradients[grad]):
+                    state.remove_edge(edge)
+                node.required_gradients.pop(grad)
 
         array_grad_map.update(node.required_gradients)
         array_grad_map.update((in_array_name(value_conn_name), grad_conn_name)
@@ -49,7 +78,7 @@ class ExpandBackwardPass(pm.ExpandTransformation):
                               node.given_gradients.items())
 
         # remove the non-grad arrays as inputs from the forward pass;
-        # they were just added to imply data dependencies
+        # they were also just added for control dependencies
         for forward_non_grad_conn_name in node.given_gradients.values():
             for edge in list(
                     state.in_edges_by_connector(node,
@@ -59,9 +88,9 @@ class ExpandBackwardPass(pm.ExpandTransformation):
 
         gen = engine.BackwardPassGenerator(
             sdfg=sdfg,
-            state=state,
+            state=forward_state,
             given_gradients=given_gradients,
-            required_gradients=required_gradients,
+            required_gradients=node.required_gradients.keys(),
             backward_sdfg=nsdfg,
             backward_state=nstate,
             zero_non_transients=False,
@@ -77,13 +106,17 @@ class ExpandBackwardPass(pm.ExpandTransformation):
                 n for n in state.nodes()
                 if isinstance(n, nodes.AccessNode) and n.data == name
             ]
-            assert len(
-                n
-            ) == 1, "Expected only one access node for forwarded value, does the graph have in-place modification?"
+            if len(n) > 1:
+                raise ValueError(
+                    "Expected only one access node for forwarded value, does the graph have in-place modification?"
+                )
+            elif len(n) == 0:
+                n = state.add_read(name)
+            else:
+                n = n[0]
 
             node.add_in_connector(name)
-            state.add_edge(n[0], None, node, name,
-                           sdfg.make_array_memlet(name))
+            state.add_edge(n, None, node, name, sdfg.make_array_memlet(name))
 
         return nsdfg
 
@@ -254,7 +287,7 @@ def grad(pv: 'ProgramVisitor', sdfg: SDFG, state: SDFGState, arr: str) -> str:
             node.required_gradients[arr] = conn_name
             node.add_out_connector(conn_name)
 
-            parent.add_edge(node, conn_name, state.add_write(grad_name), None,
+            parent.add_edge(node, conn_name, parent.add_write(grad_name), None,
                             sdfg.make_array_memlet(grad_name))
 
     return grad_name
