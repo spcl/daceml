@@ -306,3 +306,12 @@ def get_access_node_by_name(sdfg, name):
                 return node, state
 
     raise Exception("DataNode {} not found".format(name))
+
+
+def all_equal(a, b) -> bool:
+    """
+    Check whether two iterables are equal
+    """
+    if len(a) != len(b):
+        return False
+    return all(x == y for x, y in zip(a, b))

@@ -3,7 +3,7 @@ Dace library for autodiff
 
 Includes the BackwardPass library node, and the replacements for the python frontend
 """
-from typing import Union, Sequence, Dict, List
+from typing import Union, Sequence, Dict, List, Optional
 import itertools
 import copy
 
@@ -20,7 +20,7 @@ from dace.frontend.common import op_repository
 from dace.frontend.python import newast
 
 from daceml.autodiff import backward_pass_generator as engine
-from daceml.util.utils import find_str_not_in_set, in_edge_with_name, out_edge_with_name
+from daceml.util.utils import find_str_not_in_set, in_edge_with_name, all_equal
 
 
 @dace.library.expansion
@@ -69,6 +69,21 @@ class ExpandBackwardPass(pm.ExpandTransformation):
 
         backward_result, desc_to_grad, required_forwarded_values = gen.backward(
         )
+
+        for name in required_forwarded_values:
+            # get the access to the forwarded_value
+            # there should only be one since we don't allow inplace modification
+            n = [
+                n for n in state.nodes()
+                if isinstance(n, nodes.AccessNode) and n.data == name
+            ]
+            assert len(
+                n
+            ) == 1, "Expected only one access node for forwarded value, does the graph have in-place modification?"
+
+            node.add_in_connector(name)
+            state.add_edge(n[0], None, node, name,
+                           sdfg.make_array_memlet(name))
 
         return nsdfg
 
@@ -133,8 +148,11 @@ TensorOrTensors = Union[str, Sequence[str]]
 
 
 @op_repository.replaces('torch.autograd.backward')
-def backward(pv: newast.ProgramVisitor, sdfg: SDFG, state: SDFGState,
-             tensors: TensorOrTensors, grads: TensorOrTensors):
+def backward(pv: newast.ProgramVisitor,
+             sdfg: SDFG,
+             state: SDFGState,
+             tensors: TensorOrTensors,
+             grads: Optional[TensorOrTensors] = None):
     """
     Adds a backward pass node to the SDFG.
 
@@ -149,6 +167,24 @@ def backward(pv: newast.ProgramVisitor, sdfg: SDFG, state: SDFGState,
     if isinstance(grads, str):
         grads = [grads]
 
+    if grads is None:
+        grads = []
+        # when the tensors are scalars, we can implicity create the grads with ones
+        for tensor in tensors:
+            tensor_desc = sdfg.arrays[tensor]
+            if tensor_desc.total_size == 1:
+                constant_name = sdfg._find_new_name("one")
+                desc = data.Scalar(tensor_desc.dtype,
+                                   transient=True,
+                                   storage=tensor_desc.storage)
+                sdfg.add_constant(constant_name, 1, dtype=desc)
+                sdfg.arrays[constant_name] = desc
+                grads.append(constant_name)
+            else:
+                raise common.DaceSyntaxError(
+                    pv, None,
+                    "grad can be implicitly created only for scalar outputs")
+
     if len(grads) != len(tensors):
         raise common.DaceSyntaxError(
             pv, None,
@@ -156,12 +192,21 @@ def backward(pv: newast.ProgramVisitor, sdfg: SDFG, state: SDFGState,
         )
 
     for grad, tensor in zip(grads, tensors):
-        if grad not in sdfg.arrays:
+        if grad not in sdfg.arrays and grad not in sdfg.constants_prop:
             raise common.DaceSyntaxError(
                 pv, None, "Gradient {} is not an array".format(grad))
         if tensor not in sdfg.arrays:
             raise common.DaceSyntaxError(
                 pv, None, "Tensor {} is not an array".format(tensor))
+
+        grad_desc = sdfg.arrays[
+            grad] if grad in sdfg.arrays else sdfg.constants_prop[grad][0]
+
+        if not all_equal(grad_desc.shape, sdfg.arrays[tensor].shape):
+            raise common.DaceSyntaxError(
+                pv, None,
+                "Gradient {} and tensor {} have different shapes".format(
+                    grad, tensor))
 
     given_gradients = dict(zip(grads, tensors))
 
