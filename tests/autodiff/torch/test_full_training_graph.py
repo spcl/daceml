@@ -75,8 +75,6 @@ def test_parse_backward_simple():
         return x.grad
 
     sdfg = train_step.to_sdfg()
-    sdfg.expand_library_nodes()
-    sdfg.view(8000)
 
     result = train_step(x.clone(), dy.clone())
     tensors_close('x.grad', dy.reshape(10, 1).expand(10, 5), result)
