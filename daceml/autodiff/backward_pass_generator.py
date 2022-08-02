@@ -36,7 +36,6 @@ log = logging.getLogger(__name__)
 def init_grad(data: str, sdfg: SDFG, current_state: SDFGState):
     """
     Add a state where `data` is initialized with zero.
-    self.sdfg.arrays[data] should have type Union[dt.Array, dt.Scalar, dt.View]
 
     :param data: the data to initialize
     :param sdfg: the SDFG to add the state to
@@ -54,7 +53,7 @@ def init_grad(data: str, sdfg: SDFG, current_state: SDFGState):
     else:
         raise ValueError(f"Unsupported storage {arr.storage}")
 
-    if type(arr) is dt.Array or type(arr) is dt.Scalar:
+    if isinstance(arr, (dt.Array, dt.Scalar)):
         state.add_mapped_tasklet(
             "_init_" + data + "_", {
                 "i{}".format(i): "0:{}".format(shape)
@@ -829,7 +828,7 @@ class BackwardPassGenerator:
 
         array = self.sdfg.arrays[data_name]
 
-        if type(array) not in [dt.Scalar, dt.Array, dt.View]:
+        if not isinstance(array, (dt.Scalar, dt.Array, dt.View)):
             raise AutoDiffException(
                 "Unsupported data descriptor {}".format(array))
 

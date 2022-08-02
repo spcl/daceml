@@ -14,7 +14,7 @@ from daceml.testing import torch_tensors_close, copy_to_gpu, tensors_close
 
 @pytest.mark.skip
 @pytest.mark.pure
-def test_parse_backward():
+def test_module():
     gpu = False
     module = torch.nn.Sequential(
         torch.nn.Sequential(torch.nn.Linear(12, 24), torch.nn.Linear(24, 3)),
@@ -68,6 +68,7 @@ def test_parse_backward_simple():
 
     @dace.program
     def train_step(x: dace.float32[10, 5], dy: dace.float32[10]):
+        x.requires_grad_()
         red = np.add.reduce(x, axis=1)
         torch.autograd.backward(red, dy)
         return x.grad
@@ -85,6 +86,7 @@ def test_parse_backward_scalar():
 
     @dace.program
     def train_step(x: dace.float32[10, 5]):
+        x.requires_grad_()
         red = np.add.reduce(x, axis=[0, 1])
         torch.autograd.backward(red)
         return x.grad
@@ -104,6 +106,7 @@ def test_parse_backward_with_forwarding():
 
     @dace.program
     def train_step(x: dace.float32[10, 5]):
+        x.requires_grad_()
         y = x + 1
         red = np.add.reduce(x, axis=1, keepdims=True)
         z = red * y
@@ -112,7 +115,7 @@ def test_parse_backward_with_forwarding():
         return x.grad
 
     def torch_fn(x):
-        x.requires_grad = True
+        x.requires_grad_()
         y = x + 1
         red = x.sum(axis=1, keepdims=True)
         z = red * y
@@ -134,6 +137,9 @@ def test_two_backward_passes():
     @dace.program
     def train_step(x1: dace.float32[10, 5], x2: dace.float32[5],
                    dy: dace.float32[10]):
+        x1.requires_grad_()
+        x2.requires_grad_()
+
         z1 = x1 + 1
         y1 = np.log(z1)
         l1 = np.add.reduce(y1, axis=1)
@@ -147,8 +153,8 @@ def test_two_backward_passes():
         return x1.grad, x2.grad
 
     def torch_fn(x1, x2, dy):
-        x1.requires_grad = True
-        x2.requires_grad = True
+        x1.requires_grad_()
+        x2.requires_grad_()
         z1 = x1 + 1
         y1 = torch.log(z1).sum(axis=1)
 
@@ -176,6 +182,8 @@ def test_two_backward_passes():
 def test_two_backward_passes_accumulate():
     @dace.program
     def train_step(x: dace.float32[10, 5], dy: dace.float32[10]):
+        x.requires_grad_()
+
         z1 = x + 1
         y1 = np.log(z1)
         l1 = np.add.reduce(y1, axis=1)

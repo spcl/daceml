@@ -4,6 +4,8 @@ Analysis helpers for autodiff
 from typing import Dict, Set, Tuple, Optional
 import collections
 
+import networkx as nx
+
 from dace import nodes, SDFG, SDFGState
 from dace.sdfg import utils as sdfg_utils
 from dace.transformation.passes import analysis
@@ -11,20 +13,26 @@ from dace.transformation.passes import analysis
 AccessSets = Dict[SDFGState, Tuple[Set[str], Set[str]]]
 
 
-def dependency_analysis(sdfg: SDFG):
+def dependency_analysis(sdfg: SDFG) -> Dict[str, Set[str]]:
     """
     Analyze read dependencies of arrays in the SDFG.
 
     :param sdfg: SDFG to analyze
     :returns: A dictionary mapping array names to a list of read dependencies.
     """
-    arrays = collections.defaultdict(set)
-    for node, parent in sdfg.all_nodes_recursive():
-        if isinstance(node, nodes.AccessNode):
-            parent: SDFGState
-            for edge in parent.bfs_edges(node, reverse=True):
-                arrays[node.data].add(edge.data.data)
-    return arrays
+
+    # FIXME can be made more efficient
+    dependencies = nx.DiGraph()
+    for state in sdfg.nodes():
+        for node in state.data_nodes():
+            for edge in state.bfs_edges(node, reverse=True):
+                dependencies.add_edge(node.data, edge.data.data)
+
+    dependencies = nx.transitive_closure(dependencies)
+    result = {}
+    for array in dependencies:
+        result[array] = {nbr for nbr in dependencies.neighbors(array)}
+    return result
 
 
 def inverse_reachability(sdfg: SDFG) -> Dict[SDFGState, Set[SDFGState]]:

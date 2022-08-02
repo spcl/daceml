@@ -28,6 +28,53 @@ from daceml.util.utils import find_str_not_in_set, in_edge_with_name, all_equal
 TensorOrTensors = Union[str, Sequence[str]]
 
 
+@properties.make_properties
+class Array(data.Array):
+    """
+    A array for which a gradient can be computed.
+
+    This also has to have the name 'Array' because otherwise none of the python frontend replacements work.
+    """
+    gradient = properties.DataProperty(
+        desc="The corresponding gradient buffer")
+
+    def __init__(self, gradient, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.gradient = gradient
+
+    @staticmethod
+    def make_parameter(sdfg: SDFG, name: str):
+        """
+        Converts an existing array into a parameter.
+        This also creates a gradient buffer for the parameter.
+
+        :param sdfg: the SDFG containing the array.
+        :param name: the name of the array.
+        """
+        desc = sdfg.arrays[name]
+
+        # Create a gradient buffer for the array
+        grad_desc = copy.deepcopy(sdfg.arrays[name])
+        grad_desc.transient = True
+        grad_name = sdfg.add_datadesc('gradient_' + name,
+                                      grad_desc,
+                                      find_new_name=True)
+        new_desc = Array(grad_name,
+                         desc.dtype,
+                         desc.shape,
+                         storage=desc.storage,
+                         location=desc.location,
+                         allow_conflicts=desc.allow_conflicts,
+                         transient=desc.transient,
+                         strides=desc.strides,
+                         offset=desc.offset,
+                         lifetime=desc.lifetime,
+                         alignment=desc.alignment,
+                         debuginfo=desc.debuginfo,
+                         total_size=desc.total_size)
+        sdfg.arrays[name] = new_desc
+
+
 @dace.library.expansion
 class ExpandBackwardPass(pm.ExpandTransformation):
     environments = []
@@ -53,9 +100,6 @@ class ExpandBackwardPass(pm.ExpandTransformation):
         # Check for other BackwardPasses that also compute the same gradients as us
         node.propagate_conflicts(sdfg, state)
 
-        # Remove own control dependencies
-        node.clean_output_connectors(sdfg, state)
-
         # get the names of the output arrays in the forward pass
         given_gradients = node.outer_names_given_gradients(state)
 
@@ -71,6 +115,8 @@ class ExpandBackwardPass(pm.ExpandTransformation):
                     state.in_edges_by_connector(node,
                                                 forward_non_grad_conn_name)):
                 state.remove_edge(edge)
+                if state.in_degree(edge.src) + state.out_degree(edge.src) == 0:
+                    state.remove_node(edge.src)
             node.remove_in_connector(forward_non_grad_conn_name)
 
         gen = engine.BackwardPassGenerator(
@@ -131,7 +177,8 @@ class ExpandBackwardPass(pm.ExpandTransformation):
 @dace.library.node
 class BackwardPass(nodes.LibraryNode):
     """
-    The BackwardPass library node expands to an implementation of a BackwardPass that computes the requested gradients.
+    The BackwardPass library node expands to an implementation of a
+    BackwardPass that computes the requested gradients.
 
     These gradients are computed using the DaCeML autograd engine.
 
@@ -184,11 +231,8 @@ class BackwardPass(nodes.LibraryNode):
         Across this SDFG, check for other BackwardPasses that also compute the same gradients as us.
 
         If there are multiple BackwardPasses that compute the same gradients, update their list of conflicts.
-        :note: this removes the control dependencies on all backward pass nodes in the SDFG by calling 
-               :meth:`clean_output_connectors`.
         """
 
-        self.clean_output_connectors(sdfg, state)
         ours = set(self.required_gradients)
 
         for state in sdfg.states():
@@ -196,7 +240,6 @@ class BackwardPass(nodes.LibraryNode):
                 if isinstance(node, BackwardPass):
                     if node is self:
                         continue
-                    node.clean_output_connectors(sdfg, state)
                     conflicts = ours.intersection(node.required_gradients)
                     if conflicts:
                         self._conflicted_gradients |= conflicts
@@ -240,35 +283,6 @@ class BackwardPass(nodes.LibraryNode):
             )
         return candidate_states[0]
 
-    def clean_output_connectors(self, sdfg: SDFG, state: SDFGState):
-        """
-        When parsed in the python frontend, every .grad call is connected to
-        every BackwardPass initially to introduce control dependencies.
-
-        This method removes these control dependencies when the gradient is not actually computed by this node.
-        """
-        given_gradients = self.outer_names_given_gradients(state)
-        # check whether the input subtree actually includes the node that we
-        # should compute a gradient for.
-        dependencies = autodiff_analysis.dependency_analysis(sdfg)
-        for grad in list(self.required_gradients.keys()):
-            if not any(grad in dependencies[g] for g in given_gradients):
-                self.remove_out_connector(self.required_gradients[grad])
-                for edge in state.out_edges_by_connector(
-                        self, self.required_gradients[grad]):
-                    state.remove_edge(edge)
-                self.required_gradients.pop(grad)
-        # remove isolated subgraphs that we no longer need
-        pass_pipeline.Pipeline([
-            dead_dataflow_elimination.DeadDataflowElimination()
-        ]).apply_pass(sdfg, {})
-
-        # remove dangling nodes, this can happen with non-transients
-        for node, parent in sdfg.all_nodes_recursive():
-            if (isinstance(node, nodes.AccessNode)
-                    and parent.in_degree(node) + parent.out_degree(node) == 0):
-                parent.remove_node(node)
-
     def validate(self, sdfg, state):
         # check that there is a correspondence between given gradients and inputs
         all_inputs = set(self.in_connectors)
@@ -288,6 +302,12 @@ class BackwardPass(nodes.LibraryNode):
         # check that the forward state can be determined
         self.determine_forward_state(sdfg, state)
 
+        # check that we are computing at least one gradient
+        if len(self.out_connectors) == 0:
+            raise ValueError(
+                "BackwardPass node '{}' does not compute any gradients".format(
+                    self.name))
+
 
 @op_repository.replaces('torch.autograd.backward')
 def backward(pv: newast.ProgramVisitor,
@@ -298,9 +318,10 @@ def backward(pv: newast.ProgramVisitor,
     """
     Adds a backward pass node to the SDFG.
 
-    This backward pass initially doesn't compute any gradients, since the outputs of the node are initially empty.
-
-    While parsing the program, the outputs will be populated, for example when .grad of an input is accessed.
+    This function analyses the the dependency tree of the tensors and computes
+    gradients for each Parameter (i.e.
+    :class:``daceml.autograd.library.Array``) that was used to compute the
+    tensors.
     """
 
     if isinstance(tensors, str):
@@ -362,43 +383,62 @@ def backward(pv: newast.ProgramVisitor,
         state.add_edge(state.add_read(inp), None, bwd_node, inp,
                        sdfg.make_array_memlet(inp))
 
+    # determine what grdaients to compute
+    dependencies = autodiff_analysis.dependency_analysis(sdfg)
+
+    to_compute = {
+        dependency
+        for tensor in tensors for dependency in dependencies[tensor]
+        if isinstance(sdfg.arrays[dependency], Array)
+    }
+
+    for param in to_compute:
+        grad_name = sdfg.arrays[param].gradient
+
+        conn_name = find_str_not_in_set(bwd_node.out_connectors, grad_name)
+        bwd_node.required_gradients[param] = conn_name
+        bwd_node.add_out_connector(conn_name)
+
+        state.add_edge(bwd_node, conn_name, state.add_write(grad_name), None,
+                       sdfg.make_array_memlet(grad_name))
+
 
 @op_repository.replaces_attribute('Array', 'grad')
-@op_repository.replaces_attribute('Scalar', 'grad')
 def grad(pv: 'ProgramVisitor', sdfg: SDFG, state: SDFGState, arr: str) -> str:
     """
-    Calling .grad on an array does two things:
+    Returns the name of the gradient buffer of the given array.
 
-    1. Allocate a gradient buffer for the array.
-    2. Add dependencies to all BackwardPass nodes for the gradient buffer.
-
-    Initially, each gradient buffer depends on all backward pass nodes, since
-    we cannot determine which ones compute which gradients until after dataflow
-    coarsening.
+    The Array must have been marked as requires_grad_ using
+    ``arr.requires_grad_()``, otherwise there will be an error
     """
 
     if arr not in sdfg.arrays:
         raise common.DaceSyntaxError(pv, None,
                                      "Array {} is not defined".format(arr))
+    desc = sdfg.arrays[arr]
+    if not isinstance(desc, Array):
+        raise common.DaceSyntaxError(
+            pv, None,
+            "Called .grad on an Array that was not a Parameter. Convert it to a parameter "
+            " first using .requires_grad_()")
 
-    # Create a gradient buffer for the array
-    grad_desc = copy.deepcopy(sdfg.arrays[arr])
-    grad_desc.transient = True
-    grad_name = sdfg.add_datadesc('gradient_' + arr,
-                                  grad_desc,
-                                  find_new_name=True)
+    return desc.gradient
 
-    for node, parent in sdfg.all_nodes_recursive():
-        if isinstance(node, BackwardPass):
-            parent: SDFGState
-            conn_name = find_str_not_in_set(node.out_connectors, grad_name)
-            node.required_gradients[arr] = conn_name
-            node.add_out_connector(conn_name)
 
-            parent.add_edge(node, conn_name, parent.add_write(grad_name), None,
-                            sdfg.make_array_memlet(grad_name))
+@op_repository.replaces_method('Array', 'requires_grad_')
+@op_repository.replaces_method('Scalar', 'requires_grad_')
+def requires_grad_(pv: newast.ProgramVisitor, sdfg: SDFG, state: SDFGState,
+                   self: str):
+    """
+    Converts a array to a Parameter (i.e.
+    :class:``daceml.autograd.library.Array``). This creates a descriptor for
+    the gradient buffer for this array.
+    """
 
-    return grad_name
+    if self not in sdfg.arrays:
+        raise common.DaceSyntaxError(pv, None,
+                                     "Array {} is not defined".format(self))
+    Array.make_parameter(sdfg, self)
 
 
 @op_repository.replaces_method('Array', 'backward')
@@ -408,4 +448,7 @@ def backward_method(pv: newast.ProgramVisitor,
                     state: SDFGState,
                     self: str,
                     grad: Optional[str] = None):
+    """
+    Alias for ``torch.autograd.backward(self)``
+    """
     backward(pv, sdfg, state, self, grad)
