@@ -12,6 +12,7 @@ from daceml.torch import DaceModule
 from daceml.testing import torch_tensors_close, copy_to_gpu, tensors_close
 
 
+@pytest.mark.skip
 @pytest.mark.pure
 def test_parse_backward():
     gpu = False
@@ -47,9 +48,6 @@ def test_parse_backward():
         torch.autograd.backward(loss)
         return loss
 
-    # sdfg = train_step.to_sdfg(x, y)
-    # sdfg.view(8000)
-
     result = train_step(x, y)
     tensors_close('parsed', torch_loss, result)
 
@@ -75,6 +73,8 @@ def test_parse_backward_simple():
         return x.grad
 
     sdfg = train_step.to_sdfg()
+    sdfg.expand_library_nodes()
+    sdfg.validate()
 
     result = train_step(x.clone(), dy.clone())
     tensors_close('x.grad', dy.reshape(10, 1).expand(10, 5), result)
@@ -90,6 +90,8 @@ def test_parse_backward_scalar():
         return x.grad
 
     sdfg = train_step.to_sdfg()
+    sdfg.expand_library_nodes()
+    sdfg.validate()
 
     result = train_step(x.clone())
     tensors_close('x.grad', 1, result)
@@ -118,6 +120,10 @@ def test_parse_backward_with_forwarding():
         loss.backward()
         return x.grad
 
+    sdfg = train_step.to_sdfg()
+    sdfg.expand_library_nodes()
+    sdfg.validate()
+
     result = train_step(x.clone(), dy.clone())
     expected = torch_fn(x.clone())
     tensors_close('x.grad', expected, result)
@@ -136,8 +142,8 @@ def test_two_backward_passes():
         y2 = np.log(z2)
         l2 = y2.sum()
 
-        torch.autograd.backward(l2)
-        torch.autograd.backward(l1, dy)
+        l2.backward()
+        l1.backward(dy)
         return x1.grad, x2.grad
 
     def torch_fn(x1, x2, dy):
@@ -152,6 +158,10 @@ def test_two_backward_passes():
         y1.backward(dy)
         return x1.grad, x2.grad
 
+    sdfg = train_step.to_sdfg()
+    sdfg.expand_library_nodes()
+    sdfg.validate()
+
     x1 = torch.randn(10, 5)
     x2 = torch.randn(5)
     dy = torch.randn(10)
@@ -162,6 +172,41 @@ def test_two_backward_passes():
     tensors_close('x1.grad', ex_1, r1)
 
 
-# FIXME Cases to support
-# two independent trees of .backward
-# two .backward with a shared gradient buffer
+@pytest.mark.pure
+def test_two_backward_passes_accumulate():
+    @dace.program
+    def train_step(x: dace.float32[10, 5], dy: dace.float32[10]):
+        z1 = x + 1
+        y1 = np.log(z1)
+        l1 = np.add.reduce(y1, axis=1)
+
+        z2 = x * 2
+        y2 = np.log(z2)
+        l2 = y2.sum()
+
+        l2.backward()
+        l1.backward(dy)
+        return x.grad
+
+    def torch_fn(x, dy):
+        x.requires_grad = True
+        z1 = x + 1
+        y1 = torch.log(z1).sum(axis=1)
+
+        z2 = x * 2
+        y2 = torch.log(z2).sum()
+        y2.backward()
+        y1.backward(dy)
+        return x.grad
+
+    sdfg = train_step.to_sdfg()
+    sdfg.expand_library_nodes()
+    sdfg.validate()
+
+    x1 = torch.randn(10, 5)
+    dy = torch.randn(10)
+
+    result = train_step(x1.clone(), dy.clone())
+    expected = torch_fn(x1.clone(), dy.clone())
+
+    tensors_close('x.grad', expected, result)

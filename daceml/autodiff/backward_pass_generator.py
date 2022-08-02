@@ -33,6 +33,50 @@ ReverseNodeReturnType = Tuple[nd.Node, BackwardResult]
 log = logging.getLogger(__name__)
 
 
+def init_grad(data: str, sdfg: SDFG, current_state: SDFGState):
+    """
+    Add a state where `data` is initialized with zero.
+    self.sdfg.arrays[data] should have type Union[dt.Array, dt.Scalar, dt.View]
+
+    :param data: the data to initialize
+    :param sdfg: the SDFG to add the state to
+    :param current_state: the current state; the initialization will be done before this state
+    """
+    arr = sdfg.arrays[data]
+
+    state = sdfg.add_state_before(current_state, label="init_" + data)
+
+    scalar = 0
+    if dtypes.can_access(dtypes.ScheduleType.CPU_Multicore, arr.storage):
+        cuda = False
+    elif dtypes.can_access(dtypes.ScheduleType.GPU_Default, arr.storage):
+        cuda = True
+    else:
+        raise ValueError(f"Unsupported storage {arr.storage}")
+
+    if type(arr) is dt.Array or type(arr) is dt.Scalar:
+        state.add_mapped_tasklet(
+            "_init_" + data + "_", {
+                "i{}".format(i): "0:{}".format(shape)
+                for i, shape in enumerate(arr.shape)
+            }, {},
+            "__out = {}".format(scalar), {
+                "__out":
+                dace.Memlet.simple(
+                    data, ", ".join("i{}".format(i)
+                                    for i in range(len(arr.shape))))
+            },
+            schedule=dtypes.ScheduleType.GPU_Device
+            if cuda else dtypes.ScheduleType.Default,
+            external_edges=True)
+    elif type(arr) is dt.View:
+        # not need to initialize: the viewed array will always be visited
+        # (since a view can never be a required grad), and thus the viewed array will be initialized.
+        pass
+    else:
+        raise AutoDiffException("Unsupported data descriptor {}".format(arr))
+
+
 def _strings_to_symbols(strings: Set[str]) -> Set[sp.Symbol]:
     return {sp.symbols(string) for string in strings}
 
@@ -261,6 +305,9 @@ class BackwardPassGenerator:
                                     SDFG.
         :param array_grad_map: A mapping from array name to the gradient array name. May be passed when certain
                                mappings already exist.
+        :param conflicted_gradient_buffers: A list of forward pass value names for which multiple backward passes will
+                                            be computed, and thus gradients should be computed with
+                                            write-conflict-resolution.
     """
     def __init__(
             self,
@@ -272,7 +319,8 @@ class BackwardPassGenerator:
             backward_sdfg: SDFG,  # this can be the same as SDFG
             backward_state: SDFGState,
             zero_non_transients: bool,
-            array_grad_map: Optional[Dict[str, str]] = None):
+            array_grad_map: Optional[Dict[str, str]] = None,
+            conflicted_gradient_buffers: Optional[Set[str]] = None):
 
         if backward_state not in backward_sdfg.nodes():
             raise AutoDiffException(
@@ -332,6 +380,9 @@ class BackwardPassGenerator:
 
         #: mapping from forward name to gradient name for arrays
         self.array_grad_map: Dict[str, str] = array_grad_map or {}
+
+        self.conflicted_gradient_buffers: Set[
+            str] = conflicted_gradient_buffers or set()
 
         # checks if backward has already been applied
         self._applied = False
@@ -598,48 +649,12 @@ class BackwardPassGenerator:
         return self.array_grad_map[forward_name]
 
     def _init_grad(self, data: str):
-        """ Add a state where `data` is initialized with zero.
-            self.sdfg.arrays[data] should have type Union[dt.Array, dt.Scalar, dt.View]
-        """
-        arr = self.backward_sdfg.arrays[data]
-
+        desc = self.backward_sdfg.arrays[data]
         # No need to initialize if gradients point to outputs
-        if not self.zero_non_transients and not arr.transient:
+        if not self.zero_non_transients and not desc.transient:
             return
 
-        state = self.backward_sdfg.add_state_before(self.backward_state,
-                                                    label="init_" + data)
-
-        scalar = 0
-        if dtypes.can_access(dtypes.ScheduleType.CPU_Multicore, arr.storage):
-            cuda = False
-        elif dtypes.can_access(dtypes.ScheduleType.GPU_Default, arr.storage):
-            cuda = True
-        else:
-            raise ValueError(f"Unsupported storage {arr.storage}")
-
-        if type(arr) is dt.Array or type(arr) is dt.Scalar:
-            state.add_mapped_tasklet(
-                "_init_" + data + "_", {
-                    "i{}".format(i): "0:{}".format(shape)
-                    for i, shape in enumerate(arr.shape)
-                }, {},
-                "__out = {}".format(scalar), {
-                    "__out":
-                    dace.Memlet.simple(
-                        data, ", ".join("i{}".format(i)
-                                        for i in range(len(arr.shape))))
-                },
-                schedule=dtypes.ScheduleType.GPU_Device
-                if cuda else dtypes.ScheduleType.Default,
-                external_edges=True)
-        elif type(arr) is dt.View:
-            # not need to initialize: the viewed array will always be visited
-            # (since a view can never be a required grad), and thus the viewed array will be initialized.
-            pass
-        else:
-            raise AutoDiffException(
-                "Unsupported data descriptor {}".format(arr))
+        init_grad(data, self.backward_sdfg, self.backward_state)
 
     def _reverse_subgraph(self, subgraph: dstate.StateSubgraphView):
         """ Reverse a given subgraph. All nodes in the subgraph will be reversed. """
@@ -760,10 +775,21 @@ class BackwardPassGenerator:
             :param edge: the root edge to start from
         """
 
+        inverse_array_grad_map = {v: k for k, v in self.array_grad_map.items()}
+
         add_wcr = False
 
         # this method assumes that the memlet tree is iterated from the root backwards
         for path_edge in self.backward_state.memlet_tree(edge):
+            data_name = path_edge.data.data
+            if data_name in inverse_array_grad_map and inverse_array_grad_map[
+                    data_name] in self.conflicted_gradient_buffers:
+                add_wcr = True
+                # NOTE even though init_grad is called below, the gradient
+                # buffer will not actually be zeroed when
+                # self.zero_non_transients is False (this is checked in
+                # self._init_grad)
+                break
 
             # set the wcr to sum temporarily so that the following works
             old_wcr = path_edge.data.wcr
