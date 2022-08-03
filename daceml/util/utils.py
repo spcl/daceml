@@ -165,7 +165,7 @@ def expand_onnx_nodes(sdfg: dace.SDFG,
     from daceml.onnx.nodes.onnx_op import ONNXOp
 
     if predicate is None:
-        new_predicate = lambda n: isinstance(n, (ONNXOp, blas.Gemm))
+        new_predicate = lambda n: isinstance(n, (ONNXOp, blas.MatMul))
     else:
         new_predicate = lambda n: predicate(n) and isinstance(
             n, (ONNXOp, blas.MatMul))
