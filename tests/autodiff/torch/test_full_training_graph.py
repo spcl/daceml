@@ -9,56 +9,51 @@ from torch import nn, autograd
 import dace
 
 from daceml.torch import DaceModule
+from daceml.util import utils
+from daceml.autodiff import library
 from daceml.testing import torch_tensors_close, copy_to_gpu, tensors_close
 
 
-@pytest.mark.skip
 @pytest.mark.pure
 def test_module():
     gpu = False
-    module = torch.nn.Sequential(
-        torch.nn.Sequential(torch.nn.Linear(12, 24), torch.nn.Linear(24, 3)),
-        nn.Softmax(dim=1))
+    module = torch.nn.Sequential(torch.nn.Linear(12, 2, bias=False))
+
     torch_module = copy.deepcopy(module)
     dace_module = copy.deepcopy(module)
 
     torch_module = copy_to_gpu(gpu, torch_module)
     dace_module = copy_to_gpu(gpu, dace_module)
-    dace_module = DaceModule(dace_module)
+    dace_module = DaceModule(dace_module, auto_optimize=False)
 
     x = copy_to_gpu(gpu, torch.randn(8, 12))
-    y = copy_to_gpu(gpu, torch.empty(8, dtype=torch.long).random_(3))
 
     expected_output = torch_module(x)
     result = dace_module(x)
     torch_tensors_close('output', expected_output, result)
 
-    torch_criterion = copy_to_gpu(gpu, nn.CrossEntropyLoss())
-    torch_loss = torch_criterion(expected_output, y)
-
-    dace_criterion = DaceModule(torch_criterion)
-    dace_loss = dace_criterion(expected_output, y)
-
-    torch_tensors_close('loss', torch_loss, dace_loss)
-
     @dace
-    def train_step(x, y):
+    def train_step(x):
         output = dace_module(x)
-        loss = dace_criterion(output, y)
-        torch.autograd.backward(loss)
+        loss = np.add.reduce(output, axis=[0, 1])
+        loss.backward()
         return loss
 
-    result = train_step(x, y)
-    tensors_close('parsed', torch_loss, result)
+    def torch_fn(x):
+        loss = torch_module(x).sum()
+        loss.backward()
+        return loss
+
+    expected = torch_fn(x)
+    result = train_step(x)
+    tensors_close('loss', expected, result)
 
     assert all(
         hasattr(p, 'grad') and p.grad is not None
         for p in dace_module.parameters())
 
-    torch_loss.backward()
-    assert all(
-        hasattr(p, 'grad') and p.grad is not None
-        for p in dace_module.parameters())
+    for d, t in zip(dace_module.parameters(), torch_module.parameters()):
+        torch_tensors_close("param", t.grad, d.grad)
 
 
 @pytest.mark.pure

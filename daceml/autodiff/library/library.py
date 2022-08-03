@@ -3,29 +3,18 @@ Dace library for autodiff
 
 Includes the BackwardPass library node, and the replacements for the python frontend
 """
-from typing import Union, Sequence, Dict, Set, Optional, Tuple
-import itertools
+from typing import Dict, Set, Optional
 import copy
-import collections
-
-import torch
-import torch.autograd
 
 import dace
 import dace.library
 from dace import SDFG, SDFGState, nodes, data, properties
-from dace.transformation import transformation as pm, pass_pipeline
-from dace.transformation.passes import analysis, dead_dataflow_elimination
+from dace.transformation import transformation as pm
+from dace.transformation.passes import analysis
 from dace.sdfg import graph
 
-from dace.frontend.python import common
-from dace.frontend.common import op_repository
-from dace.frontend.python import newast
-
 from daceml.autodiff import backward_pass_generator as engine, analysis as autodiff_analysis
-from daceml.util.utils import find_str_not_in_set, in_edge_with_name, all_equal
-
-TensorOrTensors = Union[str, Sequence[str]]
+from daceml.util.utils import in_edge_with_name
 
 
 @properties.make_properties
@@ -35,32 +24,86 @@ class Array(data.Array):
 
     This also has to have the name 'Array' because otherwise none of the python frontend replacements work.
     """
-    gradient = properties.DataProperty(
-        desc="The corresponding gradient buffer")
+    # since this can be None, this is not a DataProperty
+    gradient = properties.Property(dtype=str,
+                                   desc="The corresponding gradient buffer",
+                                   optional=True,
+                                   default=None)
 
-    def __init__(self, gradient, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.gradient = gradient
+
+    def __repr__(self):
+        return "Parameter" + data.Array.__repr__(self)
+
+    def add_gradient_buffer(self, sdfg: SDFG, name: str) -> str:
+        """
+        Find or create a gradient buffer for the parameter in the given SDFG.
+
+        :param sdfg: the SDFG containing the parameter
+        :param name: the name of the parameter
+        :return: the name of the gradient buffer
+        """
+
+        if self.gradient:
+            return self.gradient
+
+        # First, check if this array already has a gradient buffer a nested SDFG
+
+        cands = set()
+        for state in sdfg.nodes():
+            for node in state.nodes():
+                if not isinstance(node, nodes.NestedSDFG):
+                    continue
+
+                nested_names = set()
+
+                for edge in state.in_edges(node):
+                    if edge.data.data == name:
+                        nested_names.add(edge.dst_conn)
+                for edge in state.out_edges(node):
+                    if edge.data.data == name:
+                        nested_names.add(edge.dst_conn)
+
+                for name in nested_names:
+                    nested_desc = node.sdfg.arrays[name]
+                    if isinstance(nested_desc, Array) and nested_desc.gradient:
+                        cands.add(nested_desc.gradient)
+
+        if len(cands) > 1:
+            raise ValueError("Multiple gradient buffers found for parameter " +
+                             name)
+        elif len(cands) == 1:
+            # we found a name of a gradient buffer in a nested SDFG:
+            # reuse the same name in the outer sdfg if there is a matching descriptor
+            grad_name = cands.pop()
+            if grad_name in sdfg.arrays:
+                self.gradient = grad_name
+                return grad_name
+        else:
+            grad_name = sdfg._find_new_name('gradient_' + name)
+
+        # Create a gradient buffer for the array
+        grad_desc = copy.deepcopy(self)
+        grad_desc.__class__ = data.Array
+        grad_desc.transient = True
+        grad_name = sdfg.add_datadesc(grad_name, grad_desc, find_new_name=True)
+        self.gradient = grad_name
+        return grad_name
 
     @staticmethod
     def make_parameter(sdfg: SDFG, name: str):
         """
-        Converts an existing array into a parameter.
-        This also creates a gradient buffer for the parameter.
+        Converts an existing array into a parameter, without copying.
 
         :param sdfg: the SDFG containing the array.
         :param name: the name of the array.
         """
         desc = sdfg.arrays[name]
+        if isinstance(desc, Array):
+            return
 
-        # Create a gradient buffer for the array
-        grad_desc = copy.deepcopy(sdfg.arrays[name])
-        grad_desc.transient = True
-        grad_name = sdfg.add_datadesc('gradient_' + name,
-                                      grad_desc,
-                                      find_new_name=True)
-        new_desc = Array(grad_name,
-                         desc.dtype,
+        new_desc = Array(desc.dtype,
                          desc.shape,
                          storage=desc.storage,
                          location=desc.location,
@@ -83,9 +126,6 @@ class ExpandBackwardPass(pm.ExpandTransformation):
     def expansion(node: 'BackwardPass', state: SDFGState, sdfg: SDFG):
         node.validate(sdfg, state)
 
-        nsdfg = SDFG("backward")
-        nstate = nsdfg.add_state()
-
         in_array_name = lambda connector_name: in_edge_with_name(
             node, state, connector_name).data.data
 
@@ -96,6 +136,8 @@ class ExpandBackwardPass(pm.ExpandTransformation):
         forward_state = node.determine_forward_state(sdfg,
                                                      state,
                                                      access_sets=access_sets)
+        nsdfg = SDFG("backward_" + forward_state.label)
+        nstate = nsdfg.add_state()
 
         # Check for other BackwardPasses that also compute the same gradients as us
         node.propagate_conflicts(sdfg, state)
@@ -307,148 +349,3 @@ class BackwardPass(nodes.LibraryNode):
             raise ValueError(
                 "BackwardPass node '{}' does not compute any gradients".format(
                     self.name))
-
-
-@op_repository.replaces('torch.autograd.backward')
-def backward(pv: newast.ProgramVisitor,
-             sdfg: SDFG,
-             state: SDFGState,
-             tensors: TensorOrTensors,
-             grads: Optional[TensorOrTensors] = None):
-    """
-    Adds a backward pass node to the SDFG.
-
-    This function analyses the the dependency tree of the tensors and computes
-    gradients for each Parameter (i.e.
-    :class:``daceml.autograd.library.Array``) that was used to compute the
-    tensors.
-    """
-
-    if isinstance(tensors, str):
-        tensors = [tensors]
-
-    if isinstance(grads, str):
-        grads = [grads]
-
-    if grads is None:
-        grads = []
-        # when the tensors are scalars, we can implicity create the grads with ones
-        for tensor in tensors:
-            tensor_desc = sdfg.arrays[tensor]
-            if tensor_desc.total_size == 1:
-                constant_name = sdfg._find_new_name("one")
-                desc = data.Scalar(tensor_desc.dtype,
-                                   transient=True,
-                                   storage=tensor_desc.storage)
-                sdfg.add_constant(constant_name, 1, dtype=desc)
-                sdfg.arrays[constant_name] = desc
-                grads.append(constant_name)
-            else:
-                raise common.DaceSyntaxError(
-                    pv, None,
-                    "grad can be implicitly created only for scalar outputs")
-
-    if len(grads) != len(tensors):
-        raise common.DaceSyntaxError(
-            pv, None,
-            "grads and tensors must correspond, but they were not the same length"
-        )
-
-    for grad, tensor in zip(grads, tensors):
-        if grad not in sdfg.arrays and grad not in sdfg.constants_prop:
-            raise common.DaceSyntaxError(
-                pv, None, "Gradient {} is not an array".format(grad))
-        if tensor not in sdfg.arrays:
-            raise common.DaceSyntaxError(
-                pv, None, "Tensor {} is not an array".format(tensor))
-
-        grad_desc = sdfg.arrays[
-            grad] if grad in sdfg.arrays else sdfg.constants_prop[grad][0]
-
-        if not all_equal(grad_desc.shape, sdfg.arrays[tensor].shape):
-            raise common.DaceSyntaxError(
-                pv, None,
-                "Gradient {} and tensor {} have different shapes".format(
-                    grad, tensor))
-
-    given_gradients = dict(zip(grads, tensors))
-
-    bwd_node = BackwardPass('backward',
-                            inputs=set(itertools.chain(tensors, grads)),
-                            outputs=set(),
-                            given_gradients=given_gradients)
-    state.add_node(bwd_node)
-
-    for inp in itertools.chain(tensors, grads):
-        state.add_edge(state.add_read(inp), None, bwd_node, inp,
-                       sdfg.make_array_memlet(inp))
-
-    # determine what grdaients to compute
-    dependencies = autodiff_analysis.dependency_analysis(sdfg)
-
-    to_compute = {
-        dependency
-        for tensor in tensors for dependency in dependencies[tensor]
-        if isinstance(sdfg.arrays[dependency], Array)
-    }
-
-    for param in to_compute:
-        grad_name = sdfg.arrays[param].gradient
-
-        conn_name = find_str_not_in_set(bwd_node.out_connectors, grad_name)
-        bwd_node.required_gradients[param] = conn_name
-        bwd_node.add_out_connector(conn_name)
-
-        state.add_edge(bwd_node, conn_name, state.add_write(grad_name), None,
-                       sdfg.make_array_memlet(grad_name))
-
-
-@op_repository.replaces_attribute('Array', 'grad')
-def grad(pv: 'ProgramVisitor', sdfg: SDFG, state: SDFGState, arr: str) -> str:
-    """
-    Returns the name of the gradient buffer of the given array.
-
-    The Array must have been marked as requires_grad_ using
-    ``arr.requires_grad_()``, otherwise there will be an error
-    """
-
-    if arr not in sdfg.arrays:
-        raise common.DaceSyntaxError(pv, None,
-                                     "Array {} is not defined".format(arr))
-    desc = sdfg.arrays[arr]
-    if not isinstance(desc, Array):
-        raise common.DaceSyntaxError(
-            pv, None,
-            "Called .grad on an Array that was not a Parameter. Convert it to a parameter "
-            " first using .requires_grad_()")
-
-    return desc.gradient
-
-
-@op_repository.replaces_method('Array', 'requires_grad_')
-@op_repository.replaces_method('Scalar', 'requires_grad_')
-def requires_grad_(pv: newast.ProgramVisitor, sdfg: SDFG, state: SDFGState,
-                   self: str):
-    """
-    Converts a array to a Parameter (i.e.
-    :class:``daceml.autograd.library.Array``). This creates a descriptor for
-    the gradient buffer for this array.
-    """
-
-    if self not in sdfg.arrays:
-        raise common.DaceSyntaxError(pv, None,
-                                     "Array {} is not defined".format(self))
-    Array.make_parameter(sdfg, self)
-
-
-@op_repository.replaces_method('Array', 'backward')
-@op_repository.replaces_method('Scalar', 'backward')
-def backward_method(pv: newast.ProgramVisitor,
-                    sdfg: SDFG,
-                    state: SDFGState,
-                    self: str,
-                    grad: Optional[str] = None):
-    """
-    Alias for ``torch.autograd.backward(self)``
-    """
-    backward(pv, sdfg, state, self, grad)

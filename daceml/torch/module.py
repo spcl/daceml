@@ -21,7 +21,8 @@ from dace.frontend.python import common as frontend_common
 
 from daceml.onnx.converters import clean_onnx_name
 from daceml.torch import dispatchers
-from daceml.autodiff.torch import make_backward_function
+from daceml.autodiff import torch as torch_autodiff
+from daceml.autodiff.library import library as autodiff_library
 from daceml.onnx import ONNXModel
 from daceml.util import utils, find_str_not_in_set
 
@@ -344,7 +345,7 @@ class DaceModule(nn.Module, frontend_common.SDFGConvertible):
                     if param.requires_grad)
                 required_gradients = list(set(required_gradients))
 
-                self.forward_sdfg, self.backward_sdfg, self._ad_result, self._ad_inp_arrs = make_backward_function(
+                self.forward_sdfg, self.backward_sdfg, self._ad_result, self._ad_inp_arrs = torch_autodiff.make_backward_function(
                     dace_model, required_gradients)
 
                 for _, hook in self.post_autodiff_hooks.items():
@@ -396,21 +397,74 @@ class DaceModule(nn.Module, frontend_common.SDFGConvertible):
             Using a PyTorch model in a DaceProgram requires that the model is initialized first.
             Either call this model using some inputs, or pass 'dummy_inputs' to the constructor.
             """)
+
+        for name, param in self._exported_parameters.items():
+            onnx_name = clean_onnx_name(name)
+            if param.requires_grad:
+                autodiff_library.Array.make_parameter(self.sdfg, onnx_name)
         return self.sdfg
+
+    def _add_gradient_buffers(self) -> List[str]:
+        """
+        Allocate gradient buffers for all parameters, and add their descriptors to the SDFG.
+
+        :return: a list of the sdfg array names of the gradient buffers
+        """
+
+        assert self.sdfg is not None
+        if hasattr(self, '_gradient_buffers'):
+            return self._gradient_buffers
+
+        buffers = []
+        for name, param in self._exported_parameters.items():
+            onnx_name = clean_onnx_name(name)
+            desc = self.sdfg.arrays[onnx_name]
+
+            if param.requires_grad:
+                # allocate gradient buffer
+                param.grad = torch.empty_like(param.data)
+
+                # add gradient buffer descriptor to sdfg
+                autodiff_library.Array.make_parameter(self.sdfg, onnx_name)
+                desc: autodiff_library.Array = self.sdfg.arrays[onnx_name]
+                grad_name = desc.add_gradient_buffer(self.sdfg, onnx_name)
+                grad_desc = self.sdfg.arrays[grad_name]
+                grad_desc.transient = False
+                buffers.append(grad_name)
+        self._gradient_buffers = buffers
+        return buffers
 
     def __sdfg_signature__(self):
         if self.dace_model is None:
             raise ValueError(
                 "Can't determine signature before SDFG is generated.")
         inputs = [clean_onnx_name(name) for name in self.dace_model.inputs]
+        grad_buffers = self._add_gradient_buffers()
+        inputs.extend(grad_buffers)
+
         return inputs, []
+
+    @staticmethod
+    def _tensor_from_param(param):
+        t = param.data
+        # for some reason doing .data on a Parameter kills the requires_grad flag
+        t.requires_grad = param.requires_grad
+        return t
 
     def __sdfg_closure__(
             self,
             reevaluate: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
 
-        result = dict((clean_onnx_name(n), p.data) for n, p in itertools.chain(
-            self.model.named_parameters(), self.model.named_buffers()))
+        result = {}
+        for name, param in self._exported_parameters.items():
+            onnx_name = clean_onnx_name(name)
+            result[onnx_name] = self._tensor_from_param(param)
+            if param.requires_grad:
+                grad_name = self.sdfg.arrays[onnx_name].gradient
+                assert grad_name, "Expected gradient descriptor to be present"
+                assert param.grad is not None, "Expected gradient buffer to be allocated"
+                result[grad_name] = param.grad
+
         return result
 
     def closure_resolver(
@@ -419,21 +473,31 @@ class DaceModule(nn.Module, frontend_common.SDFGConvertible):
         given_args: Set[str],
         parent_closure: Optional[frontend_common.SDFGClosure] = None
     ) -> frontend_common.SDFGClosure:
+        assert self.sdfg is not None
         result = frontend_common.SDFGClosure()
         for name, param in self._exported_parameters.items():
             onnx_name = clean_onnx_name(name)
 
-            class ParameterClosure:
-                def __init__(self, param):
-                    self.param = param
+            desc = self.sdfg.arrays[onnx_name]
+
+            class TensorClosure:
+                def __init__(self, t):
+                    self.t = t
 
                 def __call__(self):
-                    return self.param
+                    return self.t
 
-            result.closure_arrays[onnx_name] = (name,
-                                                self.sdfg.arrays[onnx_name],
-                                                ParameterClosure(param.data),
-                                                False)
+            if param.requires_grad:
+                # the gradient was already added when __sdfg_signature__ was called earlier
+                grad_name = desc.gradient
+                # also add the gradient to the closure, because we need to write to it
+                result.closure_arrays[grad_name] = (
+                    grad_name, self.sdfg.arrays[grad_name],
+                    TensorClosure(param.grad), False)
+
+            result.closure_arrays[onnx_name] = (
+                name, desc, TensorClosure(self._tensor_from_param(param)),
+                False)
         return result
 
 
