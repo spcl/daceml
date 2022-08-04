@@ -10,6 +10,7 @@ import torch
 import torch.autograd
 
 from dace import SDFG, SDFGState, config, data
+import dace.sdfg.sdfg
 from dace.transformation import optimizer
 from dace.frontend.python import common
 from dace.frontend.common import op_repository
@@ -171,10 +172,7 @@ def backward_method(pv: newast.ProgramVisitor,
 
 # FIXME hack to make sure BackwardPass nodes are expanded before other library nodes when using the python frontend
 _current_opt = config.Config.get("optimizer", "interface")
-if _current_opt is not None:
-    warnings.warn(
-        "DaCeML autodiff doesn't work with dace optimizers at the moment, optimizer '{}' will be disabled"
-        .format(_current_opt))
+_call_opt = config.Config.get("optimizer", "transform_on_call")
 
 config.Config.set(
     "optimizer",
@@ -195,4 +193,12 @@ class BackwardPassExpander(optimizer.Optimizer):
     """
     def optimize(self):
         expand_nodes(self.sdfg, lambda n: isinstance(n, BackwardPass))
+
+        if _call_opt:
+            # try to call the original optimizer
+            optclass = dace.sdfg.sdfg._get_optimizer_class(_current_opt)
+            if optclass is not None:
+                opt = optclass(self.sdfg)
+                self.sdfg = opt.optimize()
+
         return self.sdfg

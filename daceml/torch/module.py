@@ -447,7 +447,7 @@ class DaceModule(nn.Module, frontend_common.SDFGConvertible):
     @staticmethod
     def _tensor_from_param(param):
         t = param.data
-        # for some reason doing .data on a Parameter kills the requires_grad flag
+        # Accessing .data on a Parameter resets the requires_grad flag
         t.requires_grad = param.requires_grad
         return t
 
@@ -489,6 +489,7 @@ class DaceModule(nn.Module, frontend_common.SDFGConvertible):
 
             if param.requires_grad:
                 # the gradient was already added when __sdfg_signature__ was called earlier
+                assert desc.gradient, "Expected gradient descriptor to be present"
                 grad_name = desc.gradient
                 # also add the gradient to the closure, because we need to write to it
                 result.closure_arrays[grad_name] = (

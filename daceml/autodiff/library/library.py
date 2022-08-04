@@ -48,7 +48,22 @@ class Array(data.Array):
         if self.gradient:
             return self.gradient
 
-        # First, check if this array already has a gradient buffer a nested SDFG
+        # First, check if this array already has a gradient buffer in a nested
+        # SDFG. This happens, for example when pytorch modules are used in the
+        # frontend. In that case:
+        #  1. the parser assembles the closure of the module, which adds
+        #      descriptors for all the parameters and their gradients (if they
+        #      are required).
+        #  2. A nested sdfg is added for the module, with those array names.
+        #  3. The DaceProgram will then pass these arrays in when the
+        #     DaceProgram is called, using the names from the closure that
+        #     match the names from the NestedSDFG
+        #  4. When parsing the backward nodes, we want the gradient buffers in
+        #     the closure to match the gradient buffers that we pass in. Thus,
+        #     we need to make sure that we use the same name as the NestedSDFG
+        #
+        # Note that we do not currently do any nesting beyond this level,
+        # because nested modules are converted to one SDFG.
 
         cands = set()
         for state in sdfg.nodes():
