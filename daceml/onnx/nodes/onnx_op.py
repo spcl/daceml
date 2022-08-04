@@ -19,6 +19,7 @@ from daceml.onnx.environments import ONNXRuntime
 from daceml.onnx.nodes.node_utils import parse_variadic_param
 from daceml.onnx.schema import ONNXSchema, ONNXAttributeType, _ATTR_TYPE_TO_PYTHON_TYPE, ONNXParameterType, ONNXAttribute, ONNXParameter, ONNXTypeConstraint
 from daceml.onnx.nodes.node_codegen import expand_node
+from daceml.util import utils
 
 log = logging.getLogger(__name__)
 

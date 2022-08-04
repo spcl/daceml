@@ -164,15 +164,31 @@ def expand_onnx_nodes(sdfg: dace.SDFG,
     # avoid import loop
     from daceml.onnx.nodes.onnx_op import ONNXOp
 
+    if predicate is None:
+        new_predicate = lambda n: isinstance(n, (ONNXOp, blas.MatMul))
+    else:
+        new_predicate = lambda n: predicate(n) and isinstance(
+            n, (ONNXOp, blas.MatMul))
+
+    expand_nodes(sdfg, new_predicate)
+
+
+def expand_nodes(sdfg: dace.SDFG, predicate: Callable[[nd.Node], bool]):
+    """ Recursively expand library nodes in the SDFG using a given predicate.
+
+        :param sdfg: the sdfg to expand nodes on.
+        :param predicate: a predicate that will be called to check if a node should be expanded.
+    """
+
     states = list(sdfg.states())
     while len(states) > 0:
         state = states.pop()
         expanded_something = False
         for node in list(state.nodes()):  # Make sure we have a copy
             if isinstance(node, nd.NestedSDFG):
-                expand_onnx_nodes(node.sdfg, predicate=predicate)
-            elif isinstance(node, ONNXOp) or isinstance(node, blas.MatMul):
-                if predicate is None or predicate(node):
+                expand_nodes(node.sdfg, predicate=predicate)
+            elif isinstance(node, nd.LibraryNode):
+                if predicate(node):
                     impl_name = node.expand(sdfg, state)
                     if dace.Config.get_bool('debugprint'):
                         print(
@@ -181,6 +197,7 @@ def expand_onnx_nodes(sdfg: dace.SDFG,
                     # We made a copy of the original list of nodes, so we keep
                     # iterating even though this list has now changed
                     expanded_something = True
+
         if expanded_something:
             states.append(state)  # Nodes have changed. Check state again
 
@@ -306,3 +323,12 @@ def get_access_node_by_name(sdfg, name):
                 return node, state
 
     raise Exception("DataNode {} not found".format(name))
+
+
+def all_equal(a, b) -> bool:
+    """
+    Check whether two iterables are equal
+    """
+    if len(a) != len(b):
+        return False
+    return all(x == y for x, y in zip(a, b))
