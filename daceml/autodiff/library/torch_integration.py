@@ -6,13 +6,13 @@ import torch
 
 from dace import data
 
-from daceml.autodiff.library.library import Array
+from daceml.autodiff.library.library import ParameterArray
 
 
 def create_descriptor_tensor(self: torch.Tensor) -> data.Data:
     """
     Creates a descriptor for a tensor.
-    If the tensor requires grad, we convert to an Autodiff Array
+    If the tensor requires grad, we convert to a ParameterArray
     """
 
     desc = data.create_datadescriptor(self, no_custom_desc=True)
@@ -22,18 +22,18 @@ def create_descriptor_tensor(self: torch.Tensor) -> data.Data:
     if not self.requires_grad:
         return desc
     # initialize with no gradient buffer
-    new_desc = Array(desc.dtype,
-                     desc.shape,
-                     storage=desc.storage,
-                     location=desc.location,
-                     allow_conflicts=desc.allow_conflicts,
-                     transient=desc.transient,
-                     strides=desc.strides,
-                     offset=desc.offset,
-                     lifetime=desc.lifetime,
-                     alignment=desc.alignment,
-                     debuginfo=desc.debuginfo,
-                     total_size=desc.total_size)
+    new_desc = ParameterArray(desc.dtype,
+                              desc.shape,
+                              storage=desc.storage,
+                              location=desc.location,
+                              allow_conflicts=desc.allow_conflicts,
+                              transient=desc.transient,
+                              strides=desc.strides,
+                              offset=desc.offset,
+                              lifetime=desc.lifetime,
+                              alignment=desc.alignment,
+                              debuginfo=desc.debuginfo,
+                              total_size=desc.total_size)
     return new_desc
 
 
