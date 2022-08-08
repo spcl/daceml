@@ -10,6 +10,7 @@ import inspect
 import pytest
 
 import onnx.backend.test
+import onnx.backend.test.report
 
 from daceml.onnx import DaCeMLBackend
 from daceml.onnx.nodes.onnx_op import ONNXOp
@@ -43,6 +44,7 @@ class DaCeMLPureBackend(DaCeMLBackend):
 
 
 backend_test = onnx.backend.test.runner.Runner(DaCeMLPureBackend, __name__)
+backend_test.enable_report()
 
 EXCLUDED = [
     'test_cast_DOUBLE_to_FLOAT16_cpu',

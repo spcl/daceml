@@ -75,6 +75,8 @@ class ReverseReduce(BackwardImplementation):
             _, rev_output_arr = sdfg.add_array(rev_output_conn_name,
                                                shape=in_desc.shape,
                                                dtype=in_desc.dtype)
+            reduce_all_axes = forward_node.axes is None or set(
+                range(len(in_desc.shape))) == set(forward_node.axes)
 
             state.add_mapped_tasklet(
                 "_distribute_grad_" + str(reduction_type).replace(".", "_") +
@@ -85,7 +87,7 @@ class ReverseReduce(BackwardImplementation):
                     "__in":
                     Memlet.simple(
                         rev_input_conn_name,
-                        "0" if forward_node.axes is None else ",".join(
+                        "0" if reduce_all_axes else ",".join(
                             "i" + str(i) for i in non_reduce_axes))
                 },
                 "__out = __in", {
