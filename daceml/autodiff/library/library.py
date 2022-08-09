@@ -326,9 +326,6 @@ class BackwardPass(nodes.LibraryNode):
         if access_sets is None:
             access_sets = analysis.AccessSets().apply_pass(sdfg, {})
 
-        # We're only interested in the top level sdfg
-        access_sets = access_sets[sdfg.sdfg_id]
-
         candidate_states = []
         for cand in sdfg.states():
             _, write_set = access_sets[cand]
