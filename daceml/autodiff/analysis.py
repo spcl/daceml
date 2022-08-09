@@ -10,7 +10,7 @@ from dace import nodes, SDFG, SDFGState
 from dace.sdfg import utils as sdfg_utils
 from dace.transformation.passes import analysis
 
-AccessSets = Dict[SDFGState, Tuple[Set[str], Set[str]]]
+AccessSets = Dict[int, Dict[SDFGState, Tuple[Set[str], Set[str]]]]
 
 
 def dependency_analysis(sdfg: SDFG) -> Dict[str, Set[str]]:
@@ -37,6 +37,7 @@ def dependency_analysis(sdfg: SDFG) -> Dict[str, Set[str]]:
 
 def inverse_reachability(sdfg: SDFG) -> Dict[SDFGState, Set[SDFGState]]:
     reachability = analysis.StateReachability().apply_pass(sdfg, {})
+    reachability = reachability[sdfg.sdfg_id]
     inverse_reachability = collections.defaultdict(set)
     for pred, successors in reachability.items():
         for successor in successors:
@@ -62,6 +63,8 @@ def is_previously_written(sdfg: SDFG,
 
     if access_sets is None:
         access_sets = analysis.AccessSets().apply_pass(sdfg, {})
+    # We're only interested in the top level SDFG
+    access_sets = access_sets[sdfg.sdfg_id]
 
     reachable = inverse_reachability(sdfg)
 
