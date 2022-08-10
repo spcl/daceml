@@ -522,21 +522,26 @@ def expand_node(node, state, sdfg):
 
         copy_desc.transient = True
         copy_desc.storage = copy_options_dict[parameter_name]
-        nsdfg.add_datadesc("copy_" + memlet.data, copy_desc)
+        # there can be name conflicts here if an input is given to multiple
+        # connectors. We could technically share the copied result, but it's
+        # likely not worth the effort since these are just scalars.
+        copy_name = nsdfg.add_datadesc("copy_" + memlet.data,
+                                       copy_desc,
+                                       find_new_name=True)
 
         nmemlet = deepcopy(memlet)
         nmemlet_copy = deepcopy(memlet)
-        nmemlet_copy.data = "copy_" + memlet.data
-        nmemlet.data = "copy_" + nmemlet.data
+        nmemlet_copy.data = copy_name
+        nmemlet.data = copy_name
         if is_input:
             access = nstate.add_read(parameter_name)
-            access_copy = nstate.add_access("copy_" + memlet.data)
+            access_copy = nstate.add_access(copy_name)
             nstate.add_edge(access, None, access_copy, None, nmemlet_copy)
             nstate.add_edge(access_copy, None, ntasklet, "__" + parameter_name,
                             nmemlet)
         else:
             access = nstate.add_write(parameter_name)
-            access_copy = nstate.add_access("copy_" + memlet.data)
+            access_copy = nstate.add_access(copy_name)
             nstate.add_edge(ntasklet, "__" + parameter_name, access_copy, None,
                             nmemlet)
             nstate.add_edge(access_copy, None, access, None, nmemlet_copy)
