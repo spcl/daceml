@@ -136,6 +136,10 @@ class ParameterArray(data.Array):
 class ExpandBackwardPass(pm.ExpandTransformation):
     environments = []
 
+    def can_be_applied(self, state: SDFGState, expr_index: int, sdfg, permissive: bool = False):
+        sdfg = state.parent
+        node = state.node(self.subgraph[type(self)._match_node])
+
     @staticmethod
     def expansion(node: 'BackwardPass', state: SDFGState, sdfg: SDFG):
         node.validate(sdfg, state)

@@ -5,15 +5,16 @@ map entry node to process grid dimensions.
 import copy
 import collections
 from numbers import Integral
-from typing import List, Tuple, Dict, Iterator, Union, Sequence, Set
-from dace.frontend.common.distr import ShapeType
-import sympy
+from typing import List, Tuple, Dict, Iterator, Union, Sequence, Set, Optional
 import functools
 import itertools
 
+import sympy
+
 import dace
-from dace import nodes, SDFG, SDFGState, symbolic, subsets, memlet, data
-from dace.sdfg import propagation, graph
+from dace import nodes, SDFG, SDFGState, symbolic, subsets, memlet, data, distr_types
+from dace.frontend.common.distr import ShapeType
+from dace.sdfg import propagation, graph, utils as sdfg_utils
 from dace.libraries import mpi
 from dace.transformation.dataflow import strip_mining
 from dace.transformation import helpers as xfh
@@ -25,47 +26,29 @@ NumBlocks = List[int]
 DistributedSchedule = Dict[nodes.Map, NumBlocks]
 MapNodes = Tuple[nodes.MapEntry, nodes.MapExit]
 
-from daceml.distributed import communication_solver as comm_solver
+from .communication import node
+from . import utils as distr_utils
 
 
-def all_top_level_maps(sdfg: SDFG) -> Iterator[nodes.Map]:
-    for state in sdfg.nodes():
-        for node in state.scope_children()[None]:
-            if isinstance(node, nodes.MapEntry):
-                yield node.map
+def find_map_nodes(state: SDFGState,
+                   map_node: nodes.Map) -> MapNodes:
+    found = [node for node in state.nodes()
+            if isinstance(node, (nodes.MapEntry, nodes.MapExit)) and node.map == map_node]
 
-
-def find_map_nodes(sdfg: SDFG,
-                   map_node: nodes.Map) -> Tuple[SDFGState, MapNodes]:
-    """
-    The map must be a toplevel map in ``sdfg``
-    """
-    found_states = []
-    found = []
-    for state in sdfg.nodes():
-        for node in state.nodes():
-            if isinstance(
-                    node,
-                (nodes.MapEntry, nodes.MapExit)) and node.map == map_node:
-                found_states.append(state)
-                found.append(node)
     assert len(
         found
     ) == 2, "Found {} map scope nodes for map {}, expected exactly 2".format(
         len(found), map_node)
-    assert found_states[0] is found_states[
-        1], "Found map scope nodes in different states"
 
-    state = found_states[0]
     x, y = found
     if isinstance(x, nodes.MapEntry):
         assert isinstance(
             y, nodes.MapExit), f"Found two entry nodes for map {map_node}"
-        return state, (x, y)
+        return x, y
     else:
         assert isinstance(
             y, nodes.MapEntry), f"Found two exit nodes for map {map_node}"
-        return state, (y, x)
+        return y, x
 
 
 def compute_tiled_map_range(nmap: nodes.Map,
@@ -90,13 +73,12 @@ def compute_tiled_map_range(nmap: nodes.Map,
 
 
 LocalSubsets = Dict[str, subsets.Range]
-
-
+RankVariables = List[Optional[symbolic.symbol]] 
 def propagate_rank_local_subsets(
     sdfg: SDFG, state: SDFGState, map_nodes: MapNodes, num_blocks: NumBlocks
-) -> Tuple[Dict[str, str], Tuple[LocalSubsets, LocalSubsets]]:
+) -> Tuple[RankVariables, Tuple[LocalSubsets, LocalSubsets]]:
     """
-    Compute the subset rank local subsets we need.
+    Compute the subset rank local subsets we need.sched
 
     For each rank-tiled parameter, the returned dictionary contains a mapping
     from the original parameter name to the variable name of the rank index.
@@ -109,7 +91,7 @@ def propagate_rank_local_subsets(
     # We need to reindex using "fake" block indices
     # Create new symbols for the block indices and block sizes
     used_vars: Set[str] = set(map_node.params)
-    rank_variables_mapping = {}
+    rank_variables: RankVariables = []
     # build a new range for the fake local map
     outer_range = []
 
@@ -118,19 +100,20 @@ def propagate_rank_local_subsets(
                                              map_node.range.size_exact(),
                                              map_node.range, num_blocks):
         if n_blocks != 1:
-            block_variable = utils.find_str_not_in_set(used_vars,
+            rank_variable = utils.find_str_not_in_set(used_vars,
                                                        f"__block{param}")
-            used_vars.add(block_variable)
+            used_vars.add(rank_variable)
             outer_range.append((
                 symbolic.pystr_to_symbolic(
-                    f"{block_variable} * ({size} / {n_blocks})"),
+                    f"{rank_variable} * ({size} / {n_blocks})"),
                 symbolic.pystr_to_symbolic(
-                    f"({block_variable} + 1) * ({size} / {n_blocks}) - 1"),
+                    f"({rank_variable} + 1) * ({size} / {n_blocks}) - 1"),
                 symbolic.pystr_to_symbolic(f"{step}"),
             ))
 
-            rank_variables_mapping[param] = block_variable
+            rank_variables.append(symbolic.pystr_to_symbolic(rank_variable))
         else:
+            rank_variables.append(symbolic.symbol(node.FULLY_REPLICATED_RANK))
             outer_range.append((start, end, step))
 
     outer_range = subsets.Range(outer_range)
@@ -165,13 +148,13 @@ def propagate_rank_local_subsets(
                 defined_vars, not is_input)
             assert isinstance(rank_local.subset, subsets.Range)
             result[arr_name] = rank_local.subset
-    return rank_variables_mapping, results
+    return rank_variables, results
 
 
+GlobalToLocal = List[Tuple[nodes.AccessNode, nodes.AccessNode, subsets.Range]]
 def rank_tile_map(
     sdfg: SDFG, state: SDFGState, map_nodes: MapNodes, num_blocks: NumBlocks
-) -> Tuple[Dict[str, str], List[Tuple[nodes.AccessNode, nodes.AccessNode,
-                                      subsets.Range]]]:
+) -> Tuple[RankVariables, GlobalToLocal, GlobalToLocal]:
     """
     Tile the map according to the given block sizes, create rank-local views 
     for the reads and writes to global arrays.
@@ -196,7 +179,8 @@ def rank_tile_map(
         zip(input_subsets.items(), itertools.repeat(True)),
         zip(output_subsets.items(), itertools.repeat(False)))
 
-    result: List[Tuple[nodes.AccessNode, nodes.AccessNode, subsets.Range]] = []
+    result_read: GlobalToLocal = []
+    result_write: GlobalToLocal = []
     for (arr_name, new_subset), is_input in to_iter:
 
         # Determine the outer edge
@@ -232,7 +216,10 @@ def rank_tile_map(
             find_new_name=True)
 
         local_node = state.add_access(local_name)
-        result.append((global_node, local_node, new_subset))
+        if is_input:
+            result_read.append((global_node, local_node, new_subset))
+        else:
+            result_write.append((global_node, local_node, new_subset))
 
         if is_input:
             redirect_args = dict(new_src=local_node)
@@ -245,7 +232,7 @@ def rank_tile_map(
                                      **redirect_args)
         new_edge.data.subset = new_subset
 
-    return rank_variables, result
+    return rank_variables, result_read, result_write
 
 
 def lower(sdfg: SDFG, schedule: DistributedSchedule):
@@ -253,29 +240,96 @@ def lower(sdfg: SDFG, schedule: DistributedSchedule):
     Lower with the given schedule
     """
 
-    missing = set(all_top_level_maps(sdfg)).difference(schedule.keys())
+    missing = set(distr_utils.all_top_level_maps(sdfg)).difference(schedule.keys())
     if missing:
         raise ValueError(
             f"Missing schedule for maps {', '.join(map(str, missing))}")
 
-    for map_node, num_blocks in schedule.items():
-        if len(num_blocks) != map_node.get_param_num():
-            raise ValueError(
-                f"Schedule for {map_node} has {len(num_blocks)} "
-                f"block sizes, but {map_node.get_param_num()} are required.")
+    # Order the schedule topologically for each state
 
-        state, map_nodes = find_map_nodes(sdfg, map_node)
-        # modify the map to tile it
-        rank_variables, global_to_local = rank_tile_map(
-            sdfg, state, map_nodes, num_blocks)
+    ordered_maps: Dict[SDFGState, List[nodes.Map]] = {}
 
-        # insert MPI communication
-        solver = comm_solver.CommunicationSolver(sdfg, state, rank_variables)
+    for state in sdfg.nodes():
+        top_level_nodes = set(state.scope_children()[None])
+        map_entries = [node.map for node in sdfg_utils.dfs_topological_sort(state)
+                       if isinstance(node, nodes.MapEntry) and node in top_level_nodes]
+        ordered_maps[state] = map_entries
 
-        for nglobal, nlocal, subset in global_to_local:
-            if state.in_degree(nlocal) > 0:
-                solver.solve_write(nlocal, nglobal, subset)
-            elif state.out_degree(nlocal) > 0:
-                solver.solve_read(nlocal, nglobal, subset)
-            else:
-                raise ValueError(f"Generated {nlocal} is isolated")
+
+    # each map has a main process grid
+    # with the dimension given by the schedule
+    maps_to_pgrids: Dict[nodes.Map, Tuple[RankVariables, str]] = {}
+
+
+    for state, map_nodes in ordered_maps.items():
+        for map_node in map_nodes:
+            num_blocks = schedule[map_node]
+
+            if len(num_blocks) != map_node.get_param_num():
+                raise ValueError(
+                    f"Schedule for {map_node} has {len(num_blocks)} "
+                    f"block sizes, but {map_node.get_param_num()} are required.")
+
+            map_nodes = find_map_nodes(state, map_node)
+
+            # Create a process grid that will be used for communication
+            process_grid_name = sdfg.add_pgrid(shape=num_blocks)
+            distr_utils.initialize_fields(state, [
+                f'MPI_Comm {process_grid_name}_comm;',
+                f'MPI_Group {process_grid_name}_group;',
+                f'int {process_grid_name}_coords[{len(num_blocks)}];',
+                f'int {process_grid_name}_dims[{len(num_blocks)}];',
+                f'int {process_grid_name}_rank;',
+                f'int {process_grid_name}_size;',
+                f'bool {process_grid_name}_valid;',
+                ]
+            )
+
+            # modify the map to tile it
+            rank_variables, reads, writes = rank_tile_map(
+                sdfg, state, map_nodes, num_blocks)
+            rank_variable_names: List[str] = list(map(lambda s: s.name, rank_variables))
+
+            maps_to_pgrids[map_node] = rank_variables, process_grid_name
+
+            to_iter = itertools.chain(
+                zip(reads, itertools.repeat(True)),
+                zip(writes, itertools.repeat(False)))
+        
+            for (nglobal, nlocal, subset), is_read in to_iter:
+                full_subset = subsets.Range.from_array(nglobal.desc(sdfg))
+
+                global_params = dict(
+                        rank_variables=[],
+                        pgrid=None,
+                        subset=full_subset,
+                        global_array=nglobal.data)
+
+                local_params = dict(rank_variables=rank_variable_names,
+                        pgrid=process_grid_name,
+                        subset=subset,
+                        global_array=nglobal.data)
+
+                global_prefix = "src_" if is_read else "dst_"
+                local_prefix = "dst_" if is_read else "src_"
+
+                add_prefix = lambda d, p: {p + k: v for k, v in d.items()}
+
+                comm = node.DistributedMemlet(
+                        name="communicate_" + nglobal.data,
+                        **add_prefix(global_params, global_prefix),
+                        **add_prefix(local_params, local_prefix))
+
+                state.add_node(comm)
+                src = nglobal if is_read else nlocal
+                dst = nlocal if is_read else nglobal
+                state.add_edge(src, None, comm, None, sdfg.make_array_memlet(src.data))
+                state.add_edge(comm, None, dst, None, sdfg.make_array_memlet(dst.data))
+
+    sdfg.expand_library_nodes()
+
+    # Now that we are done lowering, we can instatiate the process grid
+    # variables with zero, since each rank only sees its section of the array
+    for _, (variables, _) in maps_to_pgrids.items():
+        repl_dict = {v.name: 0 for v in variables}
+        sdfg.specialize(repl_dict)

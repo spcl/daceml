@@ -101,8 +101,11 @@ def pytest_generate_tests(metafunc):
 
 @pytest.fixture
 def sdfg_name(request):
-    return request.node.name.replace("[", "-").replace("]",
-                                                       "").replace("-", "_")
+    name = request.node.name
+    for c in "[]{}(),*/:-+ ":
+        name = name.replace(c, "_")
+
+    return name
 
 
 @pytest.fixture(autouse=True)
