@@ -2,7 +2,7 @@
 Profile Bandwidth across storage types
 """
 import copy
-import argparse 
+import argparse
 from typing import List, Tuple
 import statistics
 
@@ -41,6 +41,7 @@ def sizeof_fmt(num, suffix="B"):
         num /= 1024.0
     return f"{num:.1f}Yi{suffix}"
 
+
 RESULT_T = List[Tuple[int, float]]
 
 
@@ -61,11 +62,13 @@ def run_for_sizes(sdfg: dace.SDFG) -> RESULT_T:
 
         A = np.random.rand(n).astype(np.float32)
         B = np.random.rand(n).astype(np.float32)
-        compiled_sdfg(A=A, B=B,N=n, T=1000)
+        compiled_sdfg(A=A, B=B, N=n, T=1000)
+
         def get_first(d: dict):
             assert len(d.keys()) == 1
             key = next(iter(d.keys()))
             return d[key]
+
         report = compiled_sdfg.sdfg.get_latest_report()
         times = get_first(get_first(report.durations))
         median = statistics.median(times)
@@ -74,14 +77,15 @@ def run_for_sizes(sdfg: dace.SDFG) -> RESULT_T:
         print(f"{n} -> \t{sizeof_fmt(bandwidth)}/s")
     return results
 
+
 def profile_register(other: dace.StorageType) -> Tuple[RESULT_T, RESULT_T]:
     """
     Profile data movement bandwidth to and from a register.
     :param other: the source or destination storage type
     :returns: results for read and write as a tuple
     """
-    N = dace.symbol("N") 
-    T = dace.symbol("T") 
+    N = dace.symbol("N")
+    T = dace.symbol("T")
 
     @dace.program
     def write(B: dace.float32[N]):
@@ -106,25 +110,22 @@ def profile_register(other: dace.StorageType) -> Tuple[RESULT_T, RESULT_T]:
     return (result_write, result_write)
 
 
-
-
 def profile_copy(src: dace.StorageType, dst: dace.StorageType) -> RESULT_T:
     """
     Profile the bandwidth between two storage types using a copy edge
     :returns: bandwith in bytes/s, for different num_elements
     """
 
-    N = dace.symbol("N") 
-    T = dace.symbol("T") 
+    N = dace.symbol("N")
+    T = dace.symbol("T")
 
     @dace.program
     def copy(A: dace.float32[N], B: dace.float32[N]):
         B[:] = A
-    
+
     copy_sdfg = copy.to_sdfg()
     copy_sdfg.arrays["A"].storage = src
     copy_sdfg.arrays["B"].storage = dst
-
 
     @dace.program
     def profile_copy(A: dace.float32[N], B: dace.float32[N]):
@@ -153,7 +154,7 @@ if __name__ == "__main__":
     dst = dace.StorageType[args.dst]
     if (src, dst) in PAIRS_COPY:
         print("Profiling using copy")
-        profile_copy(src, dst)         
+        profile_copy(src, dst)
     elif (src, dst) in PAIRS_REGISTER:
         print("Profiling using register")
         if src is dace.StorageType.Register:

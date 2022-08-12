@@ -334,6 +334,7 @@ def all_equal(a, b) -> bool:
         return False
     return all(x == y for x, y in zip(a, b))
 
+
 # From https://stackoverflow.com/a/40596355
 def strict_zip(*iterables):
     """
@@ -356,7 +357,8 @@ def strict_zip(*iterables):
     except ExhaustedError as exc:
         index = exc.index
         if index > 0:
-            raise RuntimeError('iterable {} exhausted first'.format(index)) from None
+            raise RuntimeError(
+                'iterable {} exhausted first'.format(index)) from None
         # Check that all other iterators are also exhausted.
         for i, iterator in enumerate(iterators[1:], start=1):
             try:
@@ -365,4 +367,3 @@ def strict_zip(*iterables):
                 pass
             else:
                 raise RuntimeError('iterable {} is longer'.format(i)) from None
-    

@@ -6,7 +6,6 @@ from dace.sdfg import graph
 from dace.transformation.dataflow.matrix_product_transpose import SDFGState
 from dace.transformation.helpers import MultiConnectorEdge
 
-
 # intercont bandwidth in bytes/sec
 CONNECT_BANDWIDTH = {
     (dtypes.StorageType.GPU_Global, dtypes.StorageType.GPU_Global): 1e12,
@@ -21,13 +20,14 @@ CONNECT_BANDWIDTH = {
 FLOPS = 1e12
 
 
-def all_memlet_trees(sdfg) -> Iterator[Tuple[memlet.MemletTree, dace.SDFGState]]:
+def all_memlet_trees(
+        sdfg) -> Iterator[Tuple[memlet.MemletTree, dace.SDFGState]]:
     seen_edges: Set[graph.MultiConnectorEdge] = set()
     for edge, parent in sdfg.all_edges_recursive():
         if isinstance(edge, graph.MultiConnectorEdge):
             if edge in seen_edges:
                 continue
-            state: dace.SDFGState = parent # type: ignore
+            state: dace.SDFGState = parent  # type: ignore
             tree = state.memlet_tree(edge)
 
             # trees shouldn't intersect
@@ -35,10 +35,12 @@ def all_memlet_trees(sdfg) -> Iterator[Tuple[memlet.MemletTree, dace.SDFGState]]
             yield tree, state
             seen_edges.update(tree)
 
+
 def tree_leaf_nodes(tree: memlet.MemletTree) -> Iterator[nodes.Node]:
     scope_nodes = (nodes.EntryNode, nodes.ExitNode)
 
-    isleaf = lambda e: not isinstance(e.dst if tree.downwards else e.src, scope_nodes)
+    isleaf = lambda e: not isinstance(e.dst if tree.downwards else e.src,
+                                      scope_nodes)
     for edge in tree:
         if isleaf(edge):
             yield edge.dst if tree.downwards else edge.src
@@ -76,7 +78,8 @@ def sdfg_cost(sdfg: dace.SDFG) -> float:
                 raise ValueError("Unexpected node type")
 
             # get the bandwidth
-            min_bandwidth = min(min_bandwidth, CONNECT_BANDWIDTH[root_storage, leaf_storage])
+            min_bandwidth = min(min_bandwidth, CONNECT_BANDWIDTH[root_storage,
+                                                                 leaf_storage])
         if min_bandwidth == float("inf"):
             raise ValueError("No leaves found")
 
