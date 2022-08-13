@@ -1,7 +1,6 @@
 from copy import deepcopy
-from dataclasses import dataclass
 import logging
-from typing import Any, Callable, Dict, Iterable, List, Tuple, Type
+from typing import Any, Callable, Dict, Iterable, Tuple, Type, Mapping
 
 import torch
 
@@ -39,7 +38,10 @@ def get_replaced_onnx_op(name: str) -> nodes.Node:
     return onnx_op
 
 
-def make_schema_dict(name, inputs: List[str], outputs: List[str]):
+def make_schema_dict(name, inputs: Mapping[str, str], outputs: Mapping[str, str]):
+    intersection = [name for name in inputs if name in outputs]
+    assert len(intersection) == 0, f"Same keys for inputs and outputs not allowed: {intersection}"
+
     schema_dict = {
         'name': name,
         'attributes': {},
@@ -49,17 +51,16 @@ def make_schema_dict(name, inputs: List[str], outputs: List[str]):
         'type': 'ONNXSchema'
     }
 
-    def make_type_info_helper(type_list: List[str], is_input):
+    def make_type_info_helper(type_mapping: Mapping[str, str], is_input):
         data_type_list = []
         type_constraints = {}
-        name = 'input' if is_input else 'output'
-        for i, t in enumerate(type_list):
+        for i, (name, t) in enumerate(type_mapping.items()):
             assert t in TYPECLASS_STRINGS, f"{t} is not a valid ONNX type. Valid ONNX types: {TYPECLASS_STRINGS}"
-            type_name = f'{name}_{i}_T'
+            type_name = f'{name}_T'
             entry = {
                 'description': '',
                 'homogeneous': True,
-                'name': f'{name}_{i}',
+                'name': f'{name}',
                 'param_type': 'Single',
                 'type': 'ONNXParameter',
                 'type_str': type_name
@@ -234,7 +235,7 @@ def generate_onnx_op_placeholder(schema):
 
 
 # Registration of replacement.
-def register_replacement(module_name: str, inputs: List[str], outputs: List[str], shape_infer: Callable[[SymbolicShapeInference, Any], None], shape_from_module):
+def register_replacement(module_name: str, inputs: Mapping[str, str], outputs: Mapping[str, str], shape_infer: Callable[[SymbolicShapeInference, Any], None], shape_from_module):
     _modules_to_replace[module_name] = module_name
     _module_name_to_infer_shape[module_name] = shape_infer
     _module_name_to_shape_from_module[module_name] = shape_from_module

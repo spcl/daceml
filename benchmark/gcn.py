@@ -32,7 +32,7 @@ if __name__ == '__main__':
     parser.add_argument('--no-normalize', action='store_true')
     parser.add_argument('--persistent-mem', action='store_true')
     parser.add_argument('--opt', action='store_true')
-    parser.add_argument('--threadblock_dynamic', action='store_true')
+    parser.add_argument('--threadblock-dynamic', action='store_true')
     parser.add_argument('--model', choices=['gcn', 'gat', 'linear'])
     parser.add_argument('--hidden', type=int, default=None, required=True)
     args = parser.parse_args()

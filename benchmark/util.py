@@ -1,12 +1,6 @@
 import dace
 import torch
-from dace.library import change_default
 from dace.transformation.auto.auto_optimize import auto_optimize as dace_auto_optimize
-from dace.transformation.dataflow import TrivialMapRangeElimination, MapFusion
-
-from daceml import onnx as donnx
-from daceml.transformation import TaskletFusion
-from daceml.util import utils
 
 
 def _specialize_memory(sdfg):
@@ -22,7 +16,7 @@ def _specialize_memory(sdfg):
             arr = sdfg.arrays[dnode.data]
             if (arr.transient and not isinstance(arr, dace.data.View)
                     and arr.storage != dace.StorageType.Register):
-                print(dnode.data)
+                print('Setting lifetime to persistent: ', dnode.data)
                 arr.lifetime = dace.AllocationLifetime.Persistent
 
     # Disable OpenMP sections
@@ -47,8 +41,18 @@ def make_maps_dynamic(module):
     sdfg = module.sdfg
     for node in sdfg.all_nodes_recursive():
         if isinstance(node[0], dace.sdfg.nodes.MapEntry) \
-                and node[0].schedule == dace.dtypes.ScheduleType.Sequential\
-                and len(node[0].map.params) == 1\
-                and node[0].label in ['assign_167_16_map', 'daceml_onnx_op_implementations_replacement_implementations_prog_sparse_161_4_162']:
+                and node[0].schedule == dace.dtypes.ScheduleType.Sequential \
+                and len(node[0].map.params) == 1 \
+                and node[0].label in [
+            # 'assign_167_16_map',
+            'daceml_onnx_op_implementations_replacement_implementations_prog_sparse_155_4_156',
+            'daceml_onnx_op_implementations_replacement_implementations_prog_sparse_154_4_155',
+            'daceml_onnx_op_implementations_replacement_implementations_prog_sparse_157_4_158',
+            'daceml_onnx_op_implementations_replacement_implementations_prog_sparse_153_4_154',
+            'daceml_onnx_op_implementations_replacement_implementations_prog_sparse_69_4_70',
+            'daceml_onnx_op_implementations_replacement_implementations_prog_sparse_69_4_70',
+            # '_Mult__map',
+            # 'assign_160_16_map',
+        ]:
             print("Changing schdeule to TB dynamic: ", node[0].map)
             node[0].schedule = dace.dtypes.ScheduleType.GPU_ThreadBlock_Dynamic
