@@ -39,7 +39,7 @@ Clone the `patched onnxruntime <https://github.com/orausch/onnxruntime>`_ reposi
 
 .. code-block:: bash
 
-    git checkout add-session-state
+    git checkout master
     ./build.sh --build_shared_lib --parallel --config Release
 
 To enable CUDA, add the relevant arguments. For instance::

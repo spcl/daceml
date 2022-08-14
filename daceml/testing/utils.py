@@ -32,50 +32,39 @@ def get_data_file(url, directory_name=None) -> str:
     return file_path
 
 
-def torch_tensors_close(name,
-                        torch_v,
-                        dace_v,
-                        rtol=1e-5,
-                        atol=1e-4,
-                        summary=False,
-                        raise_on_fail=True):
-    """ Assert that the two torch tensors are close. Prints a nice error string if not.
+def tensors_close(name, expected, result, rtol=1e-5, atol=1e-5):
+    def to_numpy(x):
+        if hasattr(x, 'detach'):
+            x = x.detach()
+        if hasattr(x, 'cpu'):
+            x = x.cpu()
+        if hasattr(x, 'numpy'):
+            x = x.numpy()
+        return x
+
+    expected = to_numpy(expected)
+    result = to_numpy(result)
+    np.testing.assert_allclose(expected,
+                               result,
+                               rtol=rtol,
+                               atol=atol,
+                               err_msg=f'{name} not close')
+
+
+def torch_tensors_close(name, torch_v, dace_v, rtol=1e-5, atol=1e-4):
     """
-    if not torch.allclose(
-            torch_v, dace_v, rtol=rtol, atol=atol, equal_nan=True):
-        print(name + " was not close")
-        if summary:
-            torch_v = torch_v.detach().cpu().numpy()
-            dace_v = dace_v.detach().cpu().numpy()
-            max_error_idx = np.argmax(torch_v - dace_v)
-            max_error = np.max(torch_v - dace_v)
-            failed_mask = np.abs(torch_v -
-                                 dace_v) > atol + rtol * np.abs(dace_v)
-            print(f"Num wrong: {failed_mask.sum()}")
-            print(
-                f"Maximum error: {max_error}, Torch value: {torch_v.flatten()[max_error_idx]},"
-                f" Dace value: {dace_v.flatten()[max_error_idx]}")
-        else:
-            print("torch value: ", torch_v)
-            print("dace value: ", dace_v)
-            print("diff: ", torch.abs(dace_v - torch_v))
+    Assert that the two torch tensors are close. Prints a nice error string if not.
+    """
+    # check that the device is correct
+    assert torch_v.device == dace_v.device, "Tensors are on different devices"
 
-            torch_v = torch_v.detach().cpu().numpy()
-            dace_v = dace_v.detach().cpu().numpy()
-            failed_mask = np.abs(torch_v -
-                                 dace_v) > atol + rtol * np.abs(dace_v)
-            print(f"wrong elements torch: {torch_v[failed_mask]}")
-            print(f"wrong elements dace: {dace_v[failed_mask]}")
-
-            for x, y, _ in zip(torch_v[failed_mask], dace_v[failed_mask],
-                               range(100)):
-                print(f"lhs_failed: {abs(x - y)}")
-                print(
-                    f"rhs_failed: {atol} + {rtol * abs(y)} = {atol + rtol * abs(y)}"
-                )
-
-        if raise_on_fail:
-            assert False, f"{name} was not close)"
+    torch_v = torch_v.detach().cpu().numpy()
+    dace_v = dace_v.detach().cpu().numpy()
+    np.testing.assert_allclose(torch_v,
+                               dace_v,
+                               rtol=rtol,
+                               atol=atol,
+                               err_msg=f'{name} not close')
 
 
 T = typing.TypeVar("T")

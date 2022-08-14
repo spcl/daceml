@@ -2,12 +2,12 @@ import pytest
 import torch
 from torch import nn
 
-from daceml.pytorch import DaceModule
+from daceml.torch import DaceModule
 from daceml.transformation import parameter_to_transient
 
 
 @pytest.mark.gpu
-def test_pytorch_from_dlpack(sdfg_name):
+def test_torch_from_dlpack(sdfg_name):
     class Module(nn.Module):
         def __init__(self):
             super().__init__()

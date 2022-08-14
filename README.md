@@ -15,6 +15,8 @@ and FPGAs.**
 The white box approach allows us to see computation at **all levels of granularity**: from coarse operators, to kernel
 implementations, and even down to every scalar operation and memory access.
 
+DaCeML can be used to achieve state of the art GPU performance on highly contested layers, such as BERT-fp16 or EfficientNet-B0. For more details, and other performance results, please see our [ICS'22 publication](https://arxiv.org/abs/2110.10802).
+
 ![IR visual example](doc/ir.png)
 
 *Read more: [Library Nodes](https://daceml.readthedocs.io/en/latest/overviews/onnx.html#library-nodes)*
@@ -45,7 +47,7 @@ dace_model = ONNXModel("mymodel", model)
 DaCeML modules support training using a symbolic automatic differentiation engine:
 ```python
 import torch.nn.functional as F
-from daceml.pytorch import dace_module
+from daceml.torch import dace_module
 
 @dace_module(backward=True)
 class Net(nn.Module):
@@ -113,3 +115,15 @@ This will setup DaCeML in a newly created virtual environment.
 ## Development
 Common development tasks are automated using the `Makefile`. 
 See [Development](https://daceml.readthedocs.io/en/latest/overviews/development.html) for more information.
+
+## Citing
+If you use DaCeML, please cite us:
+```bibtex
+@inproceedings{daceml,
+  author = {Rausch, Oliver and Ben-Nun, Tal and Dryden, Nikoli and Ivanov, Andrei and Li, Shigang and Hoefler, Torsten},
+  title = {{DaCeML}: A Data-Centric Optimization Framework for Machine Learning},
+  year = {2022},
+  booktitle = {Proceedings of the 36th ACM International Conference on Supercomputing},
+  series = {ICS '22}
+}
+```

@@ -37,8 +37,12 @@ setup(
         exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
     package_data={'': (['*.cpp'] + runtime_files)},
     install_requires=[
-        'dace == 0.13.1', 'onnx == 1.8.0', 'torch', 'protobuf == 3.19',
-        'dataclasses; python_version < "3.7"'
+        'dace@git+https://github.com/spcl/dace.git@backport-0.13-fixes',
+        'onnx == 1.7.0',  # we support opset v12
+        'torch',
+        'protobuf == 3.19',
+        'dataclasses; python_version < "3.7"',
+        'onnx-simplifier == 0.3.10'
     ],
     # install with pip and --find-links (see Makefile)
     # See https://github.com/pypa/pip/issues/5898
@@ -50,6 +54,6 @@ setup(
         ],
         'docs': [
             'sphinx', 'sphinx_rtd_theme', 'sphinx-autodoc-typehints',
-            'sphinx-gallery', 'matplotlib'
+            'sphinx-gallery', 'matplotlib', 'jinja2<3.1'
         ],
     })

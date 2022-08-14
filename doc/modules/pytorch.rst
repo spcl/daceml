@@ -1,9 +1,9 @@
 .. _mod_pytorch:
 
-daceml.pytorch
+daceml.torch
 ==============
 
-.. py:module:: daceml.pytorch
+.. py:module:: daceml.torch
 
 .. autoclass:: DaceModule
     :members:

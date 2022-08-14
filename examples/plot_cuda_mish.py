@@ -22,7 +22,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from daceml.pytorch import dace_module
+from daceml.torch import dace_module
 
 
 @dace_module(cuda=True, backward=True)

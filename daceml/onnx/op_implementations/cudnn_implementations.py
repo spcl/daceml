@@ -10,17 +10,11 @@ from daceml.onnx.converters import clean_onnx_name
 from daceml.onnx.forward_implementation_abc import ONNXForward
 from daceml.onnx.nodes import onnx_op
 from daceml.onnx.op_implementations import op_implementation, empty_sdfg_for_node
-from daceml.util import in_desc_with_name, out_desc_with_name, remove_output_connector
+from daceml.util import in_desc_with_name, out_desc_with_name, remove_output_connector, all_equal
 
 
 def _prod(sequence):
     return functools.reduce(lambda a, b: a * b, sequence, 1)
-
-
-def _iterables_equal(a, b) -> bool:
-    if len(a) != len(b):
-        return False
-    return all(x == y for x, y in zip(a, b))
 
 
 def _get_tensor_layout(desc: dt.Array) -> Optional[str]:
@@ -64,9 +58,9 @@ def _get_tensor_layout(desc: dt.Array) -> Optional[str]:
             nhwc_contiguous_strides[1]
         ]
 
-    if _iterables_equal(desc.strides, cont_strides):
+    if all_equal(desc.strides, cont_strides):
         return "NCHW"
-    elif _iterables_equal(desc.strides, nhwc_reshaped_strides):
+    elif all_equal(desc.strides, nhwc_reshaped_strides):
         return "NHWC"
     else:
         return None

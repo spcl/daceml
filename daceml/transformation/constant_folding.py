@@ -1,24 +1,27 @@
 import copy
 import logging
 from collections import deque
-from typing import Dict
+from typing import Dict, Optional
 
 import numpy as np
 
 import dace
 import torch
-from dace import data as dt, dtypes
+from dace import data as dt, dtypes, memlet as mm
 from dace import registry
 from dace.properties import make_properties
 from dace.transformation import transformation
 from dace.sdfg import nodes as nd
 from dace.sdfg import utils as sdutil
+from dace.transformation.passes import dead_dataflow_elimination
+from dace.transformation import pass_pipeline
 
 import daceml.onnx as donnx
 from daceml.onnx.binary_utilities.python_onnx_node_evaluation import evaluate_node
 from daceml.onnx.converters import clean_onnx_name
 from daceml.onnx.nodes.onnx_op import ONNXOp
 from daceml.onnx import ONNXModel
+from daceml.onnx.environments import ONNXRuntime
 
 log = logging.getLogger(__name__)
 
@@ -71,6 +74,8 @@ class ConstantFolding(transformation.SingleStateTransformation):
                        expr_index: int,
                        sdfg,
                        permissive: bool = False):
+        if not ONNXRuntime.is_installed():
+            return False
 
         node = self.onnx_node
 
@@ -191,37 +196,36 @@ class ConstantFolding(transformation.SingleStateTransformation):
         remove_node_and_computation(sdfg, state, node)
 
 
-def remove_node_and_computation(sdfg: dace.SDFG, state: dace.SDFGState,
-                                node: nd.Node):
+def remove_node_and_computation(sdfg: dace.SDFG,
+                                state: dace.SDFGState,
+                                node: nd.Node,
+                                connector: Optional[str] = None):
     """ Remove a node and the parent nodes that compute this node, if the outputs are not used elsewhere.
 
         :param sdfg: the sdfg containing the node.
         :param state: the state containing the node.
         :param node: the node to remove
+        :param connector: if not None, the computation of the connector of
+                          ``node`` will be removed, but not ``node`` itself.
     """
-    queue = deque([node])
-    while len(queue) > 0:
-        current_node = queue.popleft()
-
-        edges = state.in_edges(current_node)
-        state.remove_node(current_node)
+    if connector is not None:
+        if connector not in node.in_connectors:
+            return
+        node.remove_in_connector(connector)
+        edges = state.in_edges_by_connector(node, connector)
         for e in edges:
-            next_node = e.src
-            data_used_in_other_states = isinstance(next_node, nd.AccessNode) and \
-                                        any(n.data == next_node.data
-                                            for s in sdfg.nodes()
-                                            for n in s.nodes() if s is not state)
+            state.remove_edge(e)
+    else:
+        edges = state.out_edges(node)
+        for e in edges:
+            state.remove_edge(e)
 
-            if len(state.out_edges(
-                    next_node)) == 0 and not data_used_in_other_states:
-                queue.append(next_node)
+    pass_pipeline.Pipeline([
+        dead_dataflow_elimination.DeadDataflowElimination()
+    ]).apply_pass(sdfg, {})
 
-    # remove all now useless data descriptors
-    all_read_or_written_data = set(e.data.data for s in sdfg.nodes()
-                                   for e in s.edges())
-    all_read_or_written_data = all_read_or_written_data.union(
-        node.data for node, _ in sdfg.all_nodes_recursive()
-        if isinstance(node, nd.AccessNode))
-    to_delete = set(sdfg.arrays) - all_read_or_written_data
-    for name in to_delete:
-        del sdfg.arrays[name]
+    # remove dangling nodes, this can happen with non-transients
+    for node, parent in sdfg.all_nodes_recursive():
+        if (isinstance(node, nd.AccessNode)
+                and parent.in_degree(node) + parent.out_degree(node) == 0):
+            parent.remove_node(node)

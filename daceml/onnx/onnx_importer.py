@@ -2,20 +2,25 @@ import collections
 import logging
 from itertools import chain, repeat
 from typing import Dict, Union, Tuple, Any, List, Optional, OrderedDict, Callable
+import copy
 
 import numpy as np
 import torch
 
 import onnx
+import onnx.checker
 from onnx import numpy_helper
 from onnx.helper import make_tensor_value_info
 
+import onnxsim
+
 import dace
 from dace import data as dt, dtypes, nodes, SDFG, SDFGState
+from dace.sdfg import utils as sdfg_utils
 from dace.frontend.python import parser
 from dace.codegen import compiled_sdfg
 from dace.symbolic import pystr_to_symbolic
-from dace.transformation import dataflow
+from dace.codegen import compiled_sdfg
 
 from daceml import transformation
 from daceml.onnx.nodes.replacement import is_replaceable, get_replaced_onnx_op
@@ -60,6 +65,15 @@ def _nested_HasField(obj, full_attr):
     return True
 
 
+def simplify_onnx_model(model: onnx.ModelProto,
+                        auto_merge: bool) -> onnx.ModelProto:
+    model, check = onnxsim.simplify(model, skip_fuse_bn=True)
+
+    if not check:
+        raise RuntimeError("onnx-simplifier optimizations failed")
+    return model
+
+
 class ONNXModel:
     """ Loads an ONNX model into an SDFG.
 
@@ -100,12 +114,10 @@ class ONNXModel:
     def __init__(self,
                  name: str,
                  model: onnx.ModelProto,
-                 infer_shapes: bool = True,
                  cuda: bool = False,
-                 simplify: bool = False,
                  auto_optimize: bool = True,
-                 fold_constants: bool = True,
-                 parent_pytorch_module: Optional[torch.nn.Module] = None,
+                 simplify: bool = False,
+                 onnx_simplify: bool = True,
                  storage: Optional[dtypes.StorageType] = None,
                  save_transients: Optional[Dict[str, torch.Tensor]] = None,
                  auto_merge: bool = False,
@@ -117,12 +129,12 @@ class ONNXModel:
                              value infos (with shapes) for all arrays, including intermediate values.
         :param cuda: if ``True``, the model will be executed on the GPU.
         :param simplify: if ``True``, apply simplification transformations after all nodes have been expanded.
+        :param onnx_simplify: if True, run ONNX-level simplifications such as constant folding and shape inference.
         :param auto_optimize: if ``True``, apply automatic optimizations before calling.
-        :param parent_pytorch_module: when not None, the weight tensors are loaded from the parameters of this model
-                                      rather than the ONNX graph.
         :param storage: the storage type of the parameters, inputs and outputs. If None, will be set according to
                         ``cuda``.
         :param save_transients: if not None, save transients to this dict (for debugging).
+        :param: whether to automatically merge conflicting shapes in symbolic shape inference.
         :param auto_merge: whether to automatically merge symbolic shapes in symbolic shape inference.
         """
 
@@ -132,9 +144,12 @@ class ONNXModel:
                     f"Expected the onnx model to be exported with opset 12, got {opset.version}. This model may fail "
                     f"to import as a result.")
 
+        onnx.checker.check_model(model)
+        model = shape_inference.infer_shapes(model, auto_merge=auto_merge, placeholder_id_to_module=placeholder_id_to_module)
+        if onnx_simplify:
+            model = simplify_onnx_model(model, auto_merge)
+
         self.do_auto_optimize = auto_optimize
-        if infer_shapes:
-            model = shape_inference.infer_shapes(model, auto_merge=auto_merge)
 
         graph: onnx.GraphProto = model.graph
         self.save_transients = save_transients
@@ -142,7 +157,6 @@ class ONNXModel:
         self.sdfg._parent_onnx_model = self
         self.cuda = cuda
         self.simplify = simplify
-        self.fold_constants = fold_constants
         self.state: SDFGState = self.sdfg.add_state(
         )  #: the state containing the model computation.
 
@@ -170,6 +184,8 @@ class ONNXModel:
             storage = storage
             self._add_value_info(value, storage=storage)
 
+        self.sdfg.arg_names = [clean_onnx_name(i) for i in self.inputs]
+
         for value in graph.value_info:
             if not value.HasField("name"):
                 raise ValueError("Got input or output without name")
@@ -180,7 +196,7 @@ class ONNXModel:
         self.weights: Dict[str, torch.Tensor] = {
         }  #: mapping from weight name to array
         for init in graph.initializer:
-            self._add_constant_tensor(init, parent_pytorch_module, storage)
+            self._add_constant_tensor(init, storage)
 
         access_nodes = {}
         self._idx_to_node = []
@@ -220,17 +236,8 @@ class ONNXModel:
 
                 value_name = next(iter(op_attributes))
 
-                if node.output[0] not in self.value_infos:
-                    raise ValueError(
-                        "Could not find array with name '{}'".format(
-                            node.output[0]))
-                self._add_value_info(self.value_infos[node.output[0]],
-                                     storage=storage)
-                self.sdfg.arrays[clean_onnx_name(
-                    node.output[0])].transient = False
-
-                self.weights[node.output[0]] = torch.from_numpy(
-                    op_attributes[value_name].copy())
+                self._add_constant_tensor(
+                    (node.output[0], op_attributes[value_name]), storage)
                 continue
 
             if node.HasField("name"):
@@ -344,61 +351,91 @@ class ONNXModel:
                         access, None, op_node, conn_name,
                         dace.Memlet.from_array(name, data_desc))
 
-        if self.fold_constants:
-            log.debug("Applying constant folding")
-            self.sdfg.apply_transformations_repeated([
-                transformation.ConstantFolding, dataflow.RedundantSecondArray
-            ],
-                validate_all=True)
+        # scalars need to be promoted to arrays so that we can return them from the dace program
+        # however, this is only for CPU: on GPU, scalars are already pointers
+        self._promoted_scalars = set()
+
+        # insert copies from outputs to __return arrays
+        copy_out_state = self.sdfg.add_state_after(self.state,
+                                                   label='copy_out')
+        new_output_names = []
+        for i, output in enumerate(self.outputs):
+            clean_name = clean_onnx_name(output)
+            new_output_name = '__return'
+            if len(self.outputs) > 1:
+                new_output_name += '_' + str(i)
+            new_output_names.append(new_output_name)
+
+            desc = copy.deepcopy(self.sdfg.arrays[clean_name])
+            if isinstance(desc, dt.Scalar) and not self.cuda:
+                desc = dt.Array(desc.dtype, (1, ))
+                self._promoted_scalars.add(new_output_name)
+
+            # insert new descriptor
+            self.sdfg.arrays[new_output_name] = desc
+            desc.transient = False
+
+            copy_out_state.add_edge(copy_out_state.add_read(clean_name), None,
+                                    copy_out_state.add_write(new_output_name),
+                                    None,
+                                    self.sdfg.make_array_memlet(clean_name))
+
+        # finally, rename outputs, and fuse states
+        self.outputs = new_output_names
+        sdfg_utils.fuse_states(self.sdfg)
 
         if self.cuda:
             self.sdfg.apply_gpu_transformations()
 
-    def _add_constant_tensor(self, tensor: onnx.TensorProto, parent_pt_model,
+    def _add_constant_tensor(self, tensor: Union[onnx.TensorProto,
+                                                 Tuple[str, np.ndarray]],
                              storage: dtypes.StorageType):
-        if not tensor.HasField("name"):
-            raise ValueError("Got tensor without name")
+        if isinstance(tensor, tuple):
+            unclean_name, value = tensor
+            dtype = dtypes.DTYPE_TO_TYPECLASS[value.dtype.type]
+            shape = value.shape
+            np_array = value
+        else:
+            if not tensor.HasField("name"):
+                raise ValueError("Got tensor without name")
 
-        if not tensor.HasField("data_type"):
-            raise ValueError("Initializer tensor '{}' has no type".format(
-                tensor.name))
+            if not tensor.HasField("data_type"):
+                raise ValueError("Initializer tensor '{}' has no type".format(
+                    tensor.name))
+            unclean_name = tensor.name
+            dtype = onnx_tensor_type_to_typeclass(tensor.data_type)
+            shape = [d for d in tensor.dims]
+            np_array = numpy_helper.to_array(tensor)
 
-        if tensor.name in self.inputs:
-            # do not duplicate a weight if it is already an input
-            return
-
-        name = clean_onnx_name(tensor.name)
-
-        dtype = onnx_tensor_type_to_typeclass(tensor.data_type)
-
-        if len(tensor.dims) == 0:
+        name = clean_onnx_name(unclean_name)
+        if unclean_name in self.inputs:
+            # remove the tensor from inputs since this is a constant
+            self.inputs.remove(unclean_name)
+            # note: inputs already have data-descriptors created for them, so
+            # we skip the below code
+        elif len(shape) == 0:
             # this is a scalar
             self.sdfg.add_scalar(name, dtype, storage=storage)
         else:
-            dims = [d for d in tensor.dims]
             if name not in self.sdfg.arrays:
-                self.sdfg.add_array(name, dims, dtype, storage=storage)
+                self.sdfg.add_array(name,
+                                    shape,
+                                    dtype,
+                                    storage=storage,
+                                    transient=False)
             else:
                 existing_arr = self.sdfg.arrays[name]
                 if existing_arr.dtype != dtype:
                     raise ValueError(
                         "Invalid ONNX model; found two values with name '{}', but different dtypes ({} and {})"
                         .format(name, existing_arr.dtype, dtype))
-                if tuple(existing_arr.shape) != tuple(dims):
+                if tuple(existing_arr.shape) != tuple(shape):
                     raise ValueError(
                         "Invalid ONNX model; found two values with name '{}', but different dimensions ({} and {})"
-                        .format(name, existing_arr.shape, dims))
+                        .format(name, existing_arr.shape, shape))
 
-        weight_arr = numpy_helper.to_array(tensor)
-
-        if parent_pt_model is not None:
-            parent_parameters = dict(parent_pt_model.named_parameters())
-
-        if parent_pt_model is not None and tensor.name in parent_parameters:
-            self.weights[tensor.name] = parent_parameters[tensor.name].data
-        else:
-            # we need to copy here because the weight_arr tensor is not writable
-            self.weights[tensor.name] = torch.from_numpy(weight_arr.copy())
+        # we need to copy here because the weight_arr tensor is not writable
+        self.weights[unclean_name] = torch.from_numpy(np_array.copy())
 
     def _add_value_info(self,
                         value_info: onnx.ValueInfoProto,
@@ -440,7 +477,7 @@ class ONNXModel:
                     "Value '{}' does not have a shape in this graph."
                     " Please run shape inference before importing.".format(
                         name))
-        transient = name not in self.inputs and name not in self.outputs
+        transient = name not in self.inputs
         if len(shape) == 0:
             self.sdfg.add_scalar(clean_onnx_name(name),
                                  dtype=onnx_tensor_type_to_typeclass(
@@ -518,6 +555,10 @@ class ONNXModel:
         compiled(**inputs, **outputs, **self.initialized_parameters, **symbols,
                  **transient_kwargs)
 
+        # demote scalars we promoted above
+        for scalar in self._promoted_scalars:
+            outputs[scalar] = outputs[scalar].reshape(())
+
         if len(outputs) == 1:
             return next(iter(outputs.values()))
 
@@ -591,8 +632,8 @@ class ONNXModel:
 
         outputs = collections.OrderedDict()
         # create numpy arrays for the outputs
-        for output in self.outputs:
-            clean_name = clean_onnx_name(output)
+        for name in self.outputs:
+            clean_name = clean_onnx_name(name)
             outputs[clean_name] = create_output_array(
                 inferred_symbols,
                 self.sdfg.arrays[clean_name],

@@ -4,8 +4,11 @@ Test a full model including indexing and input preparation. The model also inclu
 
 import os
 
-import pytest
 import onnx
+import onnxsim
+
+import pytest
+
 import torch
 from transformers import BertTokenizer, BertModel
 
@@ -15,9 +18,6 @@ from daceml.testing import copy_to_gpu, torch_tensors_close, get_data_file
 
 @pytest.mark.cpublas
 def test_bert_full(gpu, default_implementation, sdfg_name):
-    # SDFG add doesn't work with scalars currently
-    donnx.ONNXAdd.default_implementation = "onnxruntime"
-
     bert_tiny_root = 'http://spclstorage.inf.ethz.ch/~rauscho/bert-tiny'
     get_data_file(bert_tiny_root + "/config.json", directory_name='bert-tiny')
     vocab = get_data_file(bert_tiny_root + "/vocab.txt",
@@ -41,13 +41,15 @@ def test_bert_full(gpu, default_implementation, sdfg_name):
     attention_mask = copy_to_gpu(gpu, torch.ones(1, 8, dtype=torch.int64))
 
     model = onnx.load(bert_path)
+    # infer shapes
+    model, check = onnxsim.simplify(model,
+                                    skip_fuse_bn=True,
+                                    input_shapes=dict(
+                                        input_ids=tokens_tensor.shape,
+                                        token_type_ids=segments_tensors.shape,
+                                        attention_mask=attention_mask.shape))
 
-    dace_model = donnx.ONNXModel(
-        sdfg_name,
-        model,
-        cuda=gpu,
-        auto_merge=True,
-    )
+    dace_model = donnx.ONNXModel(sdfg_name, model, cuda=gpu, auto_merge=True)
 
     dace_output = dace_model(input_ids=tokens_tensor,
                              token_type_ids=segments_tensors,

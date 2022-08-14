@@ -8,6 +8,7 @@ on:
 
 jobs:
   test-gpu:
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-ci') }}
     runs-on: [self-hosted, linux, gpu]
     env:
       ORT_ROOT: '/opt/onnxruntime'
@@ -28,7 +29,7 @@ jobs:
 
       - name: Test with pytest
         env:
-          PYTEST_ARGS: --cov=daceml --cov-report=term --cov-report xml --cov-config=.coveragerc --gpu-only -m "not slow and not fpga and not xilinx" --timeout=500
+          PYTEST_ARGS: --cov=daceml --cov-report=term --cov-report xml --cov-config=.coveragerc --gpu-only -m "not slow and not fpga and not xilinx and not onnx" --timeout=500
         run: make test
 
       - name: Upload coverage

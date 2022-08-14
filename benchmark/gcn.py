@@ -13,7 +13,7 @@ from torch_sparse import SparseTensor
 from benchmark.models import LinearModel, GCN, GAT
 from benchmark.util import specialize_mem_onnx, apply_dace_auto_optimize, make_maps_dynamic
 from daceml import onnx as donnx
-from daceml.pytorch.module import dace_module
+from daceml.torch.module import dace_module
 
 donnx.default_implementation = "pure"
 torch.backends.cuda.matmul.allow_tf32 = False

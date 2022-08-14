@@ -20,7 +20,7 @@ def test_bert_subgraph(sdfg_name):
     dace_model = donnx.ONNXModel(sdfg_name,
                                  model,
                                  auto_optimize=False,
-                                 fold_constants=False)
+                                 onnx_simplify=False)
 
     out_before = dace_model()
     assert len(dace_model.sdfg.nodes()[0].nodes()) > 2
