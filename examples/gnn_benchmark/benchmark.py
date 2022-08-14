@@ -10,8 +10,8 @@ from torch_geometric.datasets import Planetoid
 from torch_geometric.data import Data
 from torch_sparse import SparseTensor
 
-from benchmark.models import LinearModel, GCN, GAT
-from benchmark.util import specialize_mem_onnx, apply_dace_auto_optimize, make_maps_dynamic
+from examples.gnn_benchmark.models import LinearModel, GCN, GAT
+from examples.gnn_benchmark.util import specialize_mem_onnx, apply_dace_auto_optimize, make_maps_dynamic
 from daceml import onnx as donnx
 from daceml.torch.module import dace_module
 

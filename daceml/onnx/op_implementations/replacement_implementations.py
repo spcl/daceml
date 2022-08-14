@@ -68,8 +68,14 @@ class GCNConv(ONNXForward):
             output[:] = 0
             for i, k in dace.map[0:N, 0:num_out_features]:
                 for j in dace.map[rowptrs[i]:rowptrs[i + 1]]:
-                    inp2j = columns[j]
-                    output[inp2j, k] += features[i, k] * vals[j]
+                    with dace.tasklet:
+                        inp2j << columns[j]
+                        f << features[i, k]
+                        in_val << vals(1)[j]
+                        out_val[inp2j, k] = f * in_val
+                        out_val >> output(1, lambda a, b: a + b)
+                    # Below line results in compile errors.
+                    # output[inp2j, k] += features[i, k] * vals[j]
 
             # This is ~35% slower (0.56 vs 0.41)
             # tmp = dace.define_local((N, num_in_features), dtype=dtype)
