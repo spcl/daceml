@@ -153,10 +153,24 @@ Implementations should assume that the node has been validated before it was pas
 Implementations can choose to reject certain classes of the node the expand, by implementing the (optional)
 :meth:`~daceml.onnx.forward_implementation_abc.ONNXForward.forward_can_be_applied` method.
 
+.. _Pure Implementations:
+
 Pure Implementations
 ~~~~~~~~~~~~~~~~~~~~
-Several nodes have an SDFG implementation (i.e. not ONNXRuntime based). The list of all implementations can be found
-:ref:`here <pure-ops>`.
+Several nodes have an pure SDFG implementation (i.e. not ONNXRuntime based).
+The list of all implementations can be found :ref:`here <pure-ops>`. These
+implementations can be analyzed by DaCeML, which allows us to apply optimizing
+transformations as well as :ref:`autodiff <Autodiff>`.
+
+The :func:`~daceml.onnx.op_implementations.utils.python_pure_op_implementation`
+decorator makes implementing these operators easier, for example:
+
+.. code-block:: python
+
+  @python_pure_op_implementation
+  def Exp(input, output):
+      output[:] = np.exp(input)
+
 
 Running ONNX Node Tests
 ~~~~~~~~~~~~~~~~~~
