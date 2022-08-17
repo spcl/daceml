@@ -12,8 +12,10 @@ UPDATE_PIP ?= python -m pip install --upgrade pip
 SOURCE_FILES = daceml tests setup.py examples doc
 
 ifeq ($(VENV_PATH),)
+PYTEST_PATH = $(PYTEST)
 ACTIVATE = 
 else
+PYTEST_PATH = $(VENV_PATH)/bin/pytest
 ACTIVATE = . $(VENV_PATH)/bin/activate &&
 endif
 
@@ -64,7 +66,7 @@ test-xilinx:
 	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests/torch/fpga/
 
 test-distributed:
-	$(ACTIVATE) $(MPI_PREFIX) $(PYTEST) $(PYTEST_ARGS) tests/distributed
+	$(ACTIVATE) $(MPI_PREFIX) $(PYTEST_PATH) $(PYTEST_ARGS) tests/distributed
 
 codecov:
 	curl -s https://codecov.io/bash | bash

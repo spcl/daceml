@@ -2,9 +2,9 @@ name: Distributed CI
 
 on:
   push:
-    branches: []
+    branches: [ master ]
   pull_request:
-    branches: []
+    branches: [ master ]
 
 jobs:
   test-distributed:
@@ -24,13 +24,13 @@ jobs:
           rm -rf .dacecache tests/.dacecache
           . /opt/setupenv
           make clean install
-          pip install mpi4py
+          venv/bin/pip install mpi4py
 
       - name: Run Distributed Tests
         env:
           PYTEST_ARGS: --cov=daceml --cov-report=term --cov-report xml --cov-config=.coveragerc -s -m "mpi" 
           PYTEST_PLUGINS: tests.distributed.mpi_mute
-          MPI_PREFIX: mpirun -np 4
+          MPI_PREFIX: mpirun -np 8 --oversubscribe
         run: make test-distributed
 
       - name: Upload coverage
