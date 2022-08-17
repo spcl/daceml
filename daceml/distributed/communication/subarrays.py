@@ -99,8 +99,7 @@ def compute_scatter_color(parent_grid_variables: List[symbolic.symbol],
         if v.name != FULLY_REPLICATED_RANK
     }
 
-    # these are the dimensions we need to scatter our data over. these
-    # definitely need to be kept
+    # these are the dimensions we need to scatter our data over (i.e. not replicated)
     scattered_dims = {
         dim_to_idx[s]
         for s, _ in matched_dimensions if s is not None
@@ -111,17 +110,15 @@ def compute_scatter_color(parent_grid_variables: List[symbolic.symbol],
     required_full_replication_dims = len(matched_dimensions) - len(
         scattered_dims)
 
-    # The indices of dims of size 1 in the global pgrid
+    # empty dims are the the indices of dims of size 1 in the global pgrid
     empty_dims = {
         i
         for i, s in enumerate(parent_grid_variables)
         if s.name == FULLY_REPLICATED_RANK
     }
     assert all(parent_grid_shape[i] == 1 for i in empty_dims)
-    # the size 1 dimensions in the scatter grid
-    # the key is the index of the dimension in the scatter grid, the value
-    # is the index of the dimension in the parent grid
 
+    # the indices of size 1 dimensions we choose for the scatter grid
     empty_scatter_dims = set()
     for i in range(required_full_replication_dims):
         # choose any empty rank
@@ -130,6 +127,7 @@ def compute_scatter_color(parent_grid_variables: List[symbolic.symbol],
         scattered_dims.add(parent_empty_dim)
         empty_scatter_dims.add(parent_empty_dim)
 
+    # scatter_color[i] == True iff the i'th dimension is kept in the scatter grid
     scatter_color = [
         i in scattered_dims for i in range(len(parent_grid_shape))
     ]
@@ -165,8 +163,7 @@ def try_construct_subarray(
     matched_dimensions = match_subset_axis_to_pgrid(subset, grid_variables)
 
     if len(matched_dimensions) > len(pgrid.shape):
-        # Haven't thought about this yet...
-        # When can this happen?
+        # haven't thought about this yet
         raise NotImplementedError()
     elif len(matched_dimensions) < len(pgrid.shape):
 
@@ -174,7 +171,8 @@ def try_construct_subarray(
                                               matched_dimensions)
         assert sum(scatter_color) == subset.dims()
         # The broadcast grid provides the data to the ranks that are not
-        # covered in the scatter grid
+        # covered in the scatter grid.
+        # It's always the inverse of the scatter grid.
         bcast_color = list(map(lambda x: not x, scatter_color))
 
         subgrid_shape = lambda color: [
@@ -317,7 +315,6 @@ class CommunicateSubArrays(pm.ExpandTransformation):
         elif node.src_pgrid is not None or node.dst_pgrid is not None:
             # 2. only one of the two has a pgrid
             # in this case we emit a BlockScatter or BlockGather
-
             scatter = node.dst_pgrid is not None
 
             if scatter:
