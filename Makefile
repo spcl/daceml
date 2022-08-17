@@ -2,6 +2,7 @@ VENV_PATH ?= venv
 PYTHON ?= python
 PYTHON_BINARY ?= python
 PYTEST ?= pytest
+MPI_PREFIX ?= mpiexec
 PIP ?= pip
 YAPF ?= yapf
 
@@ -61,6 +62,9 @@ test-intel-fpga:
 
 test-xilinx:
 	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests/torch/fpga/
+
+test-distributed:
+	$(ACTIVATE) $(MPI_PREFIX) $(PYTEST) $(PYTEST_ARGS) tests/distributed
 
 codecov:
 	curl -s https://codecov.io/bash | bash

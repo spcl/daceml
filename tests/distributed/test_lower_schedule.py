@@ -10,6 +10,8 @@ from dace.sdfg import utils as sdfg_utils
 from daceml.util import utils
 from daceml.distributed import schedule, utils as distr_utils
 
+MPI = pytest.importorskip("mpi4py.MPI")
+
 
 def arange_with_size(size):
     return np.arange(utils.prod(size), dtype=np.int64).reshape(size).copy()
@@ -34,7 +36,6 @@ def test_elementwise_1d(sizes):
     X = arange_with_size([64])
     expected = X + 5
 
-    from mpi4py import MPI
     commworld = MPI.COMM_WORLD
     rank = commworld.Get_rank()
     size = commworld.Get_size()
@@ -74,7 +75,6 @@ def test_bcast_simple(sizes):
     Y = arange_with_size([8, 16])
     expected = X + Y
 
-    from mpi4py import MPI
     commworld = MPI.COMM_WORLD
     rank = commworld.Get_rank()
     size = commworld.Get_size()
