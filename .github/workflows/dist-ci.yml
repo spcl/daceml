@@ -8,7 +8,7 @@ on:
 
 jobs:
   test-distributed:
-    #if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-ci') }}
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-ci') }}
     runs-on: [self-hosted, linux, gpu]
 
     steps:
