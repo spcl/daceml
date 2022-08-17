@@ -29,7 +29,7 @@ jobs:
       - name: Run Distributed Tests
         env:
           PYTEST_ARGS: --cov=daceml --cov-report=term --cov-report xml --cov-config=.coveragerc -s -m "mpi"
-          MPI_PREFIX: mpirun -np 8
+          MPI_PREFIX: mpirun -np 4 -npersocket 2
         run: make test-distributed
 
       - name: Upload coverage
