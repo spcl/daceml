@@ -28,7 +28,7 @@ jobs:
 
       - name: Run Distributed Tests
         env:
-          PYTEST: venv/bin/coverage run -m pytest --parallel-mode --source=daceml
+          PYTEST: venv/bin/coverage run --parallel-mode --source=daceml -m pytest 
           PYTEST_ARGS: -s
           PYTEST_PLUGINS: tests.distributed.mpi_mute
           MPI_PREFIX: mpirun -np 8 --oversubscribe
