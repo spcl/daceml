@@ -492,8 +492,10 @@ def lower(sdfg: SDFG, schedule: DistributedSchedule):
                 state.add_edge(comm, None, dst, None,
                                sdfg.make_array_memlet(dst.data))
 
+    sdfg.validate()
     utils.expand_nodes(
         sdfg, predicate=lambda n: isinstance(n, node.DistributedMemlet))
+    sdfg.validate()
 
     # Now that we are done lowering, we can instatiate the process grid
     # variables with zero, since each rank only sees its section of the array

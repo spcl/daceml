@@ -5,12 +5,11 @@ import pytest
 import numpy as np
 
 import dace
+from dace import nodes
 from dace.sdfg import utils as sdfg_utils
 
 from daceml.util import utils
 from daceml.distributed import schedule, utils as distr_utils
-
-MPI = pytest.importorskip("mpi4py.MPI")
 
 
 def arange_with_size(size):
@@ -36,6 +35,7 @@ def test_elementwise_1d(sizes):
     X = arange_with_size([64])
     expected = X + 5
 
+    MPI = pytest.importorskip("mpi4py.MPI")
     commworld = MPI.COMM_WORLD
     rank = commworld.Get_rank()
     size = commworld.Get_size()
@@ -50,6 +50,7 @@ def test_elementwise_1d(sizes):
         np.testing.assert_allclose(result, expected)
     else:
         func(x=np.zeros((1, ), dtype=np.int64))
+    commworld.Barrier()
 
 
 @pytest.mark.parametrize(
@@ -76,6 +77,7 @@ def test_bcast_simple(sizes):
     Y = arange_with_size([8, 16])
     expected = X + Y
 
+    MPI = pytest.importorskip("mpi4py.MPI")
     commworld = MPI.COMM_WORLD
     rank = commworld.Get_rank()
     size = commworld.Get_size()
@@ -91,6 +93,7 @@ def test_bcast_simple(sizes):
     else:
         func(x=np.zeros((1, ), dtype=np.int64),
              y=np.zeros((1, ), dtype=np.int64))
+    commworld.Barrier()
 
 
 @pytest.mark.parametrize(
@@ -99,7 +102,12 @@ def test_bcast_simple(sizes):
         [1, 1],
         [2, 1],
         [2, 1],
-        # [2, 2], parallelize along the reduction axis
+        [
+            2, 2
+        ],  #parallelize along the reduction axis; this requires in-network reduce
+        [
+            2, 4
+        ],  #parallelize along the reduction axis; this requires in-network reduce
     ])
 def test_reduce_simple(sizes):
     @dace
@@ -119,11 +127,13 @@ def test_reduce_simple(sizes):
     init.schedule = dace.ScheduleType.Sequential
     reduce.schedule = dace.ScheduleType.Sequential
     # only schedule the reduce map.
+    # the init map will be derived
     schedule.lower(sdfg, {reduce.map: sizes})
 
     X = arange_with_size([16, 16])
     expected = X.copy().sum(axis=1)
 
+    MPI = pytest.importorskip("mpi4py.MPI")
     commworld = MPI.COMM_WORLD
     rank = commworld.Get_rank()
     size = commworld.Get_size()
@@ -139,3 +149,4 @@ def test_reduce_simple(sizes):
     else:
         func(x=np.zeros((1, ), dtype=np.int64),
              y=np.zeros((1, ), dtype=np.int64))
+    commworld.Barrier()

@@ -137,6 +137,7 @@ def compute_scatter_color(parent_grid_variables: List[symbolic.symbol],
 def try_construct_subarray(
         sdfg: SDFG, state: SDFGState, pgrid_name: str, global_desc: data.Data,
         subset: subsets.Range, grid_variables: List[symbolic.symbol],
+        scatter: bool,
         dry_run: bool) -> Optional[Tuple[str, str, Optional[str]]]:
     """
     Try to convert the given end of the distributed memlet to a subarray,
@@ -151,6 +152,7 @@ def try_construct_subarray(
     :param subset: The end of the distributed memlet to convert.
     :param grid_variables: The process grid corresponding to the computation to
                            which this is either an input or an output.
+    :param scatter: True if this is for a scatter.
     :param dry_run: If True, don't actually create the grids and subarray.
                     Instead, return None.
     :return: The name of the subarray, the name of the scatter grid and the
@@ -182,13 +184,15 @@ def try_construct_subarray(
         bcast_shape = subgrid_shape(bcast_color)
 
         if not dry_run:
-            scatter_grid_name = sdfg.add_pgrid(shape=scatter_shape,
-                                               parent_grid=pgrid_name,
-                                               color=scatter_color)
+            scatter_grid_name = sdfg.add_pgrid(
+                shape=scatter_shape,
+                parent_grid=pgrid_name,
+                color=scatter_color,
+                exact_grid=None if scatter else 0)
+
             bcast_grid_name = sdfg.add_pgrid(shape=bcast_shape,
                                              parent_grid=pgrid_name,
                                              color=bcast_color)
-
             for name, shape in ((scatter_grid_name, scatter_shape),
                                 (bcast_grid_name, bcast_shape)):
                 distr_utils.initialize_fields(state, [
@@ -280,6 +284,7 @@ class CommunicateSubArrays(pm.ExpandTransformation):
                                        garr,
                                        node.src_subset,
                                        src_vars,
+                                       False,
                                        dry_run=True)
 
             if node.dst_pgrid is not None:
@@ -290,6 +295,7 @@ class CommunicateSubArrays(pm.ExpandTransformation):
                                        garr,
                                        node.dst_subset,
                                        dst_vars,
+                                       False,
                                        dry_run=True)
         except CommunicationSolverException:
             return False
@@ -329,7 +335,14 @@ class CommunicateSubArrays(pm.ExpandTransformation):
                 rvars = src_vars
 
             subarray_name, scatter_grid, bcast_grid = try_construct_subarray(
-                sdfg, state, pgrid_name, garr, subset, rvars, dry_run=False)
+                sdfg,
+                state,
+                pgrid_name,
+                garr,
+                subset,
+                rvars,
+                scatter,
+                dry_run=False)
 
             if scatter:
                 expansion = mpi.BlockScatter(node.label,
@@ -339,8 +352,9 @@ class CommunicateSubArrays(pm.ExpandTransformation):
             else:
                 expansion = mpi.BlockGather(node.label,
                                             subarray_type=subarray_name,
-                                            gather_grid=pgrid_name,
+                                            gather_grid=scatter_grid,
                                             reduce_grid=bcast_grid)
+
 
             # clean up connectors to match the new node
             expansion.add_in_connector("_inp_buffer")
