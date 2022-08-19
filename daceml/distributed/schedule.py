@@ -177,6 +177,10 @@ def rank_tile_map(
     :param state: The state to operate on.
     :param map_nodes: The map nodes to operate on.
     :param num_blocks: The number of blocks to tile the map with in each dimension.
+    :param derived_schedules: A relation to check if schedules derive from
+                              others.
+    :param processed_nodes: The nodes that have already been processed, with
+                            their global-to-local array name mappings.
     :returns: created symbolic variables for each rank axis, and two lists of
               tuples associating global AccessNodes, local AccessNodes and the
               symbolic communication constraints. The first is for reads, the
@@ -293,10 +297,11 @@ def write_variables_per_dimension(
 
 def derive_inplace_schedules(
         sdfg: SDFG,
-        schedule: DistributedSchedule) -> Dict[nodes.Map, nodes.Map]:
+        schedule: DistributedSchedule) -> Dict[nodes.Map, List[nodes.Map]]:
     """
     Derive schedules for inplace operations.
-    updates ``schedule`` inplace, and returns a mapping from map_node to the map_node from which the schedule is derived
+    Updates ``schedule`` inplace, and returns a mapping from map_node to a list
+    all other map_node that share this schedule
     """
 
     # maps are allowed to be missing if the operation is inplace.
@@ -461,6 +466,10 @@ def lower(sdfg: SDFG, schedule: DistributedSchedule):
 
             for (nglobal, nlocal, subset), is_read in to_iter:
                 processed[map_node][nglobal.data] = nlocal.data
+                if not is_read:
+                    # FIXME We don't need to communicate this if it is a
+                    # derived schedule and one of our siblings comes after us.
+                    pass
 
                 full_subset = subsets.Range.from_array(nglobal.desc(sdfg))
 
