@@ -49,7 +49,7 @@ def test_elementwise_1d(sizes):
         result = func(x=X.copy())
         np.testing.assert_allclose(result, expected)
     else:
-        func(x=np.zeros((1, ), dtype=np.float32))
+        func(x=np.zeros((1, ), dtype=np.int64))
 
 
 @pytest.mark.parametrize(
@@ -58,6 +58,7 @@ def test_elementwise_1d(sizes):
         [2, 1, 1],  # fully replicate broadcasted => use 2d broadcast grid
         [2, 2, 1],  # no broadcast grid, 1d scatter grid
         [2, 2, 2],  # no broadcast grid, 2d scatter grid
+        [1, 2, 1],
     ])
 def test_bcast_simple(sizes):
     @dace

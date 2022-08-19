@@ -7,12 +7,12 @@ from dace.libraries import mpi
 
 def initialize_fields(state: SDFGState, fields: List[str]):
     """
-    Add a dummy tasklet to initialize the given fields to the SDFG
+    Add a dummy library node to initialize the given fields to the SDFG
     """
     sdfg = state.parent
-    tasklet = mpi.Dummy("initialize_fields", fields)
+    dummy = mpi.Dummy("initialize_fields", fields)
 
-    state.add_node(tasklet)
+    state.add_node(dummy)
 
     # Pseudo-writing to a dummy variable to avoid removal of Dummy node by transformations.
     dummy_name, scal = sdfg.add_scalar("dummy",
@@ -20,7 +20,7 @@ def initialize_fields(state: SDFGState, fields: List[str]):
                                        transient=True,
                                        find_new_name=True)
     wnode = state.add_write(dummy_name)
-    state.add_edge(tasklet, '__out', wnode, None,
+    state.add_edge(dummy, '__out', wnode, None,
                    dace.Memlet.from_array(dummy_name, scal))
 
 

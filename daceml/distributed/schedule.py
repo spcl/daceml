@@ -12,6 +12,7 @@ from dace import nodes, SDFG, SDFGState, symbolic, subsets, memlet, data
 from dace.sdfg import propagation, utils as sdfg_utils
 from dace.transformation import helpers as xfh
 
+from daceml.autodiff import analysis
 from daceml.util import utils
 
 NumBlocks = List[int]
@@ -80,7 +81,7 @@ def propagate_rank_local_subsets(
     from the original parameter name to the variable name of the rank index.
 
     The two-tuple contains mappings from array names to the subset expressions
-    for the inputs and outputs
+    for the inputs and outputs.
     """
     me, mx = map_nodes
     map_node = me.map
@@ -239,7 +240,13 @@ def rank_tile_map(
 
 def lower(sdfg: SDFG, schedule: DistributedSchedule):
     """
-    Lower with the given schedule
+    Attempt to lower the SDFG to a SPMD MPI SDFG to distribute computation.
+
+    The schedule defines the size of the process grids used to compute each of the parallel maps.
+
+    :param sdfg: The SDFG to lower.
+    :param schedule: The schedule to use.
+    :note: Operates in-place.
     """
 
     missing = set(distr_utils.all_top_level_maps(sdfg)).difference(
@@ -300,6 +307,16 @@ def lower(sdfg: SDFG, schedule: DistributedSchedule):
                                       zip(writes, itertools.repeat(False)))
 
             for (nglobal, nlocal, subset), is_read in to_iter:
+                if not is_read:
+                    # we need to check if this array was written before.
+                    # If it was written before, and the current write is
+                    # write-conflicted, we need to communicate the previously
+                    # written values
+                    if analysis.is_previously_written(sdfg, state, nlocal,
+                                                      nglobal.data):
+                        raise NotImplementedError(
+                            "In place updates not supported yet")
+
                 full_subset = subsets.Range.from_array(nglobal.desc(sdfg))
 
                 global_params = dict(rank_variables=[],
@@ -330,7 +347,7 @@ def lower(sdfg: SDFG, schedule: DistributedSchedule):
                 state.add_edge(comm, None, dst, None,
                                sdfg.make_array_memlet(dst.data))
 
-    sdfg.expand_library_nodes()
+    utils.expand_nodes(sdfg, predicate=lambda n: isinstance(n, node.DistributedMemlet))
 
     # Now that we are done lowering, we can instatiate the process grid
     # variables with zero, since each rank only sees its section of the array
