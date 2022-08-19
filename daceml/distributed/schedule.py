@@ -164,6 +164,15 @@ def rank_tile_map(
     * Handle views correctly
     * Insert rank-local arrays and reroute the map edges to go to the local
       views
+
+    :param sdfg: The SDFG to operate on.
+    :param state: The state to operate on.
+    :param map_nodes: The map nodes to operate on.
+    :param num_blocks: The number of blocks to tile the map with in each dimension.
+    :returns: created symbolic variables for each rank axis, and two lists of
+              tuples associating global AccessNodes, local AccessNodes and the
+              symbolic communication constraints. The first is for reads, the
+              second for writes.
     """
     me, mx = map_nodes
 
@@ -256,7 +265,6 @@ def lower(sdfg: SDFG, schedule: DistributedSchedule):
             f"Missing schedule for maps {', '.join(map(str, missing))}")
 
     # Order the schedule topologically for each state
-
     ordered_maps: Dict[SDFGState, List[nodes.Map]] = {}
 
     for state in sdfg.nodes():
@@ -347,7 +355,8 @@ def lower(sdfg: SDFG, schedule: DistributedSchedule):
                 state.add_edge(comm, None, dst, None,
                                sdfg.make_array_memlet(dst.data))
 
-    utils.expand_nodes(sdfg, predicate=lambda n: isinstance(n, node.DistributedMemlet))
+    utils.expand_nodes(
+        sdfg, predicate=lambda n: isinstance(n, node.DistributedMemlet))
 
     # Now that we are done lowering, we can instatiate the process grid
     # variables with zero, since each rank only sees its section of the array
