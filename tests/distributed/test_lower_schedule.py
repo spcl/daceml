@@ -124,8 +124,6 @@ def test_reduce_simple(sizes):
     else:
         init, reduce = y, x
 
-    init.schedule = dace.ScheduleType.Sequential
-    reduce.schedule = dace.ScheduleType.Sequential
     # only schedule the reduce map.
     # the init map will be derived
     schedule.lower(sdfg, {reduce.map: sizes})
