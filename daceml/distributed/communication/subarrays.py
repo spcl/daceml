@@ -355,7 +355,6 @@ class CommunicateSubArrays(pm.ExpandTransformation):
                                             gather_grid=scatter_grid,
                                             reduce_grid=bcast_grid)
 
-
             # clean up connectors to match the new node
             expansion.add_in_connector("_inp_buffer")
             expansion.add_out_connector("_out_buffer")
