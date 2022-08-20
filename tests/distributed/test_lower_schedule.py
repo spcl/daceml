@@ -102,12 +102,8 @@ def test_bcast_simple(sizes):
         [1, 1],
         [2, 1],
         [2, 1],
-        [
-            2, 2
-        ],  #parallelize along the reduction axis; this requires in-network reduce
-        [
-            2, 4
-        ],  #parallelize along the reduction axis; this requires in-network reduce
+        [2, 2],  #parallelize along the reduction axis with MPI reduce
+        [2, 4],  # parallelize along the reduction axis with MPI reduce
     ])
 def test_reduce_simple(sizes):
     @dace
