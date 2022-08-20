@@ -160,9 +160,16 @@ def try_construct_subarray(
              necessary).
     """
 
+    # squeeze dimensions
+    squeeze = lambda shape: [s for s in shape if s > 1]
+
+    global_shape = squeeze(global_desc.shape)
     pgrid = sdfg.process_grids[pgrid_name]
 
     matched_dimensions = match_subset_axis_to_pgrid(subset, grid_variables)
+    matched_dimensions = [(v, bs)
+                          for i, (v, bs) in enumerate(matched_dimensions)
+                          if global_desc.shape[i] > 1]
 
     if len(matched_dimensions) > len(pgrid.shape):
         # haven't thought about this yet
@@ -171,7 +178,7 @@ def try_construct_subarray(
 
         scatter_color = compute_scatter_color(grid_variables, pgrid.shape,
                                               matched_dimensions)
-        assert sum(scatter_color) == subset.dims()
+        assert sum(scatter_color) == len(global_shape)
         # The broadcast grid provides the data to the ranks that are not
         # covered in the scatter grid.
         # It's always the inverse of the scatter grid.
@@ -232,7 +239,7 @@ def try_construct_subarray(
         else:
             grid_index = symbol_to_idx[p]
 
-            global_block_size = global_desc.shape[i] / pgrid.shape[grid_index]
+            global_block_size = global_shape[i] / scatter_shape[grid_index]
             if global_block_size % bs != 0:
                 return None
 
@@ -247,8 +254,9 @@ def try_construct_subarray(
     if not dry_run:
         # create subarray
         subarray_name = sdfg.add_subarray(dtype=global_desc.dtype,
-                                          shape=global_desc.shape,
-                                          subshape=subset.size_exact(),
+                                          shape=global_shape,
+                                          subshape=squeeze(
+                                              subset.size_exact()),
                                           pgrid=scatter_grid_name,
                                           correspondence=correspondence)
         distr_utils.initialize_fields(state, [

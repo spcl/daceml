@@ -2,6 +2,7 @@
 These tests expect to be with 4 ranks
 """
 import pytest
+import numpy as np
 
 import dace
 
@@ -26,6 +27,30 @@ def test_elementwise_1d(sizes):
 
     X = arange_with_size([64])
     expected = X + 5
+    compile_and_call(sdfg, {'x': X.copy()}, expected, utils.prod(sizes))
+
+
+@pytest.mark.parametrize("sizes", [
+    [2],
+])
+def test_1d_with_empty_dim(sizes):
+    @dace
+    def program(x: dace.int64[64, 1]):
+        y = np.empty_like(x, shape=(64, ))
+        for i in dace.map[0:64]:
+            with dace.tasklet:
+                inp << x[i, 0]
+                out = inp + 5
+                out >> y[i]
+        return y
+
+    sdfg = program.to_sdfg()
+
+    map_entry = find_map_containing(sdfg, "")
+    schedule.lower(sdfg, {map_entry: sizes})
+
+    X = arange_with_size([64, 1])
+    expected = (X + 5).reshape(64)
     compile_and_call(sdfg, {'x': X.copy()}, expected, utils.prod(sizes))
 
 
