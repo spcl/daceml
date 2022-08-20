@@ -1,8 +1,13 @@
-from typing import List, Iterator
+from typing import List, Iterator, Tuple, Union, Dict
+
+import numpy as np
+import pytest
 
 import dace
 from dace import SDFG, SDFGState, nodes, dtypes
+from dace.sdfg import utils as sdfg_utils
 from dace.libraries import mpi
+from daceml.util import utils
 
 
 def initialize_fields(state: SDFGState, fields: List[str]):
@@ -24,7 +29,10 @@ def initialize_fields(state: SDFGState, fields: List[str]):
                    dace.Memlet.from_array(dummy_name, scal))
 
 
-def all_top_level_maps(sdfg: SDFG, yield_parent=False) -> Iterator[nodes.Map]:
+def all_top_level_maps(
+    sdfg: SDFG,
+    yield_parent=False
+) -> Iterator[Union[nodes.Map, Tuple[nodes.Map, SDFGState]]]:
     for state in sdfg.nodes():
         for node in state.scope_children()[None]:
             if isinstance(node, nodes.MapEntry):
@@ -115,3 +123,46 @@ def add_debugprint_tasklet(sdfg: SDFG, state: SDFGState,
                                        find_new_name=True)
     state.add_edge(tasklet, '__out', state.add_write(dummy_name), None,
                    dace.Memlet.from_array(dummy_name, scal))
+
+
+def arange_with_size(size):
+    return np.arange(utils.prod(size), dtype=np.int64).reshape(size).copy()
+
+
+def find_map_containing(sdfg, name) -> nodes.Map:
+    cands = []
+    for node, state in all_top_level_maps(sdfg, yield_parent=True):
+        if name in node.label:
+            cands.append(node)
+    if len(cands) == 1:
+        return cands[0]
+    else:
+        raise ValueError("Found {} candidates for map name {}".format(
+            len(cands), name))
+
+
+def compile_and_call(sdfg, inputs: Dict[str, np.ndarray],
+                     expected_output: np.ndarray, num_required_ranks: int):
+    MPI = pytest.importorskip("mpi4py.MPI")
+    commworld = MPI.COMM_WORLD.Dup()
+    commworld.Barrier()
+    rank = commworld.Get_rank()
+    size = commworld.Get_size()
+
+    if size < num_required_ranks:
+        raise ValueError(
+            "This test requires at least {} ranks".format(num_required_ranks))
+
+    func = sdfg_utils.distributed_compile(sdfg, commworld)
+
+    if rank == 0:
+        result = func(**inputs)
+        np.testing.assert_allclose(result, expected_output)
+    else:
+        dummy_inputs = {
+            k: np.zeros_like(v, shape=(1, ))
+            for k, v in inputs.items()
+        }
+        func(**dummy_inputs)
+    commworld.Barrier()
+    commworld.Free()

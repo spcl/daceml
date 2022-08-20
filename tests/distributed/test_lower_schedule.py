@@ -10,49 +10,8 @@ from dace import nodes
 from dace.sdfg import utils as sdfg_utils
 
 from daceml.util import utils
-from daceml.distributed import schedule, utils as distr_utils
-
-
-def arange_with_size(size):
-    return np.arange(utils.prod(size), dtype=np.int64).reshape(size).copy()
-
-
-def find_map_containing(sdfg, name) -> nodes.MapEntry:
-    cands = []
-    for state in sdfg.nodes():
-        for node in state.nodes():
-            if isinstance(node, nodes.MapEntry) and name in node.label:
-                cands.append(node)
-    if len(cands) == 1:
-        return cands[0]
-    else:
-        raise ValueError("Found {} candidates for map name {}".format(
-            len(cands), name))
-
-
-def compile_and_call(sdfg, inputs: Dict[str, np.ndarray],
-                     expected_output: np.ndarray, num_required_ranks: int):
-    MPI = pytest.importorskip("mpi4py.MPI")
-    commworld = MPI.COMM_WORLD
-    rank = commworld.Get_rank()
-    size = commworld.Get_size()
-
-    if size < num_required_ranks:
-        raise ValueError(
-            "This test requires at least {} ranks".format(num_required_ranks))
-
-    func = sdfg_utils.distributed_compile(sdfg, commworld)
-
-    if rank == 0:
-        result = func(**inputs)
-        np.testing.assert_allclose(result, expected_output)
-    else:
-        dummy_inputs = {
-            k: np.zeros_like(v, shape=(1, ))
-            for k, v in inputs.items()
-        }
-        func(**dummy_inputs)
-    commworld.Barrier()
+from daceml.distributed import schedule
+from daceml.distributed.utils import find_map_containing, compile_and_call, arange_with_size
 
 
 @pytest.mark.parametrize("sizes", [
@@ -67,7 +26,7 @@ def test_elementwise_1d(sizes):
     sdfg = program.to_sdfg()
 
     map_entry = find_map_containing(sdfg, "")
-    schedule.lower(sdfg, {map_entry.map: sizes})
+    schedule.lower(sdfg, {map_entry: sizes})
 
     X = arange_with_size([64])
     expected = X + 5
@@ -92,7 +51,7 @@ def test_bcast_simple(sizes):
     sdfg.simplify()
 
     map_entry = find_map_containing(sdfg, "")
-    schedule.lower(sdfg, {map_entry.map: sizes})
+    schedule.lower(sdfg, {map_entry: sizes})
 
     X = arange_with_size([4, 8, 16])
     Y = arange_with_size([8, 16])
@@ -125,7 +84,7 @@ def test_reduce_simple(sizes):
 
     # only schedule the reduce map.
     # the init map will be derived
-    schedule.lower(sdfg, {reduce.map: sizes})
+    schedule.lower(sdfg, {reduce: sizes})
 
     X = arange_with_size([16, 16])
     expected = X.copy().sum(axis=1)
