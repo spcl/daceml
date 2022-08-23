@@ -215,9 +215,12 @@ class Expand(transformation.ExpandTransformation):
             replication_grid_name = None
 
         pgrid_desc = sdfg.process_grids[partition_grid_name]
-        unique_id = "{}_{}_{}_{}".format("Scatter" if scatter else "Gather",
-                                         sdfg.sdfg_id, sdfg.node_id(state),
-                                         state.node_id(node))
+
+        in_name = state.in_edges(node)[0].data.data
+        out_name = state.in_edges(node)[0].data.data
+        unique_id = "{}_{}_{}_{}_{}_{}".format(
+            "Scatter" if scatter else "Gather", sdfg.sdfg_id,
+            sdfg.node_id(state), state.node_id(node), in_name, out_name)
         mpi_dtype = mpi.utils.MPI_DDT(out_desc.dtype.base_type)
 
         array_desc = inp_desc if scatter else out_desc
