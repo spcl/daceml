@@ -45,6 +45,42 @@ def all_top_level_maps(
                 yield from all_top_level_maps(node.sdfg, yield_parent)
 
 
+def add_sleep_tasklet(sdfg: SDFG, rank: int):
+    code = f"""
+    {{
+        int rank;
+        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+        if (rank == {rank}) {{
+            long pid = getpid();
+            printf("RANK %d: sleeping with PID %ld\\n", rank, pid);
+            // write out the pid
+            auto f = fopen("/tmp/__dace_sleeping_process", "w");
+            fprintf(f, "%ld", pid);
+            fclose(f);
+
+            volatile int i = 0;
+            // sleep
+            while (0 == i)
+                sleep(1);
+        }}
+    }}
+    """
+    tasklet = nodes.Tasklet("sleep_" + str(rank), {}, {"__out"},
+                            code,
+                            language=dtypes.Language.CPP)
+    new_state = sdfg.add_state_before(sdfg.start_state, "sleep_" + str(rank))
+
+    new_state.add_node(tasklet)
+    # Pseudo-writing to a dummy variable to avoid removal of Dummy node by transformations.
+    dummy_name, scal = sdfg.add_scalar("dummy",
+                                       dace.int32,
+                                       transient=True,
+                                       find_new_name=True)
+    wnode = new_state.add_write(dummy_name)
+    new_state.add_edge(tasklet, '__out', wnode, None,
+                       dace.Memlet.from_array(dummy_name, scal))
+
+
 def add_debug_rank_cords_tasklet(sdfg: SDFG):
     """
     Add a tasklet to the start of the SDFG that will print out the process coordinates in each process grid.
@@ -104,10 +140,14 @@ def add_debugprint_tasklet(sdfg: SDFG, state: SDFGState,
     {{
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    printf("RANK %d: {name}[%d] = %d\\n", rank, {indices}, {name}[{indices}]);
+    int value = {name}[{expr}];
+    printf("RANK %d: {name}[{idx_template}] = %d\\n", rank, {indices}, value);
     }}
     """.format(name=node.data,
                loops=loops,
+               expr=" + ".join("i{} * {}".format(i, stride)
+                               for i, stride in enumerate(desc.strides)),
+               idx_template=", ".join(["%d"] * len(desc.shape)),
                indices=",".join(
                    ["i{}".format(i) for i in range(len(desc.shape))]))
 
@@ -144,8 +184,10 @@ def find_map_containing(sdfg, name) -> nodes.Map:
             len(cands), name))
 
 
-def compile_and_call(sdfg, inputs: Dict[str, np.ndarray],
-                     expected_output: np.ndarray, num_required_ranks: int):
+def compile_and_call(sdfg, inputs: Union[Dict[str, np.ndarray],
+                                         List[Dict[str, np.ndarray]]],
+                     expected_output: Union[np.ndarray, List[np.ndarray]],
+                     num_required_ranks: int):
     MPI = pytest.importorskip("mpi4py.MPI")
     commworld = MPI.COMM_WORLD.Dup()
     commworld.Barrier()
@@ -158,14 +200,33 @@ def compile_and_call(sdfg, inputs: Dict[str, np.ndarray],
 
     func = sdfg_utils.distributed_compile(sdfg, commworld)
 
-    if rank == 0:
-        result = func(**inputs)
-        np.testing.assert_allclose(result, expected_output)
+    if isinstance(expected_output, list) and rank < num_required_ranks:
+        assert isinstance(inputs, list)
+        result = func(**inputs[rank])
+        np.testing.assert_allclose(result,
+                                   expected_output[rank],
+                                   err_msg="Rank {} failed".format(rank))
     else:
-        dummy_inputs = {
-            k: np.zeros_like(v, shape=(1, ))
-            for k, v in inputs.items()
-        }
-        func(**dummy_inputs)
+        if isinstance(inputs, list):
+            if rank < num_required_ranks:
+                input = inputs[rank]
+            else:
+                input = {
+                    k: np.zeros_like(v, shape=(1, ))
+                    for k, v in inputs[0].items()
+                }
+        elif rank == 0:
+            input = inputs
+        else:
+            input = {
+                k: np.zeros_like(v, shape=(1, ))
+                for k, v in inputs.items()
+            }
+
+        if rank == 0:
+            result = func(**input)
+            np.testing.assert_allclose(result, expected_output)
+        else:
+            func(**input)
     commworld.Barrier()
     commworld.Free()
