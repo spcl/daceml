@@ -15,12 +15,13 @@ from daceml.distributed.utils import find_map_containing, compile_and_call, aran
     [2],
     [4],
 ])
-def test_elementwise_1d(sizes):
+def test_elementwise_1d(sizes, sdfg_name):
     @dace
     def program(x: dace.int64[64]):
         return x + 5
 
     sdfg = program.to_sdfg()
+    sdfg.name = sdfg_name
 
     map_entry = find_map_containing(sdfg, "")
     schedule.lower(sdfg, {map_entry: sizes})
@@ -30,6 +31,7 @@ def test_elementwise_1d(sizes):
     compile_and_call(sdfg, {'x': X.copy()}, expected, utils.prod(sizes))
 
 
+@pytest.mark.skip("Not implemented")
 @pytest.mark.parametrize("sizes", [
     [2],
 ])
@@ -62,7 +64,7 @@ def test_1d_with_empty_dim(sizes):
         [2, 2, 2],  # no broadcast grid, 2d scatter grid
         [1, 2, 1],
     ])
-def test_bcast_simple(sizes):
+def test_bcast_simple(sizes, sdfg_name):
     @dace
     def program(x: dace.int64[4, 8, 16], y: dace.int64[8, 16]):
         return x + y
@@ -70,6 +72,7 @@ def test_bcast_simple(sizes):
     sdfg = program.to_sdfg()
     sdfg.expand_library_nodes()
     sdfg.simplify()
+    sdfg.name = sdfg_name
 
     map_entry = find_map_containing(sdfg, "")
     schedule.lower(sdfg, {map_entry: sizes})
