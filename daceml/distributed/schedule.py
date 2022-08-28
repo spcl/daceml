@@ -6,6 +6,7 @@ import copy
 import collections
 from typing import List, Tuple, Dict, Set, Optional, Union
 import itertools
+from dace.library import LibraryNode
 
 import networkx as nx
 
@@ -267,9 +268,9 @@ def ordered_nodes_by_state(
         top_level_nodes = set(state.scope_children()[None])
         result_nodes = [
             node.map if isinstance(node, nodes.MapEntry) else node
-            for node in sdfg_utils.dfs_topological_sort(state)
-            if isinstance(node, (nodes.MapEntry,
-                                 nodes.NestedSDFG)) and node in top_level_nodes
+            for node in sdfg_utils.dfs_topological_sort(state) if
+            isinstance(node, (nodes.MapEntry, nodes.NestedSDFG,
+                              nodes.LibraryNode)) and node in top_level_nodes
         ]
         ordered_maps[state] = result_nodes
     return ordered_maps
@@ -278,7 +279,7 @@ def ordered_nodes_by_state(
 def rank_tile_nested(
     sdfg: SDFG,
     state: SDFGState,
-    nnode: nodes.NestedSDFG,
+    nnode: Union[nodes.NestedSDFG, nodes.LibraryNode],
     schedule: DistributedSchedule,
 ) -> Tuple[NumBlocks, RankVariables, GlobalToLocal, GlobalToLocal]:
     """
@@ -290,8 +291,38 @@ def rank_tile_nested(
     * As a result, schedules in the NSDFG must be 'consistent', in that if they
       write to the same array, the communication constraints must be the same
     """
+    if isinstance(nnode, nodes.NestedSDFG):
+        nsdfg = nnode.sdfg
+    else:
+        # We expand to pure only to analyze the memory
+        csdfg = copy.deepcopy(sdfg)
 
-    nsdfg = nnode.sdfg
+        # find the node in the copy
+        cstate = csdfg.node(sdfg.node_id(state))
+        cnode = cstate.node(state.node_id(nnode))
+
+        assert isinstance(cnode, nodes.LibraryNode)
+
+        if 'pure' not in cnode.implementations:
+            raise ValueError(
+                "Can't analyze library node {} in SDFG (has no pure implementation)"
+                .format(cnode))
+        cnode.implementation = 'pure'
+        old_state_nodes = set(cstate.nodes())
+
+        cnode.expand(csdfg, cstate)
+        # try to find the expanded node
+        cands = set(cstate.nodes()).difference(old_state_nodes)
+        assert len(cands) == 1
+        cexpansion = next(iter(cands))
+        nsdfg = cexpansion.sdfg
+
+        # build up the schedule
+        schedule = schedule[nnode]
+        schedule = {
+            distr_utils.find_map_containing(nsdfg, k): v
+            for k, v in schedule.items()
+        }
 
     # rule out unsqueezes
     for edge in itertools.chain(state.in_edges(nnode), state.out_edges(nnode)):
@@ -443,14 +474,15 @@ def rank_tile_nested(
     nsdfg.replace_dict(renamed_rank_variables)
 
     # Swap out the global connectors for local view connectors on the outside of the NSDFG
-    nnode.in_connectors = {
-        global_to_local[k]: v
-        for k, v in nnode.in_connectors.items()
-    }
-    nnode.out_connectors = {
-        global_to_local[k]: v
-        for k, v in nnode.out_connectors.items()
-    }
+    if isinstance(node, nodes.NestedSDFG):
+        nnode.in_connectors = {
+            global_to_local[k]: v
+            for k, v in nnode.in_connectors.items()
+        }
+        nnode.out_connectors = {
+            global_to_local[k]: v
+            for k, v in nnode.out_connectors.items()
+        }
 
     # create outer transients for the local views
     to_iter = itertools.chain(
@@ -471,12 +503,17 @@ def rank_tile_nested(
 
         if is_read:
             reads.append((edge.src, access, constraints[global_name]))
-            redirect_args = dict(new_dst_conn=local_name_in_nsdfg,
-                                 new_src=access)
+            redirect_args = dict(new_src=access)
+            # only rename the dst_conn when the NSDFG is a nested SDFG,
+            # library nodes should retain their original connector names
+
+            if isinstance(nnode, nodes.NestedSDFG):
+                redirect_args['new_dst_conn'] = local_name_in_nsdfg
         else:
             writes.append((edge.dst, access, constraints[global_name]))
-            redirect_args = dict(new_src_conn=local_name_in_nsdfg,
-                                 new_dst=access)
+            redirect_args = dict(new_dst=access)
+            if isinstance(nnode, nodes.NestedSDFG):
+                redirect_args['new_src_conn'] = local_name_in_nsdfg
 
         new_edge = xfh.redirect_edge(state,
                                      edge,
@@ -523,7 +560,8 @@ def lower(sdfg: SDFG, schedule: DistributedSchedule):
 
     for state, top_level_nodes in ordered_nodes.items():
         for top_level_node in top_level_nodes:
-            if isinstance(top_level_node, nodes.NestedSDFG):
+            if isinstance(top_level_node,
+                          (nodes.NestedSDFG, nodes.LibraryNode)):
                 num_blocks, rank_variables, reads, writes = rank_tile_nested(
                     sdfg, state, top_level_node, schedule)
             else:

@@ -5,6 +5,8 @@ import dace
 from dace import nodes
 from dace.transformation import interstate
 from dace.sdfg import utils as sdfg_utils
+import dace.library
+from dace.libraries import blas
 
 from daceml.util import utils
 from daceml.distributed import schedule
@@ -73,20 +75,48 @@ def test_nested_two_maps():
     sdfg.validate()
 
 
-def test_matmul():
+@pytest.mark.parametrize(
+    "use_gemm",
+    [pytest.param(True, id='use_gemm'),
+     pytest.param(False, id='use_pure')])
+@pytest.mark.parametrize(
+    "sizes",
+    [
+        [1, 1, 1],
+        [2, 1, 1],
+        [1, 2, 1],
+        [1, 2, 2],
+        [2, 2, 1],
+        # [2, 4, 1], inconsistent
+    ])
+def test_matmul(sizes, use_gemm):
     @dace
-    def matmul(a: dace.float32[30, 40], b: dace.float32[40, 30]):
+    def matmul(a: dace.float32[40, 40], b: dace.float32[40, 40]):
         return a @ b
 
     sdfg = matmul.to_sdfg()
-    sdfg.expand_library_nodes()
+    utils.expand_nodes(sdfg, predicate=lambda n: isinstance(n, blas.MatMul))
+    if not use_gemm:
+        sdfg.expand_library_nodes()
+        multiply_map = find_map_containing(sdfg, "gemm_map")
+        init_map = find_map_containing(sdfg, "init_map")
+        scheme = {multiply_map: sizes, init_map: sizes[:-1]}
+    else:
+        cands = [
+            n for n in sdfg.node(0).nodes()
+            if isinstance(n, nodes.LibraryNode)
+        ]
+        assert len(cands) == 1
+        lib = cands[0]
+        scheme = {lib: {"gemm_map": sizes, "init_map": sizes[:-1]}}
+    schedule.lower(sdfg, scheme)
 
-    multiply_map = find_map_containing(sdfg, "gemm_map")
-    init_map = find_map_containing(sdfg, "init_map")
-    schedule.lower(sdfg, {multiply_map: [2, 1, 1], init_map: [2, 1]})
-
-    A = np.random.rand(30, 40).astype(np.float32)
-    B = np.random.rand(40, 30).astype(np.float32)
+    A = np.random.rand(40, 40).astype(np.float32)
+    B = np.random.rand(40, 40).astype(np.float32)
 
     expected = A @ B
-    compile_and_call(sdfg, {'a': A.copy(), 'b': B.copy()}, expected, 2)
+    with dace.library.change_default(blas, 'OpenBLAS'):
+        compile_and_call(sdfg, {
+            'a': A.copy(),
+            'b': B.copy()
+        }, expected, utils.prod(sizes))
