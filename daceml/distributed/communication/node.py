@@ -1,13 +1,35 @@
 import dace
 import dace.library
 from dace import nodes, properties, SDFG, SDFGState, subsets
+from dace.transformation import transformation as pm
 
 from . import subarrays
+from . import alltoallv
 
 from daceml.util import utils
 
 #: a placeholder variable that is used for all fully replicated ranks
 FULLY_REPLICATED_RANK = 'FULLY_REPLICATED_RANK'
+
+SOLVERS = {
+    "subarrays": subarrays.CommunicateSubArrays,
+    "scatterv": alltoallv.CommunicateScatterv
+}
+
+
+def solve_memlet(node: 'DistributedMemlet', state: SDFGState, sdfg: SDFG):
+    sdfg_id = sdfg.sdfg_id
+    state_id = sdfg.nodes().index(state)
+    for impl, transformation_type in SOLVERS.items():
+        subgraph = {transformation_type._match_node: state.node_id(node)}
+        transformation = transformation_type()
+        transformation.setup_match(sdfg, sdfg_id, state_id, subgraph, 0)
+        if transformation.can_be_applied(state, 0, sdfg):
+            break
+    else:
+        raise NotImplementedError("No solver could solve for {}".format(node))
+    node.implementation = impl
+    node.expand(sdfg, state)
 
 
 @dace.library.node
@@ -22,10 +44,8 @@ class DistributedMemlet(nodes.LibraryNode):
     """
 
     # Global properties
-    implementations = {
-        "subarrays": subarrays.CommunicateSubArrays,
-    }
-    default_implementation = "subarrays"
+    implementations = SOLVERS
+    default_implementation = "solve"
 
     src_rank_variables = properties.ListProperty(
         element_type=str,
