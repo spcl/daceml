@@ -234,29 +234,41 @@ class Expand(transformation.ExpandTransformation):
         inverse_perm = [
             process_grid_to_array_axis.index(l)
             for l in range(len(array_desc.shape))
+            if l in process_grid_to_array_axis
         ]
+        # all unmapped array dims get broadcasted everywhere
+        unmapped_axes = {
+            i
+            for i in range(len(array_desc.shape))
+            if i not in process_grid_to_array_axis
+        }
+        base_size = utils.prod(array_desc.shape[i] for i in unmapped_axes)
 
         replicated_dims = {
             s.axis
             for s in node.axis_mapping if s.scheme == AxisType.REPLICATE
         }
 
-        repl_dict = dict(array_shape=', '.join(map(str, array_desc.shape)),
-                         strides=', '.join(map(str, array_desc.strides)),
-                         array_dim=len(array_desc.shape),
-                         subshape=', '.join(map(str, subarray_desc.shape)),
-                         subshape_without_replicas=', '.join(
-                             '0' if i in replicated_dims else str(s)
-                             for i, s in enumerate(subarray_desc.shape)),
-                         axis_mapping=', '.join(map(str, inverse_perm)),
-                         parent_grid_name=node.grid_name,
-                         parent_grid_dim=len(
-                             sdfg.process_grids[node.grid_name].shape),
-                         pgrid_name=partition_grid_name,
-                         pgrid_dim=len(pgrid_desc.shape),
-                         node_id=unique_id,
-                         mpi_dtype=mpi_dtype,
-                         ctype=out_desc.dtype.ctype)
+        repl_dict = dict(
+            array_shape=', '.join(map(str, array_desc.shape)),
+            strides=', '.join(map(str, array_desc.strides)),
+            array_dim=len(array_desc.shape),
+            subshape=', '.join(map(str, subarray_desc.shape)),
+            subshape_without_replicas=', '.join(
+                '0' if i in replicated_dims else str(s)
+                for i, s in enumerate(subarray_desc.shape)),
+            axis_mapping=', '.join(map(str, inverse_perm)),
+            parent_grid_name=node.grid_name,
+            parent_grid_dim=len(sdfg.process_grids[node.grid_name].shape),
+            pgrid_name=partition_grid_name,
+            pgrid_dim=len(pgrid_desc.shape),
+            node_id=unique_id,
+            mpi_dtype=mpi_dtype,
+            ctype=out_desc.dtype.ctype,
+            rank_coords_expr=', '.join(
+                map(str, (0 if i in replicated_dims or i in unmapped_axes else
+                          f'rank_coords[axis_mapping[{i}]]'
+                          for i, _ in enumerate(array_desc.shape)))))
 
         init_code = """
         if(__state->{pgrid_name}_valid) {{
@@ -287,10 +299,7 @@ class Expand(transformation.ExpandTransformation):
                 MPI_Cart_coords(__state->{parent_grid_name}_comm, ranks2[0], {parent_grid_dim}, rank_coords);
 
                 // rank coords, but indexed using the axis_mapping.
-                int rank_coords_array[{array_dim}];
-                for (int j = 0; j < {array_dim}; j++) {{
-                    rank_coords_array[j] = rank_coords[axis_mapping[j]];
-                }}
+                int rank_coords_array[{array_dim}] = {{{rank_coords_expr}}};
 
                 __state->{node_id}_displacements[i] = 0;
                 for (int j = 0; j < {array_dim}; j++) {{

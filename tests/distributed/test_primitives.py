@@ -54,17 +54,16 @@ def compute_subarr_shape(global_shape: List[int], mapping: List[AxisScheme],
 
     subshape = []
 
-    for scheme, grid_size in zip(mapping, grid_shape):
-        if scheme.scheme == AxisType.PARTITION:
-            subshape.append(
-                (scheme.axis, global_shape[scheme.axis] // grid_size))
-        elif scheme.scheme == AxisType.REPLICATE:
-            subshape.append((scheme.axis, global_shape[scheme.axis]))
-        elif scheme.scheme == AxisType.BROADCAST:
-            pass
-        else:
-            raise ValueError(f"Unknown scheme {scheme}")
-    return list(map(snd, sorted(subshape, key=fst)))
+    partitioned = {
+        scheme.axis: grid_size
+        for scheme, grid_size in zip(mapping, grid_shape)
+        if scheme.scheme == AxisType.PARTITION
+    }
+
+    return [
+        size if axis not in partitioned else size // partitioned[axis]
+        for axis, size in enumerate(global_shape)
+    ]
 
 
 @pytest.mark.parametrize(
@@ -81,6 +80,8 @@ def compute_subarr_shape(global_shape: List[int], mapping: List[AxisScheme],
         ([2, 2, 2], [4, 4], ['REPLICATE:0', 'BROADCAST:', 'PARTITION:1']),
         ([2, 2], [4], ['REPLICATE:0', 'BROADCAST:']),
         ([2, 2], [4], ['BROADCAST:', 'PARTITION:0']),
+        # more array dims than grid dims
+        ([2, 2], [4, 4, 4], ['PARTITION:0', 'PARTITION:1']),
     ])
 def test_scatter(grid_shape, array_shape, mapping, sdfg_name):
     mapping = str_to_mapping(mapping)

@@ -140,7 +140,12 @@ def try_match_constraint(
     for i, (matched_dim, matched_bs) in enumerate(matched_dimensions):
         if matched_dim is not None:
             continue
-        grid_index = unassigned_dims.pop()
+        if unassigned_dims:
+            # assign to any unused grid dimension
+            grid_index = unassigned_dims.pop()
+        else:
+            # if none are left, exit: unmapped array dimensions are broadcasted automatically
+            break
         scheme = grid_array.AxisScheme(axis=i,
                                        scheme=grid_array.AxisType.REPLICATE)
         axis_mapping[grid_index] = scheme
