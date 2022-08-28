@@ -71,3 +71,22 @@ def test_nested_two_maps():
 
     schedule.lower(sdfg, {elementwise: [2, 2, 2], init: [2, 2]})
     sdfg.validate()
+
+
+def test_matmul():
+    @dace
+    def matmul(a: dace.float32[30, 40], b: dace.float32[40, 30]):
+        return a @ b
+
+    sdfg = matmul.to_sdfg()
+    sdfg.expand_library_nodes()
+
+    multiply_map = find_map_containing(sdfg, "gemm_map")
+    init_map = find_map_containing(sdfg, "init_map")
+    schedule.lower(sdfg, {multiply_map: [2, 1, 1], init_map: [2, 1]})
+
+    A = np.random.rand(30, 40).astype(np.float32)
+    B = np.random.rand(40, 30).astype(np.float32)
+
+    expected = A @ B
+    compile_and_call(sdfg, {'a': A.copy(), 'b': B.copy()}, expected, 2)

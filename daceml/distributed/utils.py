@@ -199,13 +199,15 @@ def compile_and_call(sdfg, inputs: Union[Dict[str, np.ndarray],
             "This test requires at least {} ranks".format(num_required_ranks))
 
     func = sdfg_utils.distributed_compile(sdfg, commworld)
+    assert_args = dict(atol=1e-5, rtol=1e-5)
 
     if isinstance(expected_output, list) and rank < num_required_ranks:
         assert isinstance(inputs, list)
         result = func(**inputs[rank])
         np.testing.assert_allclose(result,
                                    expected_output[rank],
-                                   err_msg="Rank {} failed".format(rank))
+                                   err_msg="Rank {} failed".format(rank),
+                                   **assert_args)
     else:
         if isinstance(inputs, list):
             if rank < num_required_ranks:
@@ -225,7 +227,7 @@ def compile_and_call(sdfg, inputs: Union[Dict[str, np.ndarray],
 
         if rank == 0:
             result = func(**input)
-            np.testing.assert_allclose(result, expected_output)
+            np.testing.assert_allclose(result, expected_output, **assert_args)
         else:
             func(**input)
     commworld.Barrier()

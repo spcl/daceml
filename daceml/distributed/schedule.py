@@ -303,6 +303,7 @@ def rank_tile_nested(
     ordered_maps = ordered_nodes_by_state(nsdfg)
 
     rank_variables: Dict[str, int] = {}
+    renamed_rank_variables: Dict[str, str] = {}
     num_fully_replicated: int = 0
 
     constraints: Dict[str, subsets.Range] = {}
@@ -403,15 +404,17 @@ def rank_tile_nested(
                     raise ValueError(
                         "Inconsistent constraints found within map")
 
-                renaming.update(match)
+                for original, wild in wilds.items():
+                    renaming[original] = match[wild]
 
             map_num_replicated = 0
             # now check that the block sizes are consistent
             # The should already be consistent due to the sympy matching above,
             # but let's make sure anyway
             for v, bs in zip(map_rank_variables, num_blocks):
-                if v in renaming:
-                    v = renaming[v]
+                if v.name in renaming:
+                    renamed_rank_variables[v.name] = renaming[v.name].name
+                    v = renaming[v.name]
 
                 if v.name == node.FULLY_REPLICATED_RANK:
                     map_num_replicated += 1
@@ -435,6 +438,9 @@ def rank_tile_nested(
     ordered_rank_variables += [node.FULLY_REPLICATED_RANK
                                ] * num_fully_replicated
     block_sizes += [1] * num_fully_replicated
+
+    # replace renamed rank variables
+    nsdfg.replace_dict(renamed_rank_variables)
 
     # Swap out the global connectors for local view connectors on the outside of the NSDFG
     nnode.in_connectors = {
