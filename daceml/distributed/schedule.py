@@ -6,6 +6,8 @@ import copy
 import collections
 from typing import List, Tuple, Dict, Set, Optional, Union
 import itertools
+import functools
+
 from dace.library import LibraryNode
 
 import networkx as nx
@@ -400,6 +402,8 @@ def rank_tile_nested(
                 previous_constraint = constraints[name]
 
                 is_symbol = lambda x: x.is_symbol
+                block_size_matches = lambda s, x: rank_variables[
+                    x.name] == map_block_size_per_symbol[s]
                 # try to match the constraints
 
                 used_symbols = set(subset.free_symbols)
@@ -414,8 +418,8 @@ def rank_tile_nested(
                 wilds = {
                     s: sp.Wild(new_symbol_name(f"i{i}"),
                                properties=[
-                                   is_symbol, lambda x: rank_variables[x.name]
-                                   == map_block_size_per_symbol[s]
+                                   is_symbol,
+                                   functools.partial(block_size_matches, s)
                                ])
                     for i, s in enumerate(subset.free_symbols)
                 }
@@ -474,7 +478,7 @@ def rank_tile_nested(
     nsdfg.replace_dict(renamed_rank_variables)
 
     # Swap out the global connectors for local view connectors on the outside of the NSDFG
-    if isinstance(node, nodes.NestedSDFG):
+    if isinstance(nnode, nodes.NestedSDFG):
         nnode.in_connectors = {
             global_to_local[k]: v
             for k, v in nnode.in_connectors.items()
