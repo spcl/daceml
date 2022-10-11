@@ -19,7 +19,7 @@ from dace.frontend.python import newast
 from daceml.util.utils import all_equal, find_str_not_in_set, expand_nodes
 from daceml.autodiff import analysis as autodiff_analysis
 
-from daceml.autodiff.library.library import Array, BackwardPass
+from daceml.autodiff.library.library import ParameterArray, BackwardPass
 
 TensorOrTensors = Union[str, Sequence[str]]
 
@@ -34,9 +34,7 @@ def backward(pv: newast.ProgramVisitor,
     Adds a backward pass node to the SDFG.
 
     This function analyses the the dependency tree of the tensors and computes
-    gradients for each Parameter (i.e.
-    :class:``daceml.autograd.library.Array``) that was used to compute the
-    tensors.
+    gradients for each Parameter that was used to compute the tensors.
     """
 
     if isinstance(tensors, str):
@@ -104,11 +102,11 @@ def backward(pv: newast.ProgramVisitor,
     to_compute = {
         dependency
         for tensor in tensors for dependency in dependencies[tensor]
-        if isinstance(sdfg.arrays[dependency], Array)
+        if isinstance(sdfg.arrays[dependency], ParameterArray)
     }
 
     for param in to_compute:
-        param_desc: Array = sdfg.arrays[param]
+        param_desc: ParameterArray = sdfg.arrays[param]
         grad_name = param_desc.add_gradient_buffer(sdfg, param)
 
         conn_name = find_str_not_in_set(bwd_node.out_connectors, grad_name)
@@ -119,7 +117,7 @@ def backward(pv: newast.ProgramVisitor,
                        sdfg.make_array_memlet(grad_name))
 
 
-@op_repository.replaces_attribute('Array', 'grad')
+@op_repository.replaces_attribute('ParameterArray', 'grad')
 def grad(pv: 'ProgramVisitor', sdfg: SDFG, state: SDFGState, arr: str) -> str:
     """
     Returns the name of the gradient buffer of the given array.
@@ -132,7 +130,7 @@ def grad(pv: 'ProgramVisitor', sdfg: SDFG, state: SDFGState, arr: str) -> str:
         raise common.DaceSyntaxError(pv, None,
                                      "Array {} is not defined".format(arr))
     desc = sdfg.arrays[arr]
-    if not isinstance(desc, Array):
+    if not isinstance(desc, ParameterArray):
         raise common.DaceSyntaxError(
             pv, None,
             "Called .grad on an Array that was not a Parameter. Convert it to a parameter "
@@ -146,15 +144,14 @@ def grad(pv: 'ProgramVisitor', sdfg: SDFG, state: SDFGState, arr: str) -> str:
 def requires_grad_(pv: newast.ProgramVisitor, sdfg: SDFG, state: SDFGState,
                    self: str):
     """
-    Converts a array to a Parameter (i.e.
-    :class:``daceml.autograd.library.Array``). This creates a descriptor for
+    Converts a array to a ParameterArray. This creates a descriptor for
     the gradient buffer for this array.
     """
 
     if self not in sdfg.arrays:
         raise common.DaceSyntaxError(pv, None,
                                      "Array {} is not defined".format(self))
-    Array.make_parameter(sdfg, self)
+    ParameterArray.make_parameter(sdfg, self)
 
 
 @op_repository.replaces_method('Array', 'backward')

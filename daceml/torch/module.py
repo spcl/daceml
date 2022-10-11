@@ -402,8 +402,8 @@ class DaceModule(nn.Module, frontend_common.SDFGConvertible):
         for name, param in self._exported_parameters.items():
             onnx_name = clean_onnx_name(name)
             if param.requires_grad:
-                autodiff_library.Array.make_parameter(self.sdfg, onnx_name)
-
+                autodiff_library.ParameterArray.make_parameter(
+                    self.sdfg, onnx_name)
         return self.sdfg
 
     def _add_gradient_buffers(self) -> List[str]:
@@ -427,8 +427,10 @@ class DaceModule(nn.Module, frontend_common.SDFGConvertible):
                 param.grad = torch.empty_like(param.data)
 
                 # add gradient buffer descriptor to sdfg
-                autodiff_library.Array.make_parameter(self.sdfg, onnx_name)
-                desc: autodiff_library.Array = self.sdfg.arrays[onnx_name]
+                autodiff_library.ParameterArray.make_parameter(
+                    self.sdfg, onnx_name)
+                desc: autodiff_library.ParameterArray = self.sdfg.arrays[
+                    onnx_name]
                 grad_name = desc.add_gradient_buffer(self.sdfg, onnx_name)
                 grad_desc = self.sdfg.arrays[grad_name]
                 grad_desc.transient = False

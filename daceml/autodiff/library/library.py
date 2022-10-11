@@ -18,11 +18,9 @@ from daceml.util.utils import in_edge_with_name
 
 
 @properties.make_properties
-class Array(data.Array):
+class ParameterArray(data.Array):
     """
     A array for which a gradient can be computed.
-
-    This also has to have the name 'Array' because otherwise none of the python frontend replacements work.
     """
     # since this can be None, this is not a DataProperty
     gradient = properties.Property(dtype=str,
@@ -82,7 +80,8 @@ class Array(data.Array):
 
                 for name in nested_names:
                     nested_desc = node.sdfg.arrays[name]
-                    if isinstance(nested_desc, Array) and nested_desc.gradient:
+                    if isinstance(nested_desc,
+                                  ParameterArray) and nested_desc.gradient:
                         cands.add(nested_desc.gradient)
 
         if len(cands) > 1:
@@ -115,21 +114,21 @@ class Array(data.Array):
         :param name: the name of the array.
         """
         desc = sdfg.arrays[name]
-        if isinstance(desc, Array):
+        if isinstance(desc, ParameterArray):
             return
 
-        new_desc = Array(desc.dtype,
-                         desc.shape,
-                         storage=desc.storage,
-                         location=desc.location,
-                         allow_conflicts=desc.allow_conflicts,
-                         transient=desc.transient,
-                         strides=desc.strides,
-                         offset=desc.offset,
-                         lifetime=desc.lifetime,
-                         alignment=desc.alignment,
-                         debuginfo=desc.debuginfo,
-                         total_size=desc.total_size)
+        new_desc = ParameterArray(desc.dtype,
+                                  desc.shape,
+                                  storage=desc.storage,
+                                  location=desc.location,
+                                  allow_conflicts=desc.allow_conflicts,
+                                  transient=desc.transient,
+                                  strides=desc.strides,
+                                  offset=desc.offset,
+                                  lifetime=desc.lifetime,
+                                  alignment=desc.alignment,
+                                  debuginfo=desc.debuginfo,
+                                  total_size=desc.total_size)
         sdfg.arrays[name] = new_desc
 
 

@@ -13,7 +13,12 @@ See :ref:`dev` for more details on the ``Makefile``.
 
 Installing ONNXRuntime
 ----------------------
-DaCeML executes ONNX operators using `ONNXRuntime <https://github.com/microsoft/onnxruntime>`_ by default. To enable this, a patched version [#f1]_ of ONNXRuntime needs to be installed and setup.
+Many ONNX operators include data-centric implementations that DaCeML uses for
+lowering and analysis (:ref:`Pure Implementations`).
+When such an implementation doesn't exist,
+DaCeML can execute ONNX operators using `ONNXRuntime <https://github.com/microsoft/onnxruntime>`_.
+To enable this, a
+patched version [#f1]_ of ONNXRuntime needs to be installed and setup.
 
 ONNXRuntime can be installed from source or from a prebuilt release.
 
