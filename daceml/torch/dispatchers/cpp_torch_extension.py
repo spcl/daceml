@@ -15,7 +15,7 @@ from dace.codegen import targets, compiler
 from dace.codegen.codeobject import CodeObject
 from dace.codegen.compiled_sdfg import CompiledSDFG
 from dace.codegen.prettycode import CodeIOStream
-from dace.codegen.targets.common import sym2cpp
+from dace.codegen.common import sym2cpp
 
 from daceml.autodiff import BackwardResult
 from daceml.torch.environments import PyTorch
