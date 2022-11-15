@@ -2,6 +2,7 @@ import inspect
 import copy
 from typing import Dict, Tuple, Optional, Callable, Union, Any
 import functools
+import textwrap
 
 import dace
 from dace import SDFGState, SDFG, dtypes, nodes
@@ -205,5 +206,20 @@ def python_pure_op_implementation(func, **compute: Dict[str, Callable]):
                                     state,
                                     node,
                                     extra_vars=extra_vars)
+
+    doc = \
+    """
+Pure implementation parsed with
+:func:`~daceml.onnx.op_implementations.utils.python_pure_op_implementation`.
+
+.. code :: python
+
+"""
+    doc += textwrap.indent(inspect.getsource(func), prefix="    ")
+
+    PureImpl.__module__ = func.__module__
+    PureImpl.__name__ = func.__name__
+    PureImpl.__qualname__ = func.__qualname__
+    PureImpl.__doc__ = doc
 
     return PureImpl
