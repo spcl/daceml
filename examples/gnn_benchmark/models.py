@@ -24,7 +24,7 @@ class GCN(torch.nn.Module):
 
 
 class LinearModel(torch.nn.Module):
-    def __init__(self, num_node_features, _unused, num_classes) -> None:
+    def __init__(self, num_node_features, _unused, num_classes, _unused2) -> None:
         super().__init__()
         self.lin = nn.Linear(num_node_features, num_classes)
 

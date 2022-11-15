@@ -1,6 +1,7 @@
 import argparse
-import copy
 import logging
+import statistics
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -24,22 +25,62 @@ np.random.seed(42)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
+def stats_as_string(times, func_names, model, hidden_size):
+    """ Print timing statistics.
+    :param times: the result of time_funcs.
+    :param func_names: a name to use for each function timed.
+    """
+
+    out = ''
+    for name, func_time, in zip(func_names, times):
+        row = [
+            name,
+            model,
+            hidden_size,
+            min(func_time),
+            statistics.mean(func_time),
+            statistics.median(func_time),
+            statistics.stdev(func_time) if len(func_time) > 1 else 0.0,
+            max(func_time)
+        ]
+        out += ','.join(map(str, row)) + '\n'
+    return out
+
+
+def check_correctness(dace_model, torch_model, dace_args, torch_dense_args):
+    dace_pred = dace_model(*dace_args)
+    torch_pred = torch_model(*torch_dense_args)
+    dace_pred_cpu = dace_pred.detach().cpu()
+    torch_pred_cpu = torch_pred.detach().cpu()
+    if np.allclose(dace_pred_cpu, torch_pred_cpu, atol=1.0e-5):
+        print("\n==== Results correct.  ☆ ╰(o＾◡＾o)╯ ☆ ====")
+        return True
+    else:
+        print("\n****** INCORRECT RESULTS! (ノಥ﹏ಥ)ノ彡┻━┻ ******")
+        print("Max abs error: ", abs((dace_pred_cpu - torch_pred_cpu)).max())
+        print(dace_pred_cpu - torch_pred_cpu)
+        return False
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='benchmark')
     parser.add_argument('--small', action='store_true')
     parser.add_argument('--dry', action='store_true')
     parser.add_argument('--onlydace', action='store_true')
-    parser.add_argument('--no-normalize', action='store_true')
+    parser.add_argument('--normalize', action='store_true')
     parser.add_argument('--persistent-mem', action='store_true')
     parser.add_argument('--opt', action='store_true')
     parser.add_argument('--threadblock-dynamic', action='store_true')
     parser.add_argument('--model', choices=['gcn', 'gat', 'linear'])
     parser.add_argument('--hidden', type=int, default=None, required=True)
+    parser.add_argument('--outfile', type=str, default=None)
+    parser.add_argument('--name', type=str, default='dace')
     args = parser.parse_args()
     models = {'gcn': GCN, 'linear': LinearModel, 'gat': GAT}
     model_class = models[args.model]
     num_hidden_features = args.hidden
     args.hidden = args.hidden or (8 if args.model == 'gat' else 512)
+    outfile = Path(args.outfile) if args.outfile is not None else None
 
     log = logging.getLogger(__name__)
     log.setLevel(logging.INFO)
@@ -53,14 +94,15 @@ if __name__ == '__main__':
         _x = torch.tensor([[0., 1], [1, 1], [-1, 0]]).to(device)
         _edge_index = torch.tensor(
             [[0, 0, 0, 2, 2], [0, 1, 2, 0, 2]]).to(device)
-        data = Data(x=_x, edge_index=_edge_index)
+        _edge_attr = torch.tensor([1, 1, 1, 1., 1]).to(device)
+        data = Data(x=_x, edge_index=_edge_index, edge_attr=_edge_attr)
         num_node_features = _x.shape[1]
         num_classes = 2
 
     print("Num node features: ", num_node_features)
     print("Num classes: ", num_classes)
     print("Num hidden features: ", num_hidden_features)
-    normalize = not args.no_normalize
+    normalize = args.normalize
     print("Normalize: ", normalize)
 
     if args.model == 'gcn':
@@ -100,6 +142,8 @@ if __name__ == '__main__':
         dace_args += (edge_weights,)
         torch_dense_args += (data.edge_weight,)
 
+    correct = check_correctness(dace_model, torch_model, dace_args, torch_dense_args)
+
     if args.onlydace:
         print('Only dace model for profiling.')
         print("Dace: ", dace_model(*dace_args))
@@ -118,7 +162,7 @@ if __name__ == '__main__':
             lambda: torch_model(*torch_dense_args),
         ]
 
-        func_names = ['dace', 'torch_sparse', 'torch_dense']
+        func_names = [args.name, 'torch_sparse', 'torch_dense']
         times = time_funcs(funcs,
                            func_names=func_names,
                            warmups=10,
@@ -127,14 +171,12 @@ if __name__ == '__main__':
         print_time_statistics(times, func_names)
         print()
 
-    dace_pred = dace_model(*dace_args)
-    torch_pred = torch_model(*torch_dense_args)
+        if outfile is not None and correct:
+            add_header = not outfile.exists()
+            with open(outfile, 'a') as file:
+                if add_header:
+                    headers = ['Name', 'Model', 'Size', 'Min', 'Mean', 'Median', 'Stdev', 'Max']
+                    file.write(','.join(headers) + '\n')
+                file.write(stats_as_string(times, func_names, args.model, args.hidden))
 
-    dace_pred_cpu = dace_pred.detach().cpu()
-    torch_pred_cpu = torch_pred.detach().cpu()
-    if np.allclose(dace_pred_cpu, torch_pred_cpu, atol=1.0e-5):
-        print("\n==== Results correct.  ☆ ╰(o＾◡＾o)╯ ☆ ====")
-    else:
-        print("\n****** INCORRECT RESULTS! (ノಥ﹏ಥ)ノ彡┻━┻ ******")
-        print("Max abs error: ", abs((dace_pred_cpu - torch_pred_cpu)).max())
-        print(dace_pred_cpu - torch_pred_cpu)
+

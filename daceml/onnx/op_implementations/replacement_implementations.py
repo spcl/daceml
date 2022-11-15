@@ -132,8 +132,8 @@ class GATConv(ONNXForward):
             # Transform input features.
             features = dace.define_local(
                 (N, heads, num_out_features), dtype=dtype)
-            features[:] = np.reshape(np.einsum(
-                'ij,kj->ik', node_features, lin_srcDOTweight), (N, heads, num_out_features))
+            features_tmp = np.einsum('ij,kj->ik', node_features, lin_srcDOTweight)
+            features[:] = np.reshape(features_tmp, (N, heads, num_out_features))
             # Compute node attention coefficients.
             alpha_src = np.sum(features * att_src, axis=-1)  # shape: N x H
             alpha_dst = np.sum(features * att_dst, axis=-1)  # N x H
@@ -209,7 +209,7 @@ class GATConv(ONNXForward):
             def bias_prog(node_features, rowptrs, columns, lin_srcDOTweight, att_src, att_dst, bias, output):
                 prog_sparse(node_features, rowptrs, columns,
                             lin_srcDOTweight, att_src, att_dst, output)
-                for i, j in dace.map[0:N, 0:num_out_features]:
+                for i, j in dace.map[0:N, 0:num_out_features * heads]:
                     output[i, j] += bias[j]
 
             return program_for_node(bias_prog, sdfg, state, node)

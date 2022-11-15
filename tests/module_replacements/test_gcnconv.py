@@ -5,8 +5,10 @@ from torch import nn
 from torch_geometric.nn import GCNConv
 from torch_sparse import SparseTensor
 
-from daceml.pytorch.module import dace_module, DaceModule
+from daceml.torch.module import dace_module, DaceModule
 
+torch.backends.cuda.matmul.allow_tf32 = False
+torch.backends.cudnn.allow_tf32 = False
 
 @pytest.mark.parametrize("bias", [False, True], ids=['', 'bias'])
 @pytest.mark.parametrize("self_loops", [False], ids=[''])
@@ -34,11 +36,12 @@ def test_gcnconv(normalize, self_loops, bias):
     model = GCN()
 
     edges = torch.tensor([[0, 0, 0, 2, 2], [0, 1, 2, 0, 2]])
-    adj_matrix = SparseTensor.from_edge_index(edges)
-    rowptr, col, _ = adj_matrix.csr()
+    edge_values = torch.tensor([1., 2., 3., 4., 5.])
+    adj_matrix = SparseTensor.from_edge_index(edges, edge_attr=edge_values)
+    rowptr, col, edge_vals = adj_matrix.csr()
     x = torch.tensor([[0., 1], [1, 1], [-1, 0]])
 
-    pred = model(x, rowptr, col)
+    pred = model(x, rowptr, col, edge_vals)
 
     original_gcnconv = GCNConv(
         2, 3, bias=bias, normalize=normalize, add_self_loops=self_loops)
@@ -65,12 +68,12 @@ def test_gcnconv_full_model(seed):
     num_hidden_features = 3 * size
     num_classes = 8
 
-    weights_values_1 = torch.randn((num_hidden_features, num_in_features), generator=rng)
-    bias_values_1 = torch.randn((num_hidden_features,), generator=rng)
-    weights_values_2 = torch.randn((num_classes, num_hidden_features), generator=rng)
-    bias_values_2 = torch.randn((num_classes,), generator=rng)
-    x = torch.randn((num_nodes, num_in_features), generator=rng)
-    edges = torch.randint(low=0, high=2, size=(num_nodes, num_nodes), generator=rng)
+    weights_values_1 = torch.randn((num_hidden_features, num_in_features), generator=rng) / 10
+    bias_values_1 = torch.randn((num_hidden_features,), generator=rng) / 10
+    weights_values_2 = torch.randn((num_classes, num_hidden_features), generator=rng) / 10
+    bias_values_2 = torch.randn((num_classes,), generator=rng) / 10
+    x = torch.randn((num_nodes, num_in_features), generator=rng) / 10
+    edges = torch.randint(low=0, high=2, size=(num_nodes, num_nodes), generator=rng) / 10
 
     class GCN(torch.nn.Module):
         def __init__(self):
@@ -78,7 +81,6 @@ def test_gcnconv_full_model(seed):
             self.conv1 = GCNConv(num_in_features, num_hidden_features, normalize=False, add_self_loops=False)
             self.conv2 = GCNConv(num_hidden_features, num_classes, normalize=False, add_self_loops=False)
             self.act = nn.ReLU()
-            self.log_softmax = nn.LogSoftmax(dim=1)
 
             self.conv1.lin.weight = nn.Parameter(weights_values_1)
             self.conv1.bias = nn.Parameter(bias_values_1)
@@ -89,15 +91,15 @@ def test_gcnconv_full_model(seed):
             x = self.conv1(x, *edge_info)
             x = self.act(x)
             x = self.conv2(x, *edge_info)
-            return self.log_softmax(x)
+            return x
 
     torch_model = GCN()
     dace_model = DaceModule(GCN(), sdfg_name=f'GCN_{seed}')
 
     adj_matrix = SparseTensor.from_dense(edges)
-    rowptr, col, _ = adj_matrix.csr()
+    rowptr, col, edges = adj_matrix.csr()
 
-    pred = dace_model(x, rowptr, col, torch.ones_like(col, dtype=torch.float32))
+    pred = dace_model(x, rowptr, col, edges)
 
     # PyG requires that the adj matrix is transposed when using SparseTensor.
     expected_pred = torch_model(x, adj_matrix.t()).detach().numpy()

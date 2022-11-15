@@ -5,29 +5,22 @@ from torch import nn
 from torch_geometric.nn import GATConv
 from torch_sparse import SparseTensor
 
-from daceml.pytorch.module import dace_module
+from daceml.torch.module import dace_module
 
+torch.backends.cuda.matmul.allow_tf32 = False
+torch.backends.cudnn.allow_tf32 = False
 
 @pytest.mark.parametrize("bias", [False, True], ids=['', 'bias'])
 @pytest.mark.parametrize("heads", [1, 2, 3])
 @pytest.mark.pure
 def test_gatconv(bias, heads):
-    bias_values = torch.Tensor([0.21, 0.37, 0])
-    if heads == 1:
-        weights_values = torch.Tensor([[1, 1], [0, 0], [1, 0]])
-        att_src_values = torch.Tensor([[[1, 0.45, 1]]])
-        att_dst_values = torch.Tensor([[[1, -0.74, 1]]])
-    elif heads == 2:
-        weights_values = torch.Tensor([[1, 1], [0, 0], [1, 0], [1, -2], [3, 0], [1, 0]])
-        att_src_values = torch.Tensor([[[1, 0.45, 1], [1, 0, 1]]])
-        att_dst_values = torch.Tensor([[[3, 0.45, 1], [-1, 0, 1]]])
-    elif heads == 3:
-        weights_values = torch.Tensor([[1, 1], [0, 0], [1, 0], [1, -2], [3, 0], [1, 0], [1, 4], [0, 5], [1, 0]])
-        att_src_values = torch.Tensor([[[1, 0.45, 1], [1, 0, 1], [1, -1.45, 1]]])
-        att_dst_values = torch.Tensor([[[3, 0.45, 1], [-1, 0, 1], [1, -1.74, 1]]])
+    bias_values = torch.Tensor([0.21, 0.37, 0] * heads)
+    weights_values = torch.Tensor([[1, 1], [0, 0], [1, 0], [1, -2], [3, 0], [1, 0], [1, 4], [0, 5], [1, 0]])[:3 * heads]
+    att_src_values = torch.Tensor([[[1, 0.45, 1], [1, 0, 1], [1, -1.45, 1]]])[:, :heads]
+    att_dst_values = torch.Tensor([[[3, 0.45, 1], [-1, 0, 1], [1, -1.74, 1]]])[:, :heads]
 
 
-    @dace_module(sdfg_name=f'GAT_{bias}')
+    @dace_module(sdfg_name=f'GAT_{bias}_{heads}')
     class GAT(torch.nn.Module):
         def __init__(self):
             super().__init__()
@@ -64,4 +57,4 @@ def test_gatconv(bias, heads):
 
     print('\nCalculated: \n', pred)
     print('Expected: \n', expected_pred)
-    assert np.allclose(pred, expected_pred)
+    assert np.allclose(pred, expected_pred, atol=1.0e-5)
