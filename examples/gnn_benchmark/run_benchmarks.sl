@@ -17,8 +17,27 @@ conda activate env
 module load cuda/11.4.0
 export LIBRARY_PATH=/users/jbazinsk/miniconda3/envs/env/lib/:$LIBRARY_PATH
 
-outfile=./out.csv
-for hidden in 16 128 512; do
-  echo python benchmark.py --hidden $hidden --outfile $outfile --model gat
-  python benchmark.py --hidden $hidden --outfile $outfile --model gat
+rm -rf ./.dacecache
+
+do_test=
+
+outfile=./out-$(hostname -s)-$(date +%d.%m.%H.%M)-$SLURM_JOB_ID.csv
+## GAT
+model=gat
+for hidden in 8 32 128 512; do
+  echo "Hidden" $hidden
+  rm -rf .dacecache
+  $do_test python benchmark.py --hidden $hidden --outfile $outfile --model $model --opt
+  rm -rf .dacecache
+  $do_test python benchmark.py --hidden $hidden --outfile $outfile --model $model --persistent-mem --threadblock-dynamic --opt
+done
+
+## GCN
+model=gcn
+for hidden in 8 32 128 512; do
+  echo "Hidden" $hidden
+  rm -rf .dacecache
+  $do_test python benchmark.py --hidden $hidden --outfile $outfile --model $model --opt
+  rm -rf .dacecache
+  $do_test python benchmark.py --hidden $hidden --outfile $outfile --model $model --persistent-mem --opt --threadblock-dynamic
 done

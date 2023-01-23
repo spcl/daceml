@@ -29,37 +29,39 @@ class GCNConv(ONNXForward):
         do_normalize = node.module.normalize
 
         def prog_sparse(node_features, rowptrs, columns, edge_vals, linDOTweight, output):
-            # node_features: input features, N x M
-            # rowptrs: row pointers (CSR format), N+1
-            # columns: col, num_entries
-            # edge_vals: values, num_entries
-            # linDOTweight: F x M
-            # output: N x F
+            """
+            node_features: input features, N x M
+            rowptrs: row pointers (CSR format), N+1
+            columns: col, num_entries
+            edge_vals: values, num_entries
+            linDOTweight: F x M
+            output: N x F
+            """
 
             vals = edge_vals
-            if do_normalize:
-                degrees = np.zeros((N,), dtype=dtype)
-                # The following loop is not the best.
-                for entry_idx in dace.map[0:num_entries]:
-                    with dace.tasklet:
-                        col << columns(1)[entry_idx]
-                        in_deg << degrees(1)
-                        out_deg[col] = in_deg[col] + 1
-                        out_deg >> degrees(1)
-
-                norm = 1 / np.sqrt(degrees)
-                norm[degrees == 0] = 0  # Get rid of nans.
-                for l in dace.map[0:N]:
-                    rstart = rowptrs[l]
-                    rend = rowptrs[l + 1]
-                    for v in dace.map[rstart:rend]:
-                        # vals[v] *= norm[l] * norm[columns[v]]
-                        with dace.tasklet:
-                            colv << columns(1)[v]
-                            tmp_norm << norm(2)
-                            in_val << vals(1)[v]
-                            out_val = in_val * tmp_norm[l] * tmp_norm[colv]
-                            out_val >> vals(1)[v]
+            # if do_normalize:
+            #     degrees = np.zeros((N,), dtype=dtype)
+            #     # The following loop is not the best.
+            #     for entry_idx in dace.map[0:num_entries]:
+            #         with dace.tasklet:
+            #             col << columns(1)[entry_idx]
+            #             in_deg << degrees(1)
+            #             out_deg[col] = in_deg[col] + 1
+            #             out_deg >> degrees(1)
+            #
+            #     norm = 1 / np.sqrt(degrees)
+            #     norm[degrees == 0] = 0  # Get rid of nans.
+            #     for l in dace.map[0:N]:
+            #         rstart = rowptrs[l]
+            #         rend = rowptrs[l + 1]
+            #         for v in dace.map[rstart:rend]:
+            #             # vals[v] *= norm[l] * norm[columns[v]]
+            #             with dace.tasklet:
+            #                 colv << columns(1)[v]
+            #                 tmp_norm << norm(2)
+            #                 in_val << vals(1)[v]
+            #                 out_val = in_val * tmp_norm[l] * tmp_norm[colv]
+            #                 out_val >> vals(1)[v]
 
             features = dace.define_local((N, num_out_features), dtype=dtype)
             features[:] = np.einsum(
@@ -68,14 +70,30 @@ class GCNConv(ONNXForward):
             output[:] = 0
             for i, k in dace.map[0:N, 0:num_out_features]:
                 for j in dace.map[rowptrs[i]:rowptrs[i + 1]]:
-                    with dace.tasklet:
-                        inp2j << columns[j]
-                        f << features[i, k]
-                        in_val << vals(1)[j]
-                        out_val[inp2j, k] = f * in_val
-                        out_val >> output(1, lambda a, b: a + b)
-                    # Below line results in compile errors.
-                    # output[inp2j, k] += features[i, k] * vals[j]
+                    # Below yields incorrect results with options: persistent mem + tb-dynamic + opt
+                    # with dace.tasklet:
+                    #     inp2j << columns[j]
+                    #     f << features[i, k]
+                    #     in_val << vals(1)[j]
+                    #     out_val[inp2j, k] = f * in_val
+                    #     out_val >> output(1, lambda a, b: a + b)
+                    # Below line results in compile errors when enabling threadblock dynamic
+                    column = columns[j]
+                    mult = features[i, k] * vals[j]
+                    output[column, k] += mult
+
+            # With COO conversion
+            # helper_row = dace.define_local((num_entries,), dtype=dace.int64)
+            # for l in dace.map[0:N]:
+            #     for v in dace.map[rowptrs[l]:rowptrs[l + 1]]:
+            #         helper_row[v] = l
+            #
+            # output[:] = 0
+            # # for k in dace.map[0:num_out_features]:
+            # for j in dace.map[0:num_entries]:
+            #     column = columns[j]
+            #     row = helper_row[j]
+            #     output[column] += features[row] * vals[j]
 
             # This is ~35% slower (0.56 vs 0.41)
             # tmp = dace.define_local((N, num_in_features), dtype=dtype)
@@ -102,7 +120,6 @@ class GCNConv(ONNXForward):
 @op_implementation(op="torch_geometric.nn.conv.gat_conv.GATConv",
                    name="pure")
 class GATConv(ONNXForward):
-    # TODO: check for bipartite, edge_dim
 
     @staticmethod
     def forward(node: onnx_op.ONNXOp, state: SDFGState,
@@ -122,12 +139,14 @@ class GATConv(ONNXForward):
         assert negative_slope < 1.0
 
         def prog_sparse(node_features, rowptrs, columns, lin_srcDOTweight, att_src, att_dst, output):
-            # node_features: input features, N x F
-            # rowptrs: rowptr, N+1
-            # columns: col, num_entries
-            # lin_srcDOTweight: H * F' x F
-            # att_srcDOT_weight: H x F
-            # output: N x H * F'
+            """
+            node_features: input features, N x F
+            rowptrs: rowptr, N+1
+            columns: col, num_entries
+            lin_srcDOTweight: H * F' x F
+            att_srcDOT_weight: H x F
+            output: N x H * F'
+            """
 
             # Transform input features.
             features = dace.define_local(
@@ -146,8 +165,9 @@ class GATConv(ONNXForward):
                     # Calculating e_l->colv
                     colv = columns[v]
                     e_tmp = alpha_src[l] + alpha_dst[colv]
+                    # LeakyReLU
                     e_tmp = np.maximum(
-                        negative_slope * e_tmp, e_tmp)  # LeakyReLU
+                        negative_slope * e_tmp, e_tmp)
                     e_tmp = np.exp(e_tmp)
                     e[v] = e_tmp
                     softmax_sum[colv] += e_tmp
@@ -200,12 +220,48 @@ class GATConv(ONNXForward):
                 if heads == 1:
                     output[colv] += e[i] * features[b]
                 else:
-                    output[colv] += np.reshape(np.reshape(
-                        e[i], (heads, 1)) * features[b], (heads * num_out_features,))
+                    # for h in dace.map[0:heads]:
+                    #     output[colv][h] += e[i][h] * features[b][h]
+                    # for h, f in dace.map[0:heads, 0:num_out_features]:
+                    #     output[colv][h * f] += e[i][h] * features[b][h * f]
+                    output[colv] += np.reshape(
+                            np.reshape(e[i], (heads, 1)) * features[b],
+                        (heads * num_out_features,))
+                    # output[colv] += e[i] * features[b]
+            # if heads == 1:
+            #     for i in dace.map[0:num_entries]:
+            #         colv = columns[i]
+            #         b = helper_row[i]
+            #         output[colv] += e[i] * features[b]
+            # else:
+            # #     # for i, h, f in dace.map[0:num_entries, 0:heads, 0:num_out_features]:
+            #     for i in dace.map[0:num_entries]:
+            #         colv = columns[i]
+            #         b = helper_row[i]
+                    # for h in dace.map[0:heads]:
+            #             output[colv][h * num_out_features:(h+1) * num_out_features] += e[i][h] * features[b][h * num_out_features:(h+1) * num_out_features]
+                    # for h, f in dace.map[0:heads, 0:num_out_features]:
+                    #     output[colv][h * num_out_features + f] += e[i][h] * features[b][h * num_out_features + f]
 
+            #     #     b = helper_row[i]
+            #     #     with dace.tasklet:
+            #     #         colv << columns(1)[v]
+            #     #         b << helper_row(1)[i]
+            #     #         ee << e[i][h]
+            #     #         ff << features[b][h][f]
+            #     #         out_val[colv][h][f] = ee * ff
+            #     #         out_val >> output(1, lambda a, b: a + b)
+            #             # output[colv][h][f] += e[i][h] * features[b][h][f]
+            #         # output[colv][f] += e[i] * features[b, :, f]
+            #     for i in dace.map[0:num_entries]:
+
+                    # output[colv] += np.reshape(
+                    #         np.reshape(e[i], (heads, 1)) * features[b],
+                    #     (heads * num_out_features,))
 
 
         if 'bias' in [inp.name for inp in node.schema.inputs]:
+            # @dace.program
             def bias_prog(node_features, rowptrs, columns, lin_srcDOTweight, att_src, att_dst, bias, output):
                 prog_sparse(node_features, rowptrs, columns,
                             lin_srcDOTweight, att_src, att_dst, output)

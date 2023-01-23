@@ -47,9 +47,9 @@ def stats_as_string(times, func_names, model, hidden_size):
     return out
 
 
-def check_correctness(dace_model, torch_model, dace_args, torch_dense_args):
+def check_correctness(dace_model, torch_model, dace_args, torch_edge_list_args):
     dace_pred = dace_model(*dace_args)
-    torch_pred = torch_model(*torch_dense_args)
+    torch_pred = torch_model(*torch_edge_list_args)
     dace_pred_cpu = dace_pred.detach().cpu()
     torch_pred_cpu = torch_pred.detach().cpu()
     if np.allclose(dace_pred_cpu, torch_pred_cpu, atol=1.0e-5):
@@ -135,14 +135,14 @@ if __name__ == '__main__':
     dace_args = (x,) if args.model == 'linear' else (
         x, edge_rowptr, edge_col)
     # pyg requires the sparse tensor input to be transposed.
-    torch_sparse_args = (x,) if args.model == 'linear' else (x, sparse_edge_index.t())
-    torch_dense_args = (x,) if args.model == 'linear' else (x, data.edge_index)
+    torch_csr_args = (x,) if args.model == 'linear' else (x, sparse_edge_index.t())
+    torch_edge_list_args = (x,) if args.model == 'linear' else (x, data.edge_index)
 
     if edge_weights is not None and args.model == 'gcn':
         dace_args += (edge_weights,)
-        torch_dense_args += (data.edge_weight,)
+        torch_edge_list_args += (data.edge_weight,)
 
-    correct = check_correctness(dace_model, torch_model, dace_args, torch_dense_args)
+    correct = check_correctness(dace_model, torch_model, dace_args, torch_edge_list_args)
 
     if args.onlydace:
         print('Only dace model for profiling.')
@@ -150,19 +150,26 @@ if __name__ == '__main__':
     elif args.dry:
         print("Single run of all models.")
         print("Dace: ", dace_model(*dace_args))
-        print("PyG sparse: ", torch_model(*torch_sparse_args))
-        print("PyG dense: ", torch_model(*torch_dense_args))
+        print("PyG csr: ", torch_model(*torch_csr_args))
+        print("PyG edge list: ", torch_model(*torch_edge_list_args))
     else:
         print("Benchmarking...")
         from daceml.testing.profiling import time_funcs, print_time_statistics
 
         funcs = [
             lambda: dace_model(*dace_args),
-            lambda: torch_model(*torch_sparse_args),
-            lambda: torch_model(*torch_dense_args),
+            lambda: torch_model(*torch_csr_args),
+            lambda: torch_model(*torch_edge_list_args),
         ]
 
-        func_names = [args.name, 'torch_sparse', 'torch_dense']
+        name = args.name
+        if args.threadblock_dynamic:
+            name += "_tb-dynamic"
+        if args.opt:
+            name += "_autoopt"
+        if args.persistent_mem:
+            name += "_persistent_mem"
+        func_names = [name, 'torch_csr', 'torch_edge_list']
         times = time_funcs(funcs,
                            func_names=func_names,
                            warmups=10,
@@ -178,5 +185,3 @@ if __name__ == '__main__':
                     headers = ['Name', 'Model', 'Size', 'Min', 'Mean', 'Median', 'Stdev', 'Max']
                     file.write(','.join(headers) + '\n')
                 file.write(stats_as_string(times, func_names, args.model, args.hidden))
-
-
