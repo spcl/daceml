@@ -1,10 +1,9 @@
 # Op replacement registration.
 from onnx import helper
-
 from daceml.onnx.converters import convert_attribute_proto
 from daceml.onnx.nodes.replacement import register_replacement
 from daceml.onnx.shape_inference.symbolic_shape_infer import SymbolicShapeInference
-
+import dace
 
 def inferGCNConv(ssi: SymbolicShapeInference, node):
     op_attributes = {
@@ -32,12 +31,12 @@ def gcnconv_shape(module):
 
 register_replacement('torch_geometric.nn.conv.gcn_conv.GCNConv',
                      inputs={
-                         'node_features': 'float32',
-                         'rowptrs': 'int64',
-                         'columns': 'int64',
-                         'edge_vals': 'float32',
+                         'node_features': dace.float32,
+                         'rowptrs': dace.int64,
+                         'columns': dace.int64,
+                         'edge_vals': dace.float32,
                      },
-                     outputs={'output': 'float32'},
+                     outputs={'output': dace.float32},
                      shape_infer=inferGCNConv,
                      shape_fn_from_module=gcnconv_shape)
 
@@ -71,10 +70,10 @@ def gatconv_shape(module):
 
 register_replacement('torch_geometric.nn.conv.gat_conv.GATConv',
                      inputs={
-                         'node_features': 'float32',
-                         'rowptrs': 'int64',
-                         'columns': 'int64'
+                         'node_features': dace.float32,
+                         'rowptrs': dace.int64,
+                         'columns': dace.int64
                      },
-                     outputs={'output': 'float32'},
+                     outputs={'output': dace.float32},
                      shape_infer=inferGATConv,
                      shape_fn_from_module=gatconv_shape)

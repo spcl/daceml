@@ -6,11 +6,11 @@ from typing import Any, Callable, Dict, Iterable, Tuple, Type, Mapping
 import dace
 import torch
 from dace import SDFG, nodes
-from dace.dtypes import TYPECLASS_STRINGS
 from dace.properties import Property
 from dace.transformation.transformation import ExpandTransformation
 
-from daceml.onnx.converters import clean_onnx_name, TORCH_DTYPE_TO_TYPECLASS
+from daceml.onnx.converters import clean_onnx_name, TORCH_DTYPE_TO_TYPECLASS, typeclass_to_onnx_str, \
+    TYPECLASS_TO_TORCH_DTYPE
 from daceml.onnx.forward_implementation_abc import ONNXForward
 from daceml.onnx.nodes.node_codegen import expand_node
 from daceml.onnx.nodes.onnx_op import (ONNXOp, _get_attr_docstring,
@@ -21,7 +21,7 @@ from daceml.onnx.shape_inference.symbolic_shape_infer import SymbolicShapeInfere
 
 log = logging.getLogger(__name__)
 
-ShapeFnType = Callable[[...], Tuple[int, ...]]
+ShapeFnType = Callable[..., Tuple[int, ...]]
 
 
 @dataclass
@@ -30,6 +30,7 @@ class ReplacementInfo:
     onnx_op: Type[nodes.Node]
     infer_shape: Callable[[SymbolicShapeInference, Any], None]  # TODO
     shape_fn_from_module: Callable[[torch.nn.Module], ShapeFnType]
+    output_dtype: torch.dtype  # todo
 
 
 MODULES_TO_REPLACE: Dict[str, ReplacementInfo] = {}
@@ -46,7 +47,7 @@ def get_replaced_onnx_op(name: str) -> Type[nodes.Node]:
     return MODULES_TO_REPLACE[name].onnx_op
 
 
-def make_schema_dict(name, inputs: Mapping[str, str], outputs: Mapping[str, str]):
+def make_schema_dict(name, inputs: Mapping[str, dace.typeclass], outputs: Mapping[str, dace.typeclass]):
     intersection = [name for name in inputs if name in outputs]
     assert len(intersection) == 0, f"Same keys for inputs and outputs not allowed: {intersection}"
 
@@ -59,11 +60,16 @@ def make_schema_dict(name, inputs: Mapping[str, str], outputs: Mapping[str, str]
         'type': 'ONNXSchema'
     }
 
-    def make_type_info_helper(type_mapping: Mapping[str, str], is_input):
+    def make_type_info_helper(type_mapping: Mapping[str, dace.typeclass]):
         data_type_list = []
         type_constraints = {}
         for i, (name, t) in enumerate(type_mapping.items()):
-            assert t in TYPECLASS_STRINGS, f"{t} is not a valid ONNX type. Valid ONNX types: {TYPECLASS_STRINGS}"
+            # For some reason dace.float32 gets converted to string as 'float',
+            # not 'float32' which is not understood by ONNX.
+            if t is dace.float32:
+                t = 'float32'
+            else:
+                t = typeclass_to_onnx_str(t)
             type_name = f'{name}_T'
             entry = {
                 'description': '',
@@ -82,10 +88,8 @@ def make_schema_dict(name, inputs: Mapping[str, str], outputs: Mapping[str, str]
             }
         return data_type_list, type_constraints
 
-    inputs_info, inputs_type_constraints = make_type_info_helper(
-        inputs, is_input=True)
-    outputs_info, outputs_type_constraints = make_type_info_helper(
-        outputs, is_input=False)
+    inputs_info, inputs_type_constraints = make_type_info_helper(inputs)
+    outputs_info, outputs_type_constraints = make_type_info_helper(outputs)
 
     schema_dict.update({
         'inputs': inputs_info,
@@ -241,8 +245,16 @@ def generate_onnx_op_placeholder(schema):
 
 
 # Registration of replacement.
-def register_replacement(module_name: str, inputs: Mapping[str, str], outputs: Mapping[str, str],
-                         shape_infer: Callable[[SymbolicShapeInference, Any], None], shape_fn_from_module):
+def register_replacement(module_name: str,
+                         inputs: Mapping[str, dace.typeclass],
+                         outputs: Mapping[str, dace.typeclass],
+                         shape_infer: Callable[[SymbolicShapeInference, Any], None],
+                         shape_fn_from_module: Callable[[torch.nn.Module], ShapeFnType]):
+    if len(outputs) > 1:
+        raise NotImplementedError("Replacing nodes with more than 1 output is not supported.")
+
+    output_dtype = next(iter(outputs.values()))
+
     _module_name_to_infer_shape[module_name] = shape_infer
     schema_dict = make_schema_dict(module_name, inputs, outputs)
     schema = ONNXSchema.from_json(schema_dict)
@@ -251,5 +263,6 @@ def register_replacement(module_name: str, inputs: Mapping[str, str], outputs: M
     replacement_info = ReplacementInfo(module_name=module_name,
                                        infer_shape=shape_infer,
                                        shape_fn_from_module=shape_fn_from_module,
-                                       onnx_op=onnx_op)
+                                       onnx_op=onnx_op,
+                                       output_dtype=TYPECLASS_TO_TORCH_DTYPE[output_dtype])
     MODULES_TO_REPLACE[module_name] = replacement_info
