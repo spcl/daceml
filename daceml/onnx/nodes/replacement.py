@@ -21,18 +21,19 @@ from daceml.onnx.shape_inference.symbolic_shape_infer import SymbolicShapeInfere
 
 log = logging.getLogger(__name__)
 
+ShapeFnType = Callable[[...], Tuple[int, ...]]
+
 
 @dataclass
 class ReplacementInfo:
     module_name: str
     onnx_op: Type[nodes.Node]
-    infer_shape: Callable[[Any], Any]  # TODO
-    shape_fn_from_module: Callable[[Any], Any]  # TODO
+    infer_shape: Callable[[SymbolicShapeInference, Any], None]  # TODO
+    shape_fn_from_module: Callable[[torch.nn.Module], ShapeFnType]
 
 
 MODULES_TO_REPLACE: Dict[str, ReplacementInfo] = {}
 _module_name_to_infer_shape = {}  # todo annotate type
-_module_name_to_shape_from_module = {}  # todo annotate type
 
 
 def is_replaceable(name: str) -> bool:

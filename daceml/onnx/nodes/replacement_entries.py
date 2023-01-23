@@ -42,7 +42,7 @@ register_replacement('torch_geometric.nn.conv.gcn_conv.GCNConv',
                      shape_fn_from_module=gcnconv_shape)
 
 
-def inferGATConv(ssi: SymbolicShapeInference, node):
+def inferGATConv(ssi: SymbolicShapeInference, node) -> None:
     op_attributes = {
         attribute_proto.name: convert_attribute_proto(attribute_proto)
         for attribute_proto in node.attribute
