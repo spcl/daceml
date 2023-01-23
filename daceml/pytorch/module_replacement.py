@@ -2,7 +2,7 @@ from typing import Dict, Tuple
 
 import torch
 
-from daceml.onnx.nodes.replacement import _modules_to_replace, _module_name_to_shape_from_module
+from daceml.onnx.nodes.replacement import MODULES_TO_REPLACE
 
 
 def replace_modules(module: torch.nn.Module):
@@ -16,8 +16,8 @@ def replace_modules(module: torch.nn.Module):
             cls = submodule.__class__
             cls_name = f"{cls.__module__}.{cls.__qualname__}"
             local_prefix = f'{prefix}{name}.'
-            if cls_name in _modules_to_replace:
-                shape_fn = _module_name_to_shape_from_module[cls_name](submodule)
+            if cls_name in MODULES_TO_REPLACE:
+                shape_fn = MODULES_TO_REPLACE[cls_name].shape_fn_from_module(submodule)
                 setattr(module, name, GenericPlaceholder(
                     cls_name, submodule, replaced_idx, local_prefix, torch.float32,
                     shape_fn))  # TODO type should be from the registration

@@ -39,7 +39,7 @@ register_replacement('torch_geometric.nn.conv.gcn_conv.GCNConv',
                      },
                      outputs={'output': 'float32'},
                      shape_infer=inferGCNConv,
-                     shape_from_module=gcnconv_shape)
+                     shape_fn_from_module=gcnconv_shape)
 
 
 def inferGATConv(ssi: SymbolicShapeInference, node):
@@ -77,4 +77,4 @@ register_replacement('torch_geometric.nn.conv.gat_conv.GATConv',
                      },
                      outputs={'output': 'float32'},
                      shape_infer=inferGATConv,
-                     shape_from_module=gatconv_shape)
+                     shape_fn_from_module=gatconv_shape)

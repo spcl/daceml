@@ -1,14 +1,15 @@
-from copy import deepcopy
 import logging
+from copy import deepcopy
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, Tuple, Type, Mapping
 
-import torch
-
 import dace
+import torch
 from dace import SDFG, nodes
+from dace.dtypes import TYPECLASS_STRINGS
 from dace.properties import Property
 from dace.transformation.transformation import ExpandTransformation
-from dace.dtypes import TYPECLASS_STRINGS
+
 from daceml.onnx.converters import clean_onnx_name, TORCH_DTYPE_TO_TYPECLASS
 from daceml.onnx.forward_implementation_abc import ONNXForward
 from daceml.onnx.nodes.node_codegen import expand_node
@@ -21,21 +22,27 @@ from daceml.onnx.shape_inference.symbolic_shape_infer import SymbolicShapeInfere
 log = logging.getLogger(__name__)
 
 
-_modules_to_replace: Dict[str, str] = {}
-_module_name_to_onnx_op: Dict[str, Type[nodes.Node]] = {}
+@dataclass
+class ReplacementInfo:
+    module_name: str
+    onnx_op: Type[nodes.Node]
+    infer_shape: Callable[[Any], Any]  # TODO
+    shape_fn_from_module: Callable[[Any], Any]  # TODO
+
+
+MODULES_TO_REPLACE: Dict[str, ReplacementInfo] = {}
 _module_name_to_infer_shape = {}  # todo annotate type
 _module_name_to_shape_from_module = {}  # todo annotate type
 
 
 def is_replaceable(name: str) -> bool:
-    return name in _module_name_to_onnx_op
+    return name in MODULES_TO_REPLACE
 
 
-def get_replaced_onnx_op(name: str) -> nodes.Node:
-    if name not in _module_name_to_onnx_op:
+def get_replaced_onnx_op(name: str) -> Type[nodes.Node]:
+    if name not in MODULES_TO_REPLACE:
         raise ValueError(f'No replacement module for {name}.')
-    onnx_op = _module_name_to_onnx_op[name]
-    return onnx_op
+    return MODULES_TO_REPLACE[name].onnx_op
 
 
 def make_schema_dict(name, inputs: Mapping[str, str], outputs: Mapping[str, str]):
@@ -108,9 +115,8 @@ def onnx_type_info_from_torch_params(params: Iterable[Tuple[str, torch.nn.Parame
         })
     return onnx_params, onnx_type_constraints
 
+
 # Generating an ONNX Library node.
-
-
 def generate_onnx_op_placeholder(schema):
     attrs = {}
 
@@ -144,14 +150,13 @@ def generate_onnx_op_placeholder(schema):
 
         if len(args) > 0:
             raise TypeError(
-                "__init__() takes 2 positional arguments but {} were given".
-                format(2 + len(args)))
+                f"__init__() takes 2 positional arguments but {2 + len(args)} were given")
 
         if len(op_attributes) > 0:
             raise TypeError(
                 f"__init__() takes no keyword arguments but following were given: {op_attributes}")
 
-    # TODO: the docsstrings for params are missing, but are they needed?
+    # TODO: the docstrings for params are missing, but are they needed?
     input_connector_docstrings = "\n".join(
         _get_connector_docstring(param) for param in schema.inputs)
     output_connector_docstrings = "\n".join(
@@ -163,7 +168,7 @@ def generate_onnx_op_placeholder(schema):
     # means that the generated sphinx docs have a proper signature, and not just *args, **kwargs.
     init_docstring = "__init__(name, *, {})\n".format(
         ", ".join(attr.name if attr.required else attr.name + "=" +
-                  repr(attr.default_value)
+                                                  repr(attr.default_value)
                   for _, attr in schema.attributes.items()))
     init_docstring += ":param name: the name of the node.\n" + "\n".join(
         _get_attr_docstring(attr)
@@ -189,7 +194,7 @@ def generate_onnx_op_placeholder(schema):
     attrs['prefix'] = Property(
         dtype=str, desc='Prefix for the module.', allow_none=False)
 
-    cls = type(cls_name, (ONNXOp, ), attrs)
+    cls = type(cls_name, (ONNXOp,), attrs)
     cls = dace.library.node(cls)
     cls.__init__.__doc__ = "\n" + init_docstring
 
@@ -214,13 +219,13 @@ def generate_onnx_op_placeholder(schema):
                                 cls.forward_impl.environments)
                         return result
                     else:
-                        log.warn(
+                        log.warning(
                             'No expansion for library node "{}". '
                             'Reason: forward_can_be_applied returned False'.
-                            format(node.label))
+                                format(node.label))
                         result = expand_node(node, state, sdfg)
                         if not isinstance(result, SDFG):
-                            # when we return an SDFG the the environments will be determined recursively by codegen.
+                            # When we return an SDFG the environments will be determined recursively by codegen.
                             cls.environments = map(
                                 dace.library.get_environment,
                                 result.environments)
@@ -235,11 +240,15 @@ def generate_onnx_op_placeholder(schema):
 
 
 # Registration of replacement.
-def register_replacement(module_name: str, inputs: Mapping[str, str], outputs: Mapping[str, str], shape_infer: Callable[[SymbolicShapeInference, Any], None], shape_from_module):
-    _modules_to_replace[module_name] = module_name
+def register_replacement(module_name: str, inputs: Mapping[str, str], outputs: Mapping[str, str],
+                         shape_infer: Callable[[SymbolicShapeInference, Any], None], shape_fn_from_module):
     _module_name_to_infer_shape[module_name] = shape_infer
-    _module_name_to_shape_from_module[module_name] = shape_from_module
     schema_dict = make_schema_dict(module_name, inputs, outputs)
     schema = ONNXSchema.from_json(schema_dict)
-    _module_name_to_onnx_op[module_name] = generate_onnx_op_placeholder(
+    onnx_op = generate_onnx_op_placeholder(
         schema)
+    replacement_info = ReplacementInfo(module_name=module_name,
+                                       infer_shape=shape_infer,
+                                       shape_fn_from_module=shape_fn_from_module,
+                                       onnx_op=onnx_op)
+    MODULES_TO_REPLACE[module_name] = replacement_info
