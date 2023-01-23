@@ -6,7 +6,6 @@ from torch_geometric.nn import GCNConv, GATConv
 class GCN(torch.nn.Module):
     def __init__(self, num_node_features, num_hidden_features, num_classes, normalize):
         super().__init__()
-        print("normalize: ", normalize)
         self.conv1 = GCNConv(num_node_features, num_hidden_features,
                              normalize=normalize, add_self_loops=False)
         self.conv2 = GCNConv(num_hidden_features, num_classes,
