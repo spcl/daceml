@@ -10,8 +10,6 @@ from onnx import helper, numpy_helper, shape_inference
 import sympy
 
 from packaging import version
-from daceml.onnx.converters import convert_attribute_proto
-
 assert version.parse(onnx.__version__) >= version.parse("1.5.0")
 
 
@@ -537,9 +535,10 @@ class SymbolicShapeInference:
         if not all([d == dims[0] for d in dims]):
             self._add_suggested_merge(dims, apply=True)
 
-    def _compute_matmul_shape(self, node, output_dtype=None):
+    def _compute_matmul_shape(self, node, output_dtype=None, rhs_shape=None):
         lhs_shape = self._get_shape(node, 0)
-        rhs_shape = self._get_shape(node, 1)
+        if rhs_shape is None:
+            rhs_shape = self._get_shape(node, 1)
         lhs_rank = len(lhs_shape)
         rhs_rank = len(rhs_shape)
         lhs_reduce_dim = 0
@@ -1280,7 +1279,6 @@ class SymbolicShapeInference:
 
     def _infer_SkipLayerNormalization(self, node):
         self._propagate_shape_and_type(node)
-
 
     def _propagate_shape_and_type(self, node, input_index=0, output_index=0):
         shape = self._get_shape(node, input_index)
