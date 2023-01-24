@@ -1,8 +1,6 @@
 """Op replacement registration."""
-from typing import Dict
 
 import dace
-import torch
 from onnx import helper
 from onnx.onnx_pb import NodeProto
 
@@ -11,12 +9,12 @@ from daceml.onnx.nodes.replacement import register_replacement
 from daceml.onnx.shape_inference.symbolic_shape_infer import SymbolicShapeInference
 
 
-def inferGCNConv(placeholder_id_to_module: Dict[str, torch.nn.Module], ssi: SymbolicShapeInference, node: NodeProto):
+def shape_infer_GCNConv(ssi: SymbolicShapeInference, node: NodeProto):
     op_attributes = {
         attribute_proto.name: convert_attribute_proto(attribute_proto)
         for attribute_proto in node.attribute
     }
-    _, module = placeholder_id_to_module[op_attributes['module_id']]
+    _, module = ssi.placeholder_id_to_module[op_attributes['module_id']]
     weights_shape = module.lin.weight.T.shape
     output_dtype = ssi.known_vi_[
         node.input[0]].type.tensor_type.elem_type
@@ -24,13 +22,13 @@ def inferGCNConv(placeholder_id_to_module: Dict[str, torch.nn.Module], ssi: Symb
         node, output_dtype=output_dtype, rhs_shape=weights_shape)
 
 
-def gcnconv_shape(module):
+def make_GCNConv_shape_fn(module):
     M = module.lin.weight.shape[0]
 
     def shape_from_inputs(*inputs):
         x = inputs[0]
         N = x.shape[0]
-        return (N, M)
+        return N, M
 
     return shape_from_inputs
 
@@ -43,17 +41,16 @@ register_replacement('torch_geometric.nn.conv.gcn_conv.GCNConv',
                          'edge_vals': dace.float32,
                      },
                      outputs={'output': dace.float32},
-                     shape_infer=inferGCNConv,
-                     shape_fn_from_module=gcnconv_shape)
+                     shape_infer=shape_infer_GCNConv,
+                     shape_fn_from_module=make_GCNConv_shape_fn)
 
 
-def inferGATConv(placeholder_id_to_module: Dict[str, torch.nn.Module], ssi: SymbolicShapeInference,
-                 node: NodeProto) -> None:
+def shape_infer_GCNConv(ssi: SymbolicShapeInference, node: NodeProto) -> None:
     op_attributes = {
         attribute_proto.name: convert_attribute_proto(attribute_proto)
         for attribute_proto in node.attribute
     }
-    _, module = placeholder_id_to_module[op_attributes['module_id']]
+    _, module = ssi.placeholder_id_to_module[op_attributes['module_id']]
     output_dtype = ssi.known_vi_[
         node.input[0]].type.tensor_type.elem_type
 
@@ -63,14 +60,14 @@ def inferGATConv(placeholder_id_to_module: Dict[str, torch.nn.Module], ssi: Symb
         node.output[0], output_dtype, out_shape))
 
 
-def gatconv_shape(module):
+def make_GCNConv_shape_fn(module):
     heads = module.heads
     out_features = module.out_channels
 
     def shape_from_inputs(*inputs):
         x = inputs[0]
         N = x.shape[0]
-        return (N, out_features * heads)
+        return N, out_features * heads
 
     return shape_from_inputs
 
@@ -82,5 +79,5 @@ register_replacement('torch_geometric.nn.conv.gat_conv.GATConv',
                          'columns': dace.int64
                      },
                      outputs={'output': dace.float32},
-                     shape_infer=inferGATConv,
-                     shape_fn_from_module=gatconv_shape)
+                     shape_infer=shape_infer_GCNConv,
+                     shape_fn_from_module=make_GCNConv_shape_fn)

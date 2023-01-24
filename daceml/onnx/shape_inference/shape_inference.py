@@ -1,5 +1,7 @@
 import functools
+from typing import Dict
 
+import torch
 from onnx import helper
 
 from daceml.onnx.shape_inference.symbolic_shape_infer import SymbolicShapeInference
@@ -36,31 +38,29 @@ def _compute_matmul_shape(self: SymbolicShapeInference, node, output_dtype=None,
     vi = self.known_vi_[node.output[0]]
     vi.CopyFrom(helper.make_tensor_value_info(node.output[0], output_dtype, new_shape))
 
+
 # Overwrite _compute_matul_shape with the modified version.
 SymbolicShapeInference._compute_matmul_shape = _compute_matmul_shape
+if not hasattr(SymbolicShapeInference, '__original_init__'):
+    SymbolicShapeInference.__original_init__ = SymbolicShapeInference.__init__
 
-def make_init_fn(original_init, placeholder_id_to_module):
+
+def ssi_init_with_replacements(self, *args, **kwargs):
     """Initializes the SSI object and adds the inference functions for the replaced modules."""
-    def new_init(self, int_max, auto_merge, guess_output_rank, verbose):
-        original_init(self, int_max, auto_merge, guess_output_rank, verbose)
-        from daceml.onnx import MODULES_TO_REPLACE
-        for module_name, replacement_info in MODULES_TO_REPLACE.items():
-            infer_fn = replacement_info.infer_shape
-            self.dispatcher_[module_name] = functools.partial(infer_fn, placeholder_id_to_module, self)
-
-    return new_init
+    self.__original_init__(*args, **kwargs)
+    from daceml.onnx import MODULES_TO_REPLACE
+    for module_name, replacement_info in MODULES_TO_REPLACE.items():
+        infer_fn = replacement_info.infer_shape
+        self.dispatcher_[module_name] = functools.partial(infer_fn, self)
 
 
-def infer_shapes(onnx_model, placeholder_id_to_module, auto_merge=False):
-    # Override _compute_matmul_shape and the init functions with modified versions that handle module replacements.
-    original_init_fn = SymbolicShapeInference.__init__
-    SymbolicShapeInference.__init__ = make_init_fn(original_init_fn, placeholder_id_to_module)
+# Override the init function with a modified version that handle module replacements.
+SymbolicShapeInference.__init__ = ssi_init_with_replacements
 
+
+def infer_shapes(onnx_model, placeholder_id_to_module: Dict[str, torch.nn.Module], auto_merge=False):
+    SymbolicShapeInference.placeholder_id_to_module = placeholder_id_to_module
     result = SymbolicShapeInference.infer_shapes(onnx_model, auto_merge=auto_merge)
-
-    # Need to revert to be able to run twice.
-    SymbolicShapeInference.__init__ = original_init_fn
-
     if result is None:
         raise ValueError("Symbolic shape inference failed")
     return result

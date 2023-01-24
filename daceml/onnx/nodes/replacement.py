@@ -29,13 +29,12 @@ ShapeFnType = Callable[..., Tuple[int, ...]]
 class ReplacementInfo:
     module_name: str
     onnx_op: Type[nodes.Node]
-    infer_shape: Callable[[Dict[str, torch.nn.Module], SymbolicShapeInference, NodeProto], None]
+    infer_shape: Callable[[SymbolicShapeInference, NodeProto], None]
     shape_fn_from_module: Callable[[torch.nn.Module], ShapeFnType]
-    output_dtype: torch.dtype  # todo
+    output_dtype: torch.dtype
 
 
 MODULES_TO_REPLACE: Dict[str, ReplacementInfo] = {}
-_module_name_to_infer_shape = {}  # todo annotate type
 
 
 def is_replaceable(name: str) -> bool:
@@ -249,18 +248,16 @@ def generate_onnx_op_placeholder(schema):
 def register_replacement(module_name: str,
                          inputs: Mapping[str, dace.typeclass],
                          outputs: Mapping[str, dace.typeclass],
-                         shape_infer: Callable[[Dict[str, torch.nn.Module], SymbolicShapeInference, 'NodeProto'], None],
+                         shape_infer: Callable[[SymbolicShapeInference, 'NodeProto'], None],
                          shape_fn_from_module: Callable[[torch.nn.Module], ShapeFnType]):
     if len(outputs) > 1:
         raise NotImplementedError("Replacing nodes with more than 1 output is not supported.")
 
     output_dtype = next(iter(outputs.values()))
 
-    _module_name_to_infer_shape[module_name] = shape_infer
     schema_dict = make_schema_dict(module_name, inputs, outputs)
     schema = ONNXSchema.from_json(schema_dict)
-    onnx_op = generate_onnx_op_placeholder(
-        schema)
+    onnx_op = generate_onnx_op_placeholder(schema)
     replacement_info = ReplacementInfo(module_name=module_name,
                                        infer_shape=shape_infer,
                                        shape_fn_from_module=shape_fn_from_module,
