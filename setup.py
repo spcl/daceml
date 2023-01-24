@@ -50,7 +50,7 @@ setup(
         'testing': [
             'coverage', 'pytest', 'yapf==0.31', 'pytest-cov', 'transformers',
             'pytest-xdist', 'torchvision', 'tabulate', 'efficientnet_pytorch',
-            'pytest-timeout', 'pytorch_geometric'
+            'pytest-timeout', 'torch-geometric'
         ],
         'docs': [
             'sphinx', 'sphinx_rtd_theme', 'sphinx-autodoc-typehints',
