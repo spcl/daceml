@@ -1,13 +1,14 @@
 import logging
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Iterable, Tuple, Type, Mapping
+from typing import Callable, Dict, Iterable, Tuple, Type, Mapping
 
 import dace
 import torch
 from dace import SDFG, nodes
 from dace.properties import Property
 from dace.transformation.transformation import ExpandTransformation
+from onnx.onnx_pb import NodeProto
 
 from daceml.onnx.converters import clean_onnx_name, TORCH_DTYPE_TO_TYPECLASS, typeclass_to_onnx_str, \
     TYPECLASS_TO_TORCH_DTYPE
@@ -28,7 +29,7 @@ ShapeFnType = Callable[..., Tuple[int, ...]]
 class ReplacementInfo:
     module_name: str
     onnx_op: Type[nodes.Node]
-    infer_shape: Callable[[SymbolicShapeInference, Any], None]  # TODO
+    infer_shape: Callable[[Dict[str, torch.nn.Module], SymbolicShapeInference, NodeProto], None]
     shape_fn_from_module: Callable[[torch.nn.Module], ShapeFnType]
     output_dtype: torch.dtype  # todo
 
@@ -248,7 +249,7 @@ def generate_onnx_op_placeholder(schema):
 def register_replacement(module_name: str,
                          inputs: Mapping[str, dace.typeclass],
                          outputs: Mapping[str, dace.typeclass],
-                         shape_infer: Callable[[SymbolicShapeInference, Any], None],
+                         shape_infer: Callable[[Dict[str, torch.nn.Module], SymbolicShapeInference, 'NodeProto'], None],
                          shape_fn_from_module: Callable[[torch.nn.Module], ShapeFnType]):
     if len(outputs) > 1:
         raise NotImplementedError("Replacing nodes with more than 1 output is not supported.")

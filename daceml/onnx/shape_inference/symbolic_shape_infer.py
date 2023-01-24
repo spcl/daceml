@@ -83,7 +83,7 @@ def sympy_reduce_product(x):
 
 
 class SymbolicShapeInference:
-    def __init__(self, int_max, auto_merge, guess_output_rank, verbose, placeholder_id_to_module):
+    def __init__(self, int_max, auto_merge, guess_output_rank, verbose):
         self.dispatcher_ = {
             'Add': self._infer_symbolic_compute_ops,
             'ArrayFeatureExtractor': self._infer_ArrayFeatureExtractor,
@@ -146,7 +146,7 @@ class SymbolicShapeInference:
             'Gelu': self._infer_Gelu,
             'LayerNormalization': self._infer_LayerNormalization,
             'LongformerAttention': self._infer_LongformerAttention,
-            'SkipLayerNormalization': self._infer_SkipLayerNormalization,
+            'SkipLayerNormalization': self._infer_SkipLayerNormalization
         }
         self.run_ = True
         self.suggested_merge_ = {}
@@ -156,10 +156,6 @@ class SymbolicShapeInference:
         self.guess_output_rank_ = guess_output_rank
         self.verbose_ = verbose
         self.int_max_ = int_max
-
-        from daceml.onnx.nodes.replacement import _module_name_to_infer_shape
-        self.replacements_dispatcher = _module_name_to_infer_shape
-        self.placeholder_id_to_module_ = placeholder_id_to_module
 
     def _add_suggested_merge(self, symbols, apply=False):
         assert all([(type(s) == str and s in self.symbolic_dims_) or is_literal(s) for s in symbols])
@@ -535,10 +531,9 @@ class SymbolicShapeInference:
         if not all([d == dims[0] for d in dims]):
             self._add_suggested_merge(dims, apply=True)
 
-    def _compute_matmul_shape(self, node, output_dtype=None, rhs_shape=None):
+    def _compute_matmul_shape(self, node, output_dtype=None):
         lhs_shape = self._get_shape(node, 0)
-        if rhs_shape is None:
-            rhs_shape = self._get_shape(node, 1)
+        rhs_shape = self._get_shape(node, 1)
         lhs_rank = len(lhs_shape)
         rhs_rank = len(rhs_shape)
         lhs_reduce_dim = 0
@@ -1336,8 +1331,6 @@ class SymbolicShapeInference:
             self._onnx_infer_single_node(node)
             if node.op_type in self.dispatcher_:
                 self.dispatcher_[node.op_type](node)
-            elif node.op_type in self.replacements_dispatcher:
-                self.replacements_dispatcher[node.op_type](self, node)
             elif node.op_type in ['ConvTranspose']:
                 # onnx shape inference ops like ConvTranspose may have empty shape for symbolic input
                 # before adding symbolic compute for them
@@ -1471,13 +1464,12 @@ class SymbolicShapeInference:
                 output.CopyFrom(self.known_vi_[output.name])
 
     @staticmethod
-    def infer_shapes(in_mp, placeholder_id_to_module, int_max=2**31 - 1, auto_merge=False, guess_output_rank=False, verbose=0):
+    def infer_shapes(in_mp, int_max=2**31 - 1, auto_merge=False, guess_output_rank=False, verbose=0):
         onnx_opset = get_opset(in_mp)
         if not onnx_opset or onnx_opset < 7:
             print('Only support models of onnx opset 7 and above.')
             return None
-        symbolic_shape_inference = SymbolicShapeInference(
-            int_max, auto_merge, guess_output_rank, verbose, placeholder_id_to_module)
+        symbolic_shape_inference = SymbolicShapeInference(int_max, auto_merge, guess_output_rank, verbose)
         all_shapes_inferred = False
         symbolic_shape_inference._preprocess(in_mp)
         while symbolic_shape_inference.run_:

@@ -1,16 +1,22 @@
-# Op replacement registration.
+"""Op replacement registration."""
+from typing import Dict
+
+import dace
+import torch
 from onnx import helper
+from onnx.onnx_pb import NodeProto
+
 from daceml.onnx.converters import convert_attribute_proto
 from daceml.onnx.nodes.replacement import register_replacement
 from daceml.onnx.shape_inference.symbolic_shape_infer import SymbolicShapeInference
-import dace
 
-def inferGCNConv(ssi: SymbolicShapeInference, node):
+
+def inferGCNConv(placeholder_id_to_module: Dict[str, torch.nn.Module], ssi: SymbolicShapeInference, node: NodeProto):
     op_attributes = {
         attribute_proto.name: convert_attribute_proto(attribute_proto)
         for attribute_proto in node.attribute
     }
-    _, module = ssi.placeholder_id_to_module_[op_attributes['module_id']]
+    _, module = placeholder_id_to_module[op_attributes['module_id']]
     weights_shape = module.lin.weight.T.shape
     output_dtype = ssi.known_vi_[
         node.input[0]].type.tensor_type.elem_type
@@ -41,12 +47,13 @@ register_replacement('torch_geometric.nn.conv.gcn_conv.GCNConv',
                      shape_fn_from_module=gcnconv_shape)
 
 
-def inferGATConv(ssi: SymbolicShapeInference, node) -> None:
+def inferGATConv(placeholder_id_to_module: Dict[str, torch.nn.Module], ssi: SymbolicShapeInference,
+                 node: NodeProto) -> None:
     op_attributes = {
         attribute_proto.name: convert_attribute_proto(attribute_proto)
         for attribute_proto in node.attribute
     }
-    _, module = ssi.placeholder_id_to_module_[op_attributes['module_id']]
+    _, module = placeholder_id_to_module[op_attributes['module_id']]
     output_dtype = ssi.known_vi_[
         node.input[0]].type.tensor_type.elem_type
 
