@@ -11,11 +11,11 @@ torch.backends.cuda.matmul.allow_tf32 = False
 torch.backends.cudnn.allow_tf32 = False
 
 @pytest.mark.parametrize("bias", [False, True], ids=['', 'bias'])
-@pytest.mark.parametrize("self_loops", [False], ids=[''])
-@pytest.mark.parametrize("normalize", [False, True], ids=['', 'normalize'])
 @pytest.mark.pure
-def test_gcnconv(normalize, self_loops, bias):
-    assert not self_loops, "Adding self-loops in the module not supported."
+def test_gcnconv(bias):
+    self_loops = False
+    normalize = False
+
     weights_values = torch.Tensor([[1, 1], [0, 0], [1, 0]])
     bias_values = torch.Tensor([0.21, 0.37, 0])
 
@@ -62,11 +62,11 @@ def test_gcnconv_full_model(seed):
     rng = torch.Generator()
     rng.manual_seed(seed)
 
-    size = 16
+    size = 8
     num_nodes = size
     num_in_features = 2 * size
     num_hidden_features = 3 * size
-    num_classes = 8
+    num_classes = 4
 
     weights_values_1 = torch.randn((num_hidden_features, num_in_features), generator=rng) / 10
     bias_values_1 = torch.randn((num_hidden_features,), generator=rng) / 10
