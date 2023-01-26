@@ -39,7 +39,7 @@ def _compute_matmul_shape(self: SymbolicShapeInference, node, output_dtype=None,
     vi.CopyFrom(helper.make_tensor_value_info(node.output[0], output_dtype, new_shape))
 
 
-# Overwrite _compute_matul_shape with the modified version.
+# Overwrite _compute_matmul_shape with the modified version.
 SymbolicShapeInference._compute_matmul_shape = _compute_matmul_shape
 if not hasattr(SymbolicShapeInference, '__original_init__'):
     SymbolicShapeInference.__original_init__ = SymbolicShapeInference.__init__
