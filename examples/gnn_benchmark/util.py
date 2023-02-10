@@ -1,3 +1,5 @@
+import logging
+
 import dace
 import torch
 from dace.transformation.auto.auto_optimize import auto_optimize as dace_auto_optimize
@@ -37,27 +39,23 @@ def apply_dace_auto_optimize(module):
                        device=dace.dtypes.DeviceType.GPU if torch.cuda.is_available() else dace.dtypes.DeviceType.CPU)
 
 
-def make_maps_dynamic(module):
+def make_maps_dynamic(module, exclude_loops=None):
     sdfg = module.sdfg
+    # Count which loops were excluded to be able to produce a warning
+    # in case a loop was not found in the graph.
+    exclude_loops = {name: 0 for name in exclude_loops} or {}
     for node in sdfg.all_nodes_recursive():
         if isinstance(node[0], dace.sdfg.nodes.MapEntry) \
                 and node[0].schedule == dace.dtypes.ScheduleType.Sequential \
                 and len(node[0].map.params):
-            if node[0].label in [
-                # The entries that are commented out cause compile errors.
-                # GCN
-                'daceml_onnx_op_implementations_replacement_implementations_prog_sparse_85_4_86',
-                # '_Mult__map',
-
-                # GAT
-                # 'daceml_onnx_op_implementations_replacement_implementations_prog_sparse_160_4_161',
-                # 'daceml_onnx_op_implementations_replacement_implementations_prog_sparse_207_4_208',
-                'daceml_onnx_op_implementations_replacement_implementations_prog_sparse_208_4_209',
-                'daceml_onnx_op_implementations_replacement_implementations_prog_sparse_209_4_210',
-                'daceml_onnx_op_implementations_replacement_implementations_prog_sparse_161_4_162',
-                # '_Div__map',
-                # 'assign_218_12_map',
-                # '_Mult__map', # Is a 2-d map.
-            ]:
+            if node[0].label not in exclude_loops:
                 print("Changing schedule to TB dynamic: ", node[0].map)
                 node[0].schedule = dace.dtypes.ScheduleType.GPU_ThreadBlock_Dynamic
+            else:
+                exclude_loops[node[0].label] += 1
+                print("Keeping schedule sequential for ", node[0].map)
+
+    not_excluded = [name for name, count in exclude_loops.items() if count == 0]
+    if not_excluded:
+        logging.warning("Following loops were marked as excluded from thread-block dynamic scheduling "
+                        "but were not found in the SDFG: %s", not_excluded)

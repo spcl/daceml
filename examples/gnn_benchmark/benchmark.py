@@ -1,20 +1,20 @@
 import argparse
+import functools
 import logging
 import statistics
 from pathlib import Path
 
 import numpy as np
 import torch
-
-from torch_geometric.transforms import GCNNorm
-from torch_geometric.datasets import Planetoid
 from torch_geometric.data import Data
+from torch_geometric.datasets import Planetoid
+from torch_geometric.transforms import GCNNorm
 from torch_sparse import SparseTensor
 
-from examples.gnn_benchmark.models import LinearModel, GCN, GAT
-from examples.gnn_benchmark.util import specialize_mem_onnx, apply_dace_auto_optimize, make_maps_dynamic
 from daceml import onnx as donnx
 from daceml.torch.module import dace_module
+from examples.gnn_benchmark.models import LinearModel, GCN, GAT
+from examples.gnn_benchmark.util import specialize_mem_onnx, apply_dace_auto_optimize, make_maps_dynamic
 
 donnx.default_implementation = "pure"
 torch.backends.cuda.matmul.allow_tf32 = False
@@ -130,7 +130,23 @@ if __name__ == '__main__':
 
     if args.threadblock_dynamic:
         print("---> Adding threadblock dynamic maps hook.")
-        dace_model.append_post_onnx_hook("apply_threadblock_dynamic_maps", make_maps_dynamic)
+        exclude_loops = []
+        if args.model == 'gcn':
+            # Has to be skipped, otherwise the computation results are incorrect.
+            exclude_loops = ['daceml_onnx_op_implementations_replacement_implementations_prog_sparse_45_4_46']
+        elif args.model == 'gat':
+            exclude_loops = [
+                # Below two have to be excluded because only one-dimensional maps
+                # are supported in DaCe for dynamic block map schedule (got 2).
+                '_Div__map',
+                '_Mult__map',
+                # Below two have to be excluded, otherwise compile errors
+                # occur (the generated code is incorrect).
+                'assign_137_12_map',
+                'outer_fused',
+            ]
+        make_maps_dynamic_with_excluded_loops = functools.partial(make_maps_dynamic, exclude_loops=exclude_loops)
+        dace_model.append_post_onnx_hook("apply_threadblock_dynamic_maps", make_maps_dynamic_with_excluded_loops)
 
     dace_args = (x,) if args.model == 'linear' else (
         x, edge_rowptr, edge_col)
