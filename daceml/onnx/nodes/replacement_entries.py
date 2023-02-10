@@ -45,7 +45,7 @@ register_replacement('torch_geometric.nn.conv.gcn_conv.GCNConv',
                      shape_fn_from_module=make_GCNConv_shape_fn)
 
 
-def shape_infer_GCNConv(ssi: SymbolicShapeInference, node: NodeProto) -> None:
+def shape_infer_GATConv(ssi: SymbolicShapeInference, node: NodeProto) -> None:
     op_attributes = {
         attribute_proto.name: convert_attribute_proto(attribute_proto)
         for attribute_proto in node.attribute
@@ -60,7 +60,7 @@ def shape_infer_GCNConv(ssi: SymbolicShapeInference, node: NodeProto) -> None:
         node.output[0], output_dtype, out_shape))
 
 
-def make_GCNConv_shape_fn(module):
+def make_GATConv_shape_fn(module):
     heads = module.heads
     out_features = module.out_channels
 
@@ -79,5 +79,5 @@ register_replacement('torch_geometric.nn.conv.gat_conv.GATConv',
                          'columns': dace.int64
                      },
                      outputs={'output': dace.float32},
-                     shape_infer=shape_infer_GCNConv,
-                     shape_fn_from_module=make_GCNConv_shape_fn)
+                     shape_infer=shape_infer_GATConv,
+                     shape_fn_from_module=make_GATConv_shape_fn)
