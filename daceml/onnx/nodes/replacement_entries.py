@@ -16,10 +16,10 @@ def shape_infer_GCNConv(ssi: SymbolicShapeInference, node: NodeProto):
     }
     _, module = ssi.placeholder_id_to_module[op_attributes['module_id']]
     weights_shape = module.lin.weight.T.shape
-    output_dtype = ssi.known_vi_[
-        node.input[0]].type.tensor_type.elem_type
-    ssi._compute_matmul_shape(
-        node, output_dtype=output_dtype, rhs_shape=weights_shape)
+    output_dtype = ssi.known_vi_[node.input[0]].type.tensor_type.elem_type
+    ssi._compute_matmul_shape(node,
+                              output_dtype=output_dtype,
+                              rhs_shape=weights_shape)
 
 
 def make_GCNConv_shape_fn(module):
@@ -51,13 +51,13 @@ def shape_infer_GATConv(ssi: SymbolicShapeInference, node: NodeProto) -> None:
         for attribute_proto in node.attribute
     }
     _, module = ssi.placeholder_id_to_module[op_attributes['module_id']]
-    output_dtype = ssi.known_vi_[
-        node.input[0]].type.tensor_type.elem_type
+    output_dtype = ssi.known_vi_[node.input[0]].type.tensor_type.elem_type
 
-    out_shape = (ssi._get_shape(node, 0)[0], module.heads * module.out_channels)
+    out_shape = (ssi._get_shape(node,
+                                0)[0], module.heads * module.out_channels)
     vi = ssi.known_vi_[node.output[0]]
-    vi.CopyFrom(helper.make_tensor_value_info(
-        node.output[0], output_dtype, out_shape))
+    vi.CopyFrom(
+        helper.make_tensor_value_info(node.output[0], output_dtype, out_shape))
 
 
 def make_GATConv_shape_fn(module):

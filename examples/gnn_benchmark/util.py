@@ -3,6 +3,7 @@ import logging
 import dace
 import torch
 from dace.transformation.auto.auto_optimize import auto_optimize as dace_auto_optimize
+from dace.dtypes import ScheduleType
 
 
 def _specialize_memory(sdfg):
@@ -18,7 +19,8 @@ def _specialize_memory(sdfg):
             arr = sdfg.arrays[dnode.data]
             if (arr.transient and not isinstance(arr, dace.data.View)
                     and arr.storage != dace.StorageType.Register):
-                print(f'Setting lifetime from {arr.lifetime} to persistent: {dnode.data}')
+                print(f'Setting lifetime from {arr.lifetime}'
+                      f' to persistent: {dnode.data}')
                 arr.lifetime = dace.AllocationLifetime.Persistent
 
     # Disable OpenMP sections
@@ -35,8 +37,10 @@ def specialize_mem_onnx(mod):
 
 def apply_dace_auto_optimize(module):
     sdfg = module.sdfg
-    dace_auto_optimize(sdfg,
-                       device=dace.dtypes.DeviceType.GPU if torch.cuda.is_available() else dace.dtypes.DeviceType.CPU)
+    dace_auto_optimize(
+        sdfg,
+        device=dace.dtypes.DeviceType.GPU
+        if torch.cuda.is_available() else dace.dtypes.DeviceType.CPU)
 
 
 def make_maps_dynamic(module, exclude_loops=None):
@@ -50,12 +54,15 @@ def make_maps_dynamic(module, exclude_loops=None):
                 and len(node[0].map.params):
             if node[0].label not in exclude_loops:
                 print("Changing schedule to TB dynamic: ", node[0].map)
-                node[0].schedule = dace.dtypes.ScheduleType.GPU_ThreadBlock_Dynamic
+                node[0].schedule = ScheduleType.GPU_ThreadBlock_Dynamic
             else:
                 exclude_loops[node[0].label] += 1
                 print("Keeping schedule sequential for ", node[0].map)
 
-    not_excluded = [name for name, count in exclude_loops.items() if count == 0]
+    not_excluded = [
+        name for name, count in exclude_loops.items() if count == 0
+    ]
     if not_excluded:
-        logging.warning("Following loops were marked as excluded from thread-block dynamic scheduling "
-                        "but were not found in the SDFG: %s", not_excluded)
+        logging.warning(
+            "Following loops were marked as excluded from thread-block dynamic "
+            "scheduling but were not found in the SDFG: %s", not_excluded)

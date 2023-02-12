@@ -7,7 +7,10 @@ from onnx import helper
 from daceml.onnx.shape_inference.symbolic_shape_infer import SymbolicShapeInference
 
 
-def _compute_matmul_shape(self: SymbolicShapeInference, node, output_dtype=None, rhs_shape=None):
+def _compute_matmul_shape(self: SymbolicShapeInference,
+                          node,
+                          output_dtype=None,
+                          rhs_shape=None):
     """Slightly modified function from SymbolicShapeInference that
     allows supplying rhs_shape (instead of getting it from a node)."""
     lhs_shape = self._get_shape(node, 0)
@@ -29,14 +32,19 @@ def _compute_matmul_shape(self: SymbolicShapeInference, node, output_dtype=None,
     else:
         lhs_reduce_dim = -1
         rhs_reduce_dim = -2
-        new_shape = self._broadcast_shapes(lhs_shape[:-2], rhs_shape[:-2]) + [lhs_shape[-2]] + [rhs_shape[-1]]
+        new_shape = self._broadcast_shapes(lhs_shape[:-2], rhs_shape[:-2]) + [
+            lhs_shape[-2]
+        ] + [rhs_shape[-1]]
     # merge reduce dim
-    self._check_merged_dims([lhs_shape[lhs_reduce_dim], rhs_shape[rhs_reduce_dim]], allow_broadcast=False)
+    self._check_merged_dims(
+        [lhs_shape[lhs_reduce_dim], rhs_shape[rhs_reduce_dim]],
+        allow_broadcast=False)
     if output_dtype is None:
         # infer output_dtype from input type when not specified
         output_dtype = self.known_vi_[node.input[0]].type.tensor_type.elem_type
     vi = self.known_vi_[node.output[0]]
-    vi.CopyFrom(helper.make_tensor_value_info(node.output[0], output_dtype, new_shape))
+    vi.CopyFrom(
+        helper.make_tensor_value_info(node.output[0], output_dtype, new_shape))
 
 
 # Overwrite _compute_matmul_shape with the modified version.
@@ -58,9 +66,12 @@ def ssi_init_with_replacements(self, *args, **kwargs):
 SymbolicShapeInference.__init__ = ssi_init_with_replacements
 
 
-def infer_shapes(onnx_model, placeholder_id_to_module: Dict[str, torch.nn.Module], auto_merge=False):
+def infer_shapes(onnx_model,
+                 placeholder_id_to_module: Dict[str, torch.nn.Module],
+                 auto_merge=False):
     SymbolicShapeInference.placeholder_id_to_module = placeholder_id_to_module
-    result = SymbolicShapeInference.infer_shapes(onnx_model, auto_merge=auto_merge)
+    result = SymbolicShapeInference.infer_shapes(onnx_model,
+                                                 auto_merge=auto_merge)
     if result is None:
         raise ValueError("Symbolic shape inference failed")
     return result

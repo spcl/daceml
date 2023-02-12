@@ -79,7 +79,6 @@ class DaceModule(nn.Module, frontend_common.SDFGConvertible):
             >>> dace_module(torch.ones(2))
             tensor([0., 0.])
     """
-
     def __init__(self,
                  module: nn.Module,
                  dummy_inputs: Optional[Tuple[torch.Tensor, ...]] = None,
@@ -314,12 +313,13 @@ class DaceModule(nn.Module, frontend_common.SDFGConvertible):
             _onnx_delete_initializers(onnx_model_exported, input_names)
 
             # load using importer
-            dace_model = ONNXModel(self.sdfg_name,
-                                   onnx_model_exported,
-                                   onnx_simplify=self.onnx_simplify,
-                                   cuda=self.use_cuda,
-                                   auto_optimize=self.auto_optimize,
-                                   placeholder_id_to_module=placeholder_id_to_module)
+            dace_model = ONNXModel(
+                self.sdfg_name,
+                onnx_model_exported,
+                onnx_simplify=self.onnx_simplify,
+                cuda=self.use_cuda,
+                auto_optimize=self.auto_optimize,
+                placeholder_id_to_module=placeholder_id_to_module)
             self.sdfg = dace_model.sdfg
             self.dace_model = dace_model
 

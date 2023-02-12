@@ -47,9 +47,12 @@ def get_replaced_onnx_op(name: str) -> Type[nodes.Node]:
     return MODULES_TO_REPLACE[name].onnx_op
 
 
-def make_schema_dict(name, inputs: Mapping[str, dace.typeclass], outputs: Mapping[str, dace.typeclass]):
+def make_schema_dict(name, inputs: Mapping[str, dace.typeclass],
+                     outputs: Mapping[str, dace.typeclass]):
     intersection = [name for name in inputs if name in outputs]
-    assert len(intersection) == 0, f"Same keys for inputs and outputs not allowed: {intersection}"
+    assert len(
+        intersection
+    ) == 0, f"Same keys for inputs and outputs not allowed: {intersection}"
 
     schema_dict = {
         'name': name,
@@ -94,28 +97,35 @@ def make_schema_dict(name, inputs: Mapping[str, dace.typeclass], outputs: Mappin
     schema_dict.update({
         'inputs': inputs_info,
         'outputs': outputs_info,
-        'type_constraints': {**inputs_type_constraints, **outputs_type_constraints},
+        'type_constraints': {
+            **inputs_type_constraints,
+            **outputs_type_constraints
+        },
     })
     return schema_dict
 
 
-def onnx_type_info_from_torch_params(params: Iterable[Tuple[str, torch.nn.Parameter]]):
+def onnx_type_info_from_torch_params(
+        params: Iterable[Tuple[str, torch.nn.Parameter]]):
     onnx_params = []
     onnx_type_constraints = {}
     for name, p in params:
         name = clean_onnx_name(name)
         type_name = name + '_T'
-        onnx_params.append(ONNXParameter.from_json({
-            'description': '',
-            'homogeneous': True,
-            'name': name,
-            'param_type': 'Single',
-            'type': 'ONNXParameter',
-            'type_str': type_name
-        }))
+        onnx_params.append(
+            ONNXParameter.from_json({
+                'description': '',
+                'homogeneous': True,
+                'name': name,
+                'param_type': 'Single',
+                'type': 'ONNXParameter',
+                'type_str': type_name
+            }))
         onnx_type_constraints[type_name] = ONNXTypeConstraint.from_json({
-            'type': 'ONNXTypeConstraint',
-            'type_str': type_name,
+            'type':
+            'ONNXTypeConstraint',
+            'type_str':
+            type_name,
             'types': [TORCH_DTYPE_TO_TYPECLASS[p.dtype].to_string()],
         })
     return onnx_params, onnx_type_constraints
@@ -125,7 +135,13 @@ def onnx_type_info_from_torch_params(params: Iterable[Tuple[str, torch.nn.Parame
 def generate_onnx_op_placeholder(schema):
     attrs = {}
 
-    def __init__(self, name, module, prefix, *args, location=None, **op_attributes):
+    def __init__(self,
+                 name,
+                 module,
+                 prefix,
+                 *args,
+                 location=None,
+                 **op_attributes):
         # Add information about module parameters to the schema.
         onnx_params, onnx_type_constraints = onnx_type_info_from_torch_params(
             module.named_parameters())
@@ -155,11 +171,13 @@ def generate_onnx_op_placeholder(schema):
 
         if len(args) > 0:
             raise TypeError(
-                f"__init__() takes 2 positional arguments but {2 + len(args)} were given")
+                f"__init__() takes 2 positional arguments but {2 + len(args)} were given"
+            )
 
         if len(op_attributes) > 0:
             raise TypeError(
-                f"__init__() takes no keyword arguments but following were given: {op_attributes}")
+                f"__init__() takes no keyword arguments but following were given: {op_attributes}"
+            )
 
     # TODO: the docstrings for params are missing, but are they needed?
     input_connector_docstrings = "\n".join(
@@ -173,11 +191,10 @@ def generate_onnx_op_placeholder(schema):
     # means that the generated sphinx docs have a proper signature, and not just *args, **kwargs.
     init_docstring = "__init__(name, *, {})\n".format(
         ", ".join(attr.name if attr.required else attr.name + "=" +
-                                                  repr(attr.default_value)
+                  repr(attr.default_value)
                   for _, attr in schema.attributes.items()))
     init_docstring += ":param name: the name of the node.\n" + "\n".join(
-        _get_attr_docstring(attr)
-        for _, attr in schema.attributes.items())
+        _get_attr_docstring(attr) for _, attr in schema.attributes.items())
 
     docstring = "\n" + schema.doc
     type_docstrings = "\n".join(
@@ -194,12 +211,14 @@ def generate_onnx_op_placeholder(schema):
     attrs['__doc__'] = docstring + "\n"
     attrs['schema'] = schema
     attrs['__init__'] = __init__
-    attrs['module'] = Property(
-        dtype=torch.nn.Module, desc='Replaced module', allow_none=False)
-    attrs['prefix'] = Property(
-        dtype=str, desc='Prefix for the module.', allow_none=False)
+    attrs['module'] = Property(dtype=torch.nn.Module,
+                               desc='Replaced module',
+                               allow_none=False)
+    attrs['prefix'] = Property(dtype=str,
+                               desc='Prefix for the module.',
+                               allow_none=False)
 
-    cls = type(cls_name, (ONNXOp,), attrs)
+    cls = type(cls_name, (ONNXOp, ), attrs)
     cls = dace.library.node(cls)
     cls.__init__.__doc__ = "\n" + init_docstring
 
@@ -227,7 +246,7 @@ def generate_onnx_op_placeholder(schema):
                         log.warning(
                             'No expansion for library node "{}". '
                             'Reason: forward_can_be_applied returned False'.
-                                format(node.label))
+                            format(node.label))
                         result = expand_node(node, state, sdfg)
                         if not isinstance(result, SDFG):
                             # When we return an SDFG the environments will be determined recursively by codegen.
@@ -245,22 +264,24 @@ def generate_onnx_op_placeholder(schema):
 
 
 # Registration of replacement.
-def register_replacement(module_name: str,
-                         inputs: Mapping[str, dace.typeclass],
-                         outputs: Mapping[str, dace.typeclass],
-                         shape_infer: Callable[[SymbolicShapeInference, 'NodeProto'], None],
-                         shape_fn_from_module: Callable[[torch.nn.Module], ShapeFnType]):
+def register_replacement(
+        module_name: str, inputs: Mapping[str, dace.typeclass],
+        outputs: Mapping[str, dace.typeclass],
+        shape_infer: Callable[[SymbolicShapeInference, 'NodeProto'], None],
+        shape_fn_from_module: Callable[[torch.nn.Module], ShapeFnType]):
     if len(outputs) > 1:
-        raise NotImplementedError("Replacing nodes with more than 1 output is not supported.")
+        raise NotImplementedError(
+            "Replacing nodes with more than 1 output is not supported.")
 
     output_dtype = next(iter(outputs.values()))
 
     schema_dict = make_schema_dict(module_name, inputs, outputs)
     schema = ONNXSchema.from_json(schema_dict)
     onnx_op = generate_onnx_op_placeholder(schema)
-    replacement_info = ReplacementInfo(module_name=module_name,
-                                       infer_shape=shape_infer,
-                                       shape_fn_from_module=shape_fn_from_module,
-                                       onnx_op=onnx_op,
-                                       output_dtype=TYPECLASS_TO_TORCH_DTYPE[output_dtype])
+    replacement_info = ReplacementInfo(
+        module_name=module_name,
+        infer_shape=shape_infer,
+        shape_fn_from_module=shape_fn_from_module,
+        onnx_op=onnx_op,
+        output_dtype=TYPECLASS_TO_TORCH_DTYPE[output_dtype])
     MODULES_TO_REPLACE[module_name] = replacement_info

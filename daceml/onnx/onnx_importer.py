@@ -110,18 +110,19 @@ class ONNXModel:
                 dace_model(test_input)
 
     """
-
-    def __init__(self,
-                 name: str,
-                 model: onnx.ModelProto,
-                 cuda: bool = False,
-                 auto_optimize: bool = True,
-                 simplify: bool = False,
-                 onnx_simplify: bool = True,
-                 storage: Optional[dtypes.StorageType] = None,
-                 save_transients: Optional[Dict[str, torch.Tensor]] = None,
-                 auto_merge: bool = False,
-                 placeholder_id_to_module: Optional[Dict[int, torch.nn.Module]] = None):
+    def __init__(
+            self,
+            name: str,
+            model: onnx.ModelProto,
+            cuda: bool = False,
+            auto_optimize: bool = True,
+            simplify: bool = False,
+            onnx_simplify: bool = True,
+            storage: Optional[dtypes.StorageType] = None,
+            save_transients: Optional[Dict[str, torch.Tensor]] = None,
+            auto_merge: bool = False,
+            placeholder_id_to_module: Optional[Dict[int,
+                                                    torch.nn.Module]] = None):
         """
         :param name: the name for the SDFG.
         :param model: the model to import.
@@ -145,7 +146,10 @@ class ONNXModel:
                     f"to import as a result.")
 
         onnx.checker.check_model(model)
-        model = shape_inference.infer_shapes(model, auto_merge=auto_merge, placeholder_id_to_module=placeholder_id_to_module)
+        model = shape_inference.infer_shapes(
+            model,
+            auto_merge=auto_merge,
+            placeholder_id_to_module=placeholder_id_to_module)
         if onnx_simplify:
             model = simplify_onnx_model(model, auto_merge)
 
@@ -201,7 +205,8 @@ class ONNXModel:
         access_nodes = {}
         self._idx_to_node = []
         for i, node in enumerate(graph.node):
-            if not has_onnx_node(node.op_type) and not is_replaceable(node.op_type):
+            if not has_onnx_node(node.op_type) and not is_replaceable(
+                    node.op_type):
                 raise ValueError("Unsupported ONNX operator: '{}'".format(
                     node.op_type))
 
@@ -250,16 +255,19 @@ class ONNXModel:
                 module_id = op_attributes.pop('module_id')
                 if placeholder_id_to_module is None:
                     raise ValueError(
-                        'Found a node to replace, but no replacement dict provided.')
+                        'Found a node to replace, but no replacement dict provided.'
+                    )
                 elif module_id not in placeholder_id_to_module:
                     raise ValueError(
-                        f'Module id {module_id} not found in replacement dict.')
+                        f'Module id {module_id} not found in replacement dict.'
+                    )
                 prefix, module = placeholder_id_to_module[module_id]
-                op_node = get_replaced_onnx_op(
-                    node.op_type)(node_name, module, prefix, **op_attributes)
+                op_node = get_replaced_onnx_op(node.op_type)(node_name, module,
+                                                             prefix,
+                                                             **op_attributes)
             else:
-                op_node = get_onnx_node(node.op_type)(
-                    node_name, **op_attributes)
+                op_node = get_onnx_node(node.op_type)(node_name,
+                                                      **op_attributes)
             self.state.add_node(op_node)
             self._idx_to_node.append(op_node)
 
@@ -676,7 +684,6 @@ def create_output_array(
         :param use_torch: whether to return a numpy array or a torch tensor.
         :param zeros: if true init with zeros else empty.
     """
-
     def eval_dim(dim):
         for sym in dim.free_symbols:
             dim = dim.subs(sym, inferred_symbols[sym.name])

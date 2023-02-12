@@ -10,6 +10,7 @@ from daceml.torch.module import dace_module, DaceModule
 torch.backends.cuda.matmul.allow_tf32 = False
 torch.backends.cudnn.allow_tf32 = False
 
+
 @pytest.mark.parametrize("bias", [False, True], ids=['', 'bias'])
 @pytest.mark.pure
 def test_gcnconv(bias):
@@ -23,8 +24,11 @@ def test_gcnconv(bias):
     class GCN(torch.nn.Module):
         def __init__(self):
             super().__init__()
-            self.conv1 = GCNConv(
-                2, 3, bias=bias, normalize=normalize, add_self_loops=self_loops)
+            self.conv1 = GCNConv(2,
+                                 3,
+                                 bias=bias,
+                                 normalize=normalize,
+                                 add_self_loops=self_loops)
             self.conv1.lin.weight = nn.Parameter(weights_values)
             if bias:
                 self.conv1.bias = nn.Parameter(bias_values)
@@ -43,8 +47,11 @@ def test_gcnconv(bias):
 
     pred = model(x, rowptr, col, edge_vals)
 
-    original_gcnconv = GCNConv(
-        2, 3, bias=bias, normalize=normalize, add_self_loops=self_loops)
+    original_gcnconv = GCNConv(2,
+                               3,
+                               bias=bias,
+                               normalize=normalize,
+                               add_self_loops=self_loops)
     original_gcnconv.lin.weight = nn.Parameter(weights_values)
     if bias:
         original_gcnconv.bias = nn.Parameter(bias_values)
@@ -68,18 +75,27 @@ def test_gcnconv_full_model(seed):
     num_hidden_features = 3 * size
     num_classes = 4
 
-    weights_values_1 = torch.randn((num_hidden_features, num_in_features), generator=rng) / 10
-    bias_values_1 = torch.randn((num_hidden_features,), generator=rng) / 10
-    weights_values_2 = torch.randn((num_classes, num_hidden_features), generator=rng) / 10
-    bias_values_2 = torch.randn((num_classes,), generator=rng) / 10
+    weights_values_1 = torch.randn(
+        (num_hidden_features, num_in_features), generator=rng) / 10
+    bias_values_1 = torch.randn((num_hidden_features, ), generator=rng) / 10
+    weights_values_2 = torch.randn(
+        (num_classes, num_hidden_features), generator=rng) / 10
+    bias_values_2 = torch.randn((num_classes, ), generator=rng) / 10
     x = torch.randn((num_nodes, num_in_features), generator=rng) / 10
-    edges = torch.randint(low=0, high=2, size=(num_nodes, num_nodes), generator=rng) / 10
+    edges = torch.randint(
+        low=0, high=2, size=(num_nodes, num_nodes), generator=rng) / 10
 
     class GCN(torch.nn.Module):
         def __init__(self):
             super().__init__()
-            self.conv1 = GCNConv(num_in_features, num_hidden_features, normalize=False, add_self_loops=False)
-            self.conv2 = GCNConv(num_hidden_features, num_classes, normalize=False, add_self_loops=False)
+            self.conv1 = GCNConv(num_in_features,
+                                 num_hidden_features,
+                                 normalize=False,
+                                 add_self_loops=False)
+            self.conv2 = GCNConv(num_hidden_features,
+                                 num_classes,
+                                 normalize=False,
+                                 add_self_loops=False)
             self.act = nn.ReLU()
 
             self.conv1.lin.weight = nn.Parameter(weights_values_1)

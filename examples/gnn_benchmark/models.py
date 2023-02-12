@@ -4,12 +4,17 @@ from torch_geometric.nn import GCNConv, GATConv
 
 
 class GCN(torch.nn.Module):
-    def __init__(self, num_node_features, num_hidden_features, num_classes, normalize):
+    def __init__(self, num_node_features, num_hidden_features, num_classes,
+                 normalize):
         super().__init__()
-        self.conv1 = GCNConv(num_node_features, num_hidden_features,
-                             normalize=normalize, add_self_loops=False)
-        self.conv2 = GCNConv(num_hidden_features, num_classes,
-                             normalize=normalize, add_self_loops=False)
+        self.conv1 = GCNConv(num_node_features,
+                             num_hidden_features,
+                             normalize=normalize,
+                             add_self_loops=False)
+        self.conv2 = GCNConv(num_hidden_features,
+                             num_classes,
+                             normalize=normalize,
+                             add_self_loops=False)
 
         self.act = nn.ReLU()
         self.log_softmax = nn.LogSoftmax(dim=1)
@@ -23,7 +28,8 @@ class GCN(torch.nn.Module):
 
 
 class LinearModel(torch.nn.Module):
-    def __init__(self, num_node_features, _unused, num_classes, _unused2) -> None:
+    def __init__(self, num_node_features, _unused, num_classes,
+                 _unused2) -> None:
         super().__init__()
         self.lin = nn.Linear(num_node_features, num_classes)
 
@@ -33,12 +39,23 @@ class LinearModel(torch.nn.Module):
 
 
 class GAT(torch.nn.Module):
-    def __init__(self, num_node_features, features_per_head, num_classes, _unsued, num_heads=8):
+    def __init__(self,
+                 num_node_features,
+                 features_per_head,
+                 num_classes,
+                 _unsued,
+                 num_heads=8):
         super().__init__()
-        self.conv1 = GATConv(num_node_features, features_per_head,
-                             heads=num_heads, add_self_loops=False, bias=True)
-        self.conv2 = GATConv(features_per_head * num_heads, num_classes,
-                             heads=1, add_self_loops=False, bias=True)
+        self.conv1 = GATConv(num_node_features,
+                             features_per_head,
+                             heads=num_heads,
+                             add_self_loops=False,
+                             bias=True)
+        self.conv2 = GATConv(features_per_head * num_heads,
+                             num_classes,
+                             heads=1,
+                             add_self_loops=False,
+                             bias=True)
 
         self.act = nn.ELU()
         self.log_softmax = nn.LogSoftmax(dim=1)

@@ -20,10 +20,12 @@ def replace_modules(module: torch.nn.Module):
                 replacement_info = MODULES_TO_REPLACE[cls_name]
                 shape_fn = replacement_info.shape_fn_from_module(submodule)
                 output_dtype = replacement_info.output_dtype
-                placeholder = GenericPlaceholder(cls_name, submodule, replaced_idx, local_prefix, output_dtype,
-                                                 shape_fn)
+                placeholder = GenericPlaceholder(cls_name, submodule,
+                                                 replaced_idx, local_prefix,
+                                                 output_dtype, shape_fn)
                 setattr(module, name, placeholder)
-                placeholder_id_to_module[replaced_idx] = (local_prefix, submodule)
+                placeholder_id_to_module[replaced_idx] = (local_prefix,
+                                                          submodule)
                 replaced_idx += 1
             else:
                 replace_modules_helper(submodule, local_prefix)
@@ -44,13 +46,13 @@ def create_placeholder_function_class(name, module_id, dtype, shape_fn):
     attrs = {}
     attrs['symbolic'] = symbolic
     attrs['forward'] = forward
-    cls = type(name, (torch.autograd.Function,), attrs)
+    cls = type(name, (torch.autograd.Function, ), attrs)
     return cls
 
 
 class GenericPlaceholder(torch.nn.Module):
-    def __init__(self, placeholder_name: str, replaced_module: torch.nn.Module, module_id: int, prefix: str,
-                 output_dtype, shape_fn):
+    def __init__(self, placeholder_name: str, replaced_module: torch.nn.Module,
+                 module_id: int, prefix: str, output_dtype, shape_fn):
         super().__init__()
         self.prefix: str = prefix
         self.placeholder_function = create_placeholder_function_class(

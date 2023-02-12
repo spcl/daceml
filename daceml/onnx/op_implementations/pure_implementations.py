@@ -567,10 +567,11 @@ def Relu(X, Y):
 def LeakyRelu(X, Y):
     Y[:] = dace.elementwise(cast_lambda, X)
 
+
 @python_pure_op_implementation(
     cast_lambda=lambda node, X:
-    "lambda x: (max(x, dace.{dtype}(0)) + {alpha} * min(exp(x) - 1, dace.{dtype}(0)))".
-        format(dtype=X.dtype.to_string(), alpha=node.alpha))
+    "lambda x: (max(x, dace.{dtype}(0)) + {alpha} * min(exp(x) - 1, dace.{dtype}(0)))"
+    .format(dtype=X.dtype.to_string(), alpha=node.alpha))
 def Elu(X, Y):
     Y[:] = dace.elementwise(cast_lambda, X)
 
