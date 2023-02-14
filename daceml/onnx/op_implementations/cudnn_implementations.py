@@ -3,7 +3,7 @@ from typing import Union, Optional, Tuple, List
 
 import dace
 from dace import SDFGState, nodes as nd, SDFG, dtypes, data as dt
-from dace.codegen.targets.common import sym2cpp
+from dace.codegen.common import sym2cpp
 
 from daceml.onnx import environments
 from daceml.onnx.converters import clean_onnx_name
