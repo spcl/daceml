@@ -32,7 +32,7 @@ setup(
         "License :: OSI Approved :: BSD License",
         "Operating System :: OS Independent",
     ],
-    python_requires='>=3.6, <3.10',
+    python_requires='>=3.7, <3.10',
     packages=find_packages(
         exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
     package_data={'': (['*.cpp'] + runtime_files)},
@@ -41,7 +41,6 @@ setup(
         'onnx == 1.7.0',  # we support opset v12
         'torch',
         'protobuf == 3.19',
-        'dataclasses; python_version < "3.7"',
         'onnx-simplifier == 0.3.10'
     ],
     # install with pip and --find-links (see Makefile)
