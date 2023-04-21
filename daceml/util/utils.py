@@ -3,6 +3,7 @@ import functools
 import logging
 from typing import Optional, Set, Callable
 
+import itertools
 from functools import wraps
 
 import dace
@@ -332,3 +333,37 @@ def all_equal(a, b) -> bool:
     if len(a) != len(b):
         return False
     return all(x == y for x, y in zip(a, b))
+
+
+# From https://stackoverflow.com/a/40596355
+def strict_zip(*iterables):
+    """
+    Zip iterables, requiring that they are equal in length.
+    """
+    class ExhaustedError(Exception):
+        def __init__(self, index):
+            self.index = index
+
+    def raising_iter(i):
+        raise ExhaustedError(i)
+        yield
+
+    def terminate_iter(i, iterable):
+        return itertools.chain(iterable, raising_iter(i))
+
+    iterators = [terminate_iter(*args) for args in enumerate(iterables)]
+    try:
+        yield from zip(*iterators)
+    except ExhaustedError as exc:
+        index = exc.index
+        if index > 0:
+            raise RuntimeError(
+                'iterable {} exhausted first'.format(index)) from None
+        # Check that all other iterators are also exhausted.
+        for i, iterator in enumerate(iterators[1:], start=1):
+            try:
+                next(iterator)
+            except ExhaustedError:
+                pass
+            else:
+                raise RuntimeError('iterable {} is longer'.format(i)) from None

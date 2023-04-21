@@ -2,6 +2,7 @@ VENV_PATH ?= venv
 PYTHON ?= python
 PYTHON_BINARY ?= python
 PYTEST ?= pytest
+MPI_PREFIX ?= mpirun
 PIP ?= pip
 YAPF ?= yapf
 
@@ -17,13 +18,6 @@ ACTIVATE = . $(VENV_PATH)/bin/activate &&
 endif
 
 .PHONY: clean doc doctest test test-gpu codecov check-formatting check-formatting-names clean-dacecaches yapf
-clean:
-	! test -d $(VENV_PATH) || rm -r $(VENV_PATH)
-
-venv: 
-ifneq ($(VENV_PATH),)
-	test -d $(VENV_PATH) || echo "Creating new venv" && $(PYTHON) -m venv ./$(VENV_PATH)
-endif
 
 install: venv
 ifneq ($(VENV_PATH),)
@@ -34,6 +28,14 @@ ifneq ($(DACE_VERSION),)
 endif
 	$(ACTIVATE) $(PIP) install $(TORCH_VERSION)
 	$(ACTIVATE) $(PIP) install -e .[testing,docs]
+
+clean:
+	! test -d $(VENV_PATH) || rm -r $(VENV_PATH)
+
+venv:
+ifneq ($(VENV_PATH),)
+	test -d $(VENV_PATH) || echo "Creating new venv" && $(PYTHON) -m venv ./$(VENV_PATH)
+endif
 
 doc:
 # suppress warnings in ONNXOps docstrings using grep -v
@@ -61,6 +63,9 @@ test-intel-fpga:
 
 test-xilinx:
 	$(ACTIVATE) $(PYTEST) $(PYTEST_ARGS) tests/torch/fpga/
+
+test-distributed:
+	$(ACTIVATE) $(MPI_PREFIX) $(PYTEST) $(PYTEST_ARGS) tests/distributed
 
 codecov:
 	curl -s https://codecov.io/bash | bash

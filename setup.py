@@ -55,4 +55,5 @@ setup(
             'sphinx', 'sphinx_rtd_theme', 'sphinx-autodoc-typehints',
             'sphinx-gallery', 'matplotlib', 'jinja2<3.1'
         ],
+        'distributed': ['mpi4py'],
     })
