@@ -187,11 +187,11 @@ class PureConv2D(ONNXForward):
         if len(X.shape) != 4 or len(W.shape) != 4:
             return False
 
-        if node.group != 1:
-            return False
+        # if node.group != 1:
+        #     return False
 
-        if num_channels != W.shape[1]:
-            return False
+        # if num_channels != W.shape[1]:
+        #     return False
 
         if node.dilations is not None and (not all(d == 1
                                                    for d in node.dilations) or
@@ -202,9 +202,9 @@ class PureConv2D(ONNXForward):
                                       or len(node.pads) != image_dims * 2):
             return False
 
-        if node.strides is not None and (not all(s == 1 for s in node.strides)
-                                         or len(node.strides) != image_dims):
-            return False
+        # if node.strides is not None and (not all(s == 2 for s in node.strides)
+        #                                  or len(node.strides) != image_dims):
+        #     return False
 
         if B is not None and B.shape[0] != num_filters:
             return False
@@ -238,97 +238,130 @@ class PureConv2D(ONNXForward):
 
         dtype = X.dtype
 
-        @dace.program
-        def broadcast(x: dtype[batch_size, num_filters, output_size_y,
-                               output_size_x], y: dtype[num_filters]):
+        if node.group == 1:
+            assert all(s == 2 for s in node.strides) or all(s == 1 for s in node.strides)
+            stride = node.strides[0]
 
-            for b, m, out_x, out_y in dace.map[0:batch_size, 0:num_filters,
-                                               0:output_size_y,
-                                               0:output_size_x]:
-                with dace.tasklet:
-                    inp << y[m]
-                    outp >> x[b, m, out_x, out_y]
-                    outp = inp
+            @dace.program
+            def broadcast(x: dtype[batch_size, num_filters, output_size_y,
+                                output_size_x], y: dtype[num_filters]):
 
-        @dace.program
-        def zero_init(x: dtype[batch_size, num_filters, output_size_y,
-                               output_size_x]):
-            for b, m, out_x, out_y in dace.map[0:batch_size, 0:num_filters,
-                                               0:output_size_y,
-                                               0:output_size_x]:
-                with dace.tasklet:
-                    outp >> x[b, m, out_x, out_y]
-                    outp = 0
-
-        if B is None:
-
-            def conv(X, Y, W):
-                zero_init(Y)
-                for b, m, out_x, out_y, cin, hx, hy in dace.map[
-                        0:batch_size, 0:num_filters, 0:output_size_y,
-                        0:output_size_x, 0:num_channels, 0:filter_hx,
-                        0:filter_hy]:
+                for b, m, out_x, out_y in dace.map[0:batch_size, 0:num_filters,
+                                                0:output_size_y,
+                                                0:output_size_x]:
                     with dace.tasklet:
-                        filter << W[m, cin, hx, hy]
-                        image << X[b, cin, hx + out_x, hy + out_y]
-                        out >> Y(1, lambda x, y: x + y)[b, m, out_x, out_y]
-                        out = filter * image
+                        inp << y[m]
+                        outp >> x[b, m, out_x, out_y]
+                        outp = inp
+
+            @dace.program
+            def zero_init(x: dtype[batch_size, num_filters, output_size_y,
+                                output_size_x]):
+                for b, m, out_x, out_y in dace.map[0:batch_size, 0:num_filters,
+                                                0:output_size_y,
+                                                0:output_size_x]:
+                    with dace.tasklet:
+                        outp >> x[b, m, out_x, out_y]
+                        outp = 0
+
+            if B is None:
+
+                def conv(X, Y, W):
+                    zero_init(Y)
+                    for b, m, out_x, out_y, cin, hx, hy in dace.map[
+                            0:batch_size, 0:num_filters, 0:output_size_y,
+                            0:output_size_x, 0:num_channels, 0:filter_hx,
+                            0:filter_hy]:
+                        with dace.tasklet:
+                            filter << W[m, cin, hx, hy]
+                            image << X[b, cin, hx + out_x, hy + out_y]
+                            out >> Y(1, lambda x, y: x + y)[b, m, out_x, out_y]
+                            out = filter * image
+            else:
+
+                def conv(X, Y, W, B):
+                    broadcast(Y, B)
+                    for b, m, out_x, out_y, cin, hx, hy in dace.map[
+                            0:batch_size, 0:num_filters, 0:output_size_y,
+                            0:output_size_x, 0:num_channels, 0:filter_hx,
+                            0:filter_hy]:
+                        with dace.tasklet:
+                            filter << W[m, cin, hx, hy]
+                            image << X[b, cin, hx + out_x * stride, hy + out_y * stride]
+                            out >> Y(1, lambda x, y: x + y)[b, m, out_x, out_y]
+                            out = filter * image
+
+            nsdfg = program_for_node(conv, sdfg, state, node)
+
+            # identify the compute_state
+            s1, s2 = nsdfg.states()
+
+            accessnodes_X = lambda s: [
+                n for n in s.nodes()
+                if isinstance(n, nodes.AccessNode) and n.data == "X"
+            ]
+
+            compute_state = s1 if len(accessnodes_X(s1)) > len(
+                accessnodes_X(s2)) else s2
+
+            nsdfg.apply_transformations(MapExpansion, states=[compute_state])
+
+            read_X = accessnodes_X(compute_state)
+            assert len(read_X) == 1
+            read_X = read_X[0]
+            path = compute_state.memlet_path(compute_state.out_edges(read_X)[0])
+
+            entry_nodes = [
+                e.dst for e in path if isinstance(e.dst, nodes.EntryNode)
+            ]
+
+            # merge the first 4 maps
+            me = entry_nodes[0]
+            for i in range(1, 4):
+                me, _ = MapCollapse.apply_to(nsdfg,
+                                            outer_map_entry=me,
+                                            inner_map_entry=entry_nodes[i],
+                                            permissive=True)
+
+            # merge the second 3 maps
+            me = entry_nodes[4]
+            for i in range(5, 7):
+                me, _ = MapCollapse.apply_to(nsdfg,
+                                            outer_map_entry=me,
+                                            inner_map_entry=entry_nodes[i],
+                                            permissive=True)
+
+            return nsdfg
         else:
+            assert all(s == 2 for s in node.strides) or all(s == 1 for s in node.strides)
+            stride = node.strides[0]
+
+            @dace.program
+            def broadcast(x: dtype[batch_size, num_filters, output_size_y,
+                                output_size_x], y: dtype[num_filters]):
+
+                for b, m, out_x, out_y in dace.map[0:batch_size, 0:num_filters,
+                                                0:output_size_y,
+                                                0:output_size_x]:
+                    with dace.tasklet:
+                        inp << y[m]
+                        outp >> x[b, m, out_x, out_y]
+                        outp = inp
 
             def conv(X, Y, W, B):
                 broadcast(Y, B)
                 for b, m, out_x, out_y, cin, hx, hy in dace.map[
                         0:batch_size, 0:num_filters, 0:output_size_y,
-                        0:output_size_x, 0:num_channels, 0:filter_hx,
+                        0:output_size_x, 0:1, 0:filter_hx,
                         0:filter_hy]:
                     with dace.tasklet:
                         filter << W[m, cin, hx, hy]
-                        image << X[b, cin, hx + out_x, hy + out_y]
+                        image << X[b, cin, hx + out_x * stride, hy + out_y * stride]
                         out >> Y(1, lambda x, y: x + y)[b, m, out_x, out_y]
                         out = filter * image
 
-        nsdfg = program_for_node(conv, sdfg, state, node)
-
-        # identify the compute_state
-        s1, s2 = nsdfg.states()
-
-        accessnodes_X = lambda s: [
-            n for n in s.nodes()
-            if isinstance(n, nodes.AccessNode) and n.data == "X"
-        ]
-
-        compute_state = s1 if len(accessnodes_X(s1)) > len(
-            accessnodes_X(s2)) else s2
-
-        nsdfg.apply_transformations(MapExpansion, states=[compute_state])
-
-        read_X = accessnodes_X(compute_state)
-        assert len(read_X) == 1
-        read_X = read_X[0]
-        path = compute_state.memlet_path(compute_state.out_edges(read_X)[0])
-
-        entry_nodes = [
-            e.dst for e in path if isinstance(e.dst, nodes.EntryNode)
-        ]
-
-        # merge the first 4 maps
-        me = entry_nodes[0]
-        for i in range(1, 4):
-            me, _ = MapCollapse.apply_to(nsdfg,
-                                         outer_map_entry=me,
-                                         inner_map_entry=entry_nodes[i],
-                                         permissive=True)
-
-        # merge the second 3 maps
-        me = entry_nodes[4]
-        for i in range(5, 7):
-            me, _ = MapCollapse.apply_to(nsdfg,
-                                         outer_map_entry=me,
-                                         inner_map_entry=entry_nodes[i],
-                                         permissive=True)
-
-        return nsdfg
-
+            nsdfg = program_for_node(conv, sdfg, state, node)
+            return nsdfg
 
 @op_implementation(op="BatchNormalization", name="pure")
 class PureBatchNormalization(ONNXForward):

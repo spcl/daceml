@@ -20,6 +20,7 @@ from daceml.util.utils import in_desc_with_name, out_desc_with_name, in_edge_wit
 
 log = logging.getLogger(__name__)
 
+from dace.frontend.python.parser import DaceProgram
 
 @python_pure_op_implementation
 def Log(input, output):
@@ -40,6 +41,107 @@ def Sqrt(X, Y):
 def Pow(X, Y, Z):
     Z[:] = X**Y
 
+
+@op_implementation(op="ConstantOfShape", name="pure")
+class ConstantOfShape(ONNXForward):
+    @staticmethod
+    def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
+        return True
+
+    @staticmethod
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+
+        input_node = next(state.in_edges_by_connector(node, 'input')).src
+        output_node = next(state.out_edges_by_connector(node, 'output')).src
+
+        def prog(input, output):
+            output[:] = 0.0
+
+        return program_for_node(prog, sdfg, state, node)
+
+@op_implementation(op="Concat", name="pure")
+class Concat(ONNXForward):
+    @staticmethod
+    def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
+        inputs__0 = next(state.in_edges_by_connector(node, 'inputs__0')).src
+        desc__0 = sdfg.arrays[inputs__0.data]
+
+        inputs__1 = next(state.in_edges_by_connector(node, 'inputs__1')).src
+        desc__1 = sdfg.arrays[inputs__1.data]
+
+        concat_result = next(state.out_edges_by_connector(node, 'concat_result')).dst
+        concat_result_desc = sdfg.arrays[concat_result.data]
+
+        same_shape = len(desc__0.shape) == len(desc__1.shape) and len(desc__1.shape) == len(concat_result_desc.shape)
+        if not same_shape:
+            return False
+        
+        first_dim = (desc__0.shape[0] + desc__1.shape[0]) == concat_result_desc.shape[0]
+        return first_dim
+
+    @staticmethod
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+
+        inputs__0 = next(state.in_edges_by_connector(node, 'inputs__0')).src
+        desc__0 = sdfg.arrays[inputs__0.data]
+
+        inputs__1 = next(state.in_edges_by_connector(node, 'inputs__1')).src
+        desc__1 = sdfg.arrays[inputs__1.data]
+
+        concat_result = next(state.out_edges_by_connector(node, 'concat_result')).dst
+        concat_result_desc = sdfg.arrays[concat_result.data]
+
+        def prog(inputs__0, inputs__1, concat_result):
+            # concat_result[:] = np.concatenate([inputs__0, inputs__1], axis=0)
+            concat_result[:desc__0.shape[0]] = inputs__0[:]
+            concat_result[desc__0.shape[0]:] = inputs__1[:]
+
+        prog.__name__ = node.label + "_expansion"
+        prog.__annotations__ = {"inputs__0": desc__0, "inputs__1": desc__1, "concat_result": concat_result_desc}
+
+        result = DaceProgram(prog, (), {}, False, dace.DeviceType.CPU)
+        sdfg_ = result.to_sdfg()
+
+        return sdfg_
+
+@op_implementation(op="Pad", name="pure")
+class Pad(ONNXForward):
+    @staticmethod
+    def forward_can_be_applied(node: onnx_op.ONNXOp, state: SDFGState,
+                               sdfg: SDFG) -> bool:
+        return True
+
+    @staticmethod
+    def forward(node: onnx_op.ONNXOp, state: SDFGState,
+                sdfg: SDFG) -> typing.Union[Node, SDFG]:
+
+        data = next(state.in_edges_by_connector(node, 'data')).src
+        desc_data = sdfg.arrays[data.data]
+
+        constant_value = next(state.in_edges_by_connector(node, 'constant_value')).src
+        desc_constant_value = sdfg.arrays[constant_value.data]
+
+        pads = next(state.in_edges_by_connector(node, 'pads')).src
+        desc_pads = sdfg.arrays[pads.data]
+
+        output = next(state.out_edges_by_connector(node, 'output')).dst
+        desc_output = sdfg.arrays[output.data]
+
+        def prog(data, constant_value, pads, output):
+            output[-desc_data.shape[0]:, -desc_data.shape[1]:, -desc_data.shape[2]:, -desc_data.shape[3]:] = data
+            output[:-desc_data.shape[0], :-desc_data.shape[1], :-desc_data.shape[2], :-desc_data.shape[3]] = constant_value[0]
+
+        prog.__name__ = node.label + "_expansion"
+        prog.__annotations__ = {"data": desc_data, "constant_value": desc_constant_value, "pads": desc_pads, "output": desc_output}
+
+        result = DaceProgram(prog, (), {}, False, dace.DeviceType.CPU)
+        sdfg_ = result.to_sdfg()
+
+        return sdfg_
 
 @op_implementation(op="Clip", name="pure")
 class PureClip(ONNXForward):
