@@ -1,7 +1,9 @@
-![CPU CI](https://github.com/spcl/daceml/workflows/CPU%20CI/badge.svg)
-![GPU CI](https://github.com/spcl/daceml/workflows/GPU%20CI/badge.svg)
-[![codecov](https://codecov.io/gh/spcl/daceml/branch/master/graph/badge.svg)](https://codecov.io/gh/spcl/daceml)
-[![Documentation Status](https://readthedocs.org/projects/daceml/badge/?version=latest)](https://daceml.readthedocs.io/en/latest/?badge=latest)
+> [!WARNING]
+> **This repository is archived.** DaCeML is no longer developed here.
+> All functionality has been merged into **DaCe**: https://github.com/spcl/dace
+>
+> Please use DaCe going forward, and open issues/PRs there.
+
 
 # DaCeML
 
