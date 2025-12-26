@@ -393,10 +393,11 @@ class DaceModule(nn.Module, frontend_common.SDFGConvertible):
 
     def __sdfg__(self, *args):
         if self.sdfg is None:
-            raise ValueError("""
-            Using a PyTorch model in a DaceProgram requires that the model is initialized first.
-            Either call this model using some inputs, or pass 'dummy_inputs' to the constructor.
-            """)
+            raise ValueError(
+                "Using a PyTorch model in a DaceProgram requires"
+                " that the model is initialized first. Either call this model"
+                " using some inputs, or pass 'dummy_inputs' to the constructor."
+            )
 
         for name, param in self._exported_parameters.items():
             onnx_name = clean_onnx_name(name)
@@ -440,7 +441,10 @@ class DaceModule(nn.Module, frontend_common.SDFGConvertible):
     def __sdfg_signature__(self):
         if self.dace_model is None:
             raise ValueError(
-                "Can't determine signature before SDFG is generated.")
+                "Using a PyTorch model in a DaceProgram requires"
+                " that the model is initialized first. Either call this model"
+                " using some inputs, or pass 'dummy_inputs' to the constructor."
+            )
         inputs = [clean_onnx_name(name) for name in self.dace_model.inputs]
         grad_buffers = self._add_gradient_buffers()
         inputs.extend(grad_buffers)
