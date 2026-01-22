@@ -10,6 +10,7 @@ import torch
 import onnx
 import onnx.checker
 from onnx import numpy_helper
+from onnx.helper import make_tensor_value_info
 
 import onnxsim
 
@@ -17,14 +18,17 @@ import dace
 from dace import data as dt, dtypes, nodes, SDFG, SDFGState
 from dace.sdfg import utils as sdfg_utils
 from dace.frontend.python import parser
+from dace.codegen import compiled_sdfg
 from dace.symbolic import pystr_to_symbolic
 from dace.codegen import compiled_sdfg
 
 from daceml import transformation
+from daceml.onnx.nodes.replacement import is_replaceable, get_replaced_onnx_op
 from daceml.onnx.shape_inference import shape_inference
-from daceml.onnx.converters import convert_attribute_proto, onnx_tensor_type_to_typeclass, clean_onnx_name
+from daceml.onnx.converters import convert_attribute_proto, onnx_tensor_type_to_typeclass, clean_onnx_name, \
+    typeclass_to_onnx_tensor_type_int, TORCH_DTYPE_TO_TYPECLASS
 from daceml.onnx.schema import ONNXParameterType
-from daceml.onnx.nodes.onnx_op import get_onnx_node, has_onnx_node, ONNXOp
+from daceml.onnx.nodes.onnx_op import get_onnx_node, has_onnx_node
 from daceml.util import utils, is_cuda
 
 log = logging.getLogger(__name__)
@@ -106,16 +110,19 @@ class ONNXModel:
                 dace_model(test_input)
 
     """
-    def __init__(self,
-                 name: str,
-                 model: onnx.ModelProto,
-                 cuda: bool = False,
-                 auto_optimize: bool = True,
-                 simplify: bool = False,
-                 onnx_simplify: bool = True,
-                 storage: Optional[dtypes.StorageType] = None,
-                 save_transients: Optional[Dict[str, torch.Tensor]] = None,
-                 auto_merge: bool = False):
+    def __init__(
+            self,
+            name: str,
+            model: onnx.ModelProto,
+            cuda: bool = False,
+            auto_optimize: bool = True,
+            simplify: bool = False,
+            onnx_simplify: bool = True,
+            storage: Optional[dtypes.StorageType] = None,
+            save_transients: Optional[Dict[str, torch.Tensor]] = None,
+            auto_merge: bool = False,
+            placeholder_id_to_module: Optional[Dict[int,
+                                                    torch.nn.Module]] = None):
         """
         :param name: the name for the SDFG.
         :param model: the model to import.
@@ -129,7 +136,7 @@ class ONNXModel:
                         ``cuda``.
         :param save_transients: if not None, save transients to this dict (for debugging).
         :param: whether to automatically merge conflicting shapes in symbolic shape inference.
-        :param auto_merge: whether to automatically merge symbolic shapes in symbolic shape inference.    
+        :param auto_merge: whether to automatically merge symbolic shapes in symbolic shape inference.
         """
 
         for opset in model.opset_import:
@@ -139,7 +146,10 @@ class ONNXModel:
                     f"to import as a result.")
 
         onnx.checker.check_model(model)
-        model = shape_inference.infer_shapes(model, auto_merge=auto_merge)
+        model = shape_inference.infer_shapes(
+            model,
+            auto_merge=auto_merge,
+            placeholder_id_to_module=placeholder_id_to_module)
         if onnx_simplify:
             model = simplify_onnx_model(model, auto_merge)
 
@@ -195,7 +205,8 @@ class ONNXModel:
         access_nodes = {}
         self._idx_to_node = []
         for i, node in enumerate(graph.node):
-            if not has_onnx_node(node.op_type):
+            if not has_onnx_node(node.op_type) and not is_replaceable(
+                    node.op_type):
                 raise ValueError("Unsupported ONNX operator: '{}'".format(
                     node.op_type))
 
@@ -240,7 +251,23 @@ class ONNXModel:
                 node_name = node.op_type + "_" + str(i)
 
             # construct the dace node
-            op_node = get_onnx_node(node.op_type)(node_name, **op_attributes)
+            if is_replaceable(node.op_type):
+                module_id = op_attributes.pop('module_id')
+                if placeholder_id_to_module is None:
+                    raise ValueError(
+                        'Found a node to replace, but no replacement dict provided.'
+                    )
+                elif module_id not in placeholder_id_to_module:
+                    raise ValueError(
+                        f'Module id {module_id} not found in replacement dict.'
+                    )
+                prefix, module = placeholder_id_to_module[module_id]
+                op_node = get_replaced_onnx_op(node.op_type)(node_name, module,
+                                                             prefix,
+                                                             **op_attributes)
+            else:
+                op_node = get_onnx_node(node.op_type)(node_name,
+                                                      **op_attributes)
             self.state.add_node(op_node)
             self._idx_to_node.append(op_node)
 
@@ -248,6 +275,8 @@ class ONNXModel:
                     enumerate(zip(node.input, repeat(True))),
                     enumerate(zip(node.output, repeat(False)))):
                 if clean_onnx_name(name) not in self.sdfg.arrays:
+                    if not name:
+                        continue
                     if name not in self.value_infos:
                         raise ValueError(
                             "Could not find array with name '{}'".format(name))
@@ -300,6 +329,35 @@ class ONNXModel:
                         op_node, conn_name, access, None,
                         dace.Memlet.from_array(clean_onnx_name(name),
                                                data_desc))
+
+            # Add input nodes for module weights.
+            if hasattr(op_node, 'module'):
+                for local_name, param in op_node.module.named_parameters():
+                    name = clean_onnx_name(op_node.prefix + local_name)
+
+                    # Register the parameter tensor in the model.
+                    elem_type = typeclass_to_onnx_tensor_type_int(
+                        TORCH_DTYPE_TO_TYPECLASS[param.dtype])
+                    value_info = make_tensor_value_info(
+                        name, elem_type, param.shape)
+                    self.value_infos[value_info.name] = value_info
+                    self._add_value_info(value_info, storage=storage)
+                    self.sdfg.arrays[name].transient = False
+                    self.inputs.append(op_node.prefix + local_name)
+
+                    # Add access node for the weights.
+                    access = nodes.AccessNode(name)
+                    self.state.add_node(access)
+                    access_nodes[name] = access
+
+                    data_desc = self.sdfg.arrays[clean_onnx_name(name)]
+                    # Add the connector if required, and add an edge.
+                    conn_name = clean_onnx_name(local_name)
+                    if conn_name not in op_node.in_connectors:
+                        assert op_node.add_in_connector(conn_name)
+                    self.state.add_edge(
+                        access, None, op_node, conn_name,
+                        dace.Memlet.from_array(name, data_desc))
 
         # scalars need to be promoted to arrays so that we can return them from the dace program
         # however, this is only for CPU: on GPU, scalars are already pointers

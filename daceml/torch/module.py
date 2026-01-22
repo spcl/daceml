@@ -24,6 +24,7 @@ from daceml.torch import dispatchers
 from daceml.autodiff import torch as torch_autodiff
 from daceml.autodiff.library import library as autodiff_library
 from daceml.onnx import ONNXModel
+from daceml.pytorch.module_replacement import replace_modules
 from daceml.util import utils, find_str_not_in_set
 
 log = logging.getLogger(__name__)
@@ -262,10 +263,14 @@ class DaceModule(nn.Module, frontend_common.SDFGConvertible):
 
         # TODO change to StringIO if not too big
         with tempfile.TemporaryDirectory() as dir_name:
-            export_name = os.path.join(dir_name, "export.onnx")
+            # export_name = os.path.join(dir_name, "export.onnx")
+            export_name = f"export_{self.sdfg_name}.onnx"
+
+            placeholder_id_to_module = replace_modules(self.model)
 
             # save the state of the model, and restore it after tracing
             state = copy.deepcopy(self.state_dict())
+
             torch.onnx.export(
                 self.model,
                 dummy_inputs,
@@ -308,11 +313,13 @@ class DaceModule(nn.Module, frontend_common.SDFGConvertible):
             _onnx_delete_initializers(onnx_model_exported, input_names)
 
             # load using importer
-            dace_model = ONNXModel(self.sdfg_name,
-                                   onnx_model_exported,
-                                   onnx_simplify=self.onnx_simplify,
-                                   cuda=self.use_cuda,
-                                   auto_optimize=self.auto_optimize)
+            dace_model = ONNXModel(
+                self.sdfg_name,
+                onnx_model_exported,
+                onnx_simplify=self.onnx_simplify,
+                cuda=self.use_cuda,
+                auto_optimize=self.auto_optimize,
+                placeholder_id_to_module=placeholder_id_to_module)
             self.sdfg = dace_model.sdfg
             self.dace_model = dace_model
 
